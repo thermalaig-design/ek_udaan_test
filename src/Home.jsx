@@ -3,7 +3,7 @@ import { User, Users, Clock, FileText, UserPlus, Bell, ChevronLeft, ChevronRight
 import Sidebar from './components/Sidebar';
 import TermsModal from './components/TermsModal';
 import ImageSlider from './components/ImageSlider';
-import { getProfile, getMarqueeUpdates, getSponsors, getUserNotifications, markNotificationAsRead, markAllNotificationsAsRead, deleteNotification } from './services/api';
+import { getProfile, getMarqueeUpdates, getSponsors, getUserNotifications, markNotificationAsRead, markAllNotificationsAsRead, deleteNotification, getMemberTrustLinks } from './services/api';
 import { fetchLatestGalleryImages } from './services/galleryService';
 import { registerSidebarState, useTheme } from './hooks';
 import { supabase } from './services/supabaseClient';
@@ -18,6 +18,29 @@ const buildNotificationContentKey = (notification) => {
   const createdAt = String(notification?.created_at || '').trim();
   const createdAtSecond = createdAt ? createdAt.slice(0, 19) : '';
   return `${type}|${title}|${message}|${createdAtSecond}`;
+};
+
+const mergeUniqueTrusts = (...collections) => {
+  const merged = [];
+  const seen = new Set();
+
+  collections
+    .flat()
+    .filter(Boolean)
+    .forEach((trust) => {
+      const id = trust.id === null || trust.id === undefined ? '' : String(trust.id);
+      if (!id || seen.has(id)) return;
+      seen.add(id);
+      merged.push({
+        id,
+        name: trust.name || null,
+        icon_url: trust.icon_url || null,
+        remark: trust.remark || null,
+        is_active: Boolean(trust.is_active)
+      });
+    });
+
+  return merged;
 };
 
 /* eslint-disable react-refresh/only-export-components */
@@ -217,22 +240,28 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
         remark: m.trust_remark || null,
         is_active: m.is_active
       }));
-      const uniqueTrusts = [];
-      const seenTrustIds = new Set();
-      for (const trust of derivedTrusts) {
-        if (!trust.id || seenTrustIds.has(trust.id)) continue;
-        seenTrustIds.add(trust.id);
-        uniqueTrusts.push(trust);
-      }
+      const uniqueTrusts = mergeUniqueTrusts(derivedTrusts);
       const primaryTrust = parsedUser.primary_trust || parsedUser.trust || derivedTrusts.find((t) => t.is_active) || derivedTrusts[0] || (parsedUser.trust_name ? { name: parsedUser.trust_name } : null);
       const normalizedTrusts = uniqueTrusts.length > 0 ? uniqueTrusts : primaryTrust ? [primaryTrust] : [];
-      setTrustList(normalizedTrusts);
-      const effectiveTrustId = normalizeTrustId(selectedTrustId) || normalizeTrustId(primaryTrust?.id) || normalizeTrustId(normalizedTrusts[0]?.id) || '';
+      const mergedTrusts = mergeUniqueTrusts(defaultTrust ? [defaultTrust] : [], normalizedTrusts);
+      setTrustList(mergedTrusts);
+
+      const effectiveTrustId =
+        normalizeTrustId(selectedTrustId) ||
+        normalizeTrustId(defaultTrust?.id) ||
+        normalizeTrustId(primaryTrust?.id) ||
+        normalizeTrustId(mergedTrusts[0]?.id) ||
+        '';
       if (effectiveTrustId && effectiveTrustId !== selectedTrustId) {
         setSelectedTrustId(effectiveTrustId);
         localStorage.setItem('selected_trust_id', effectiveTrustId);
       }
-      const effectiveTrust = normalizedTrusts.find((t) => normalizeTrustId(t.id) === effectiveTrustId) || primaryTrust || normalizedTrusts[0] || null;
+      const effectiveTrust =
+        mergedTrusts.find((t) => normalizeTrustId(t.id) === effectiveTrustId) ||
+        defaultTrust ||
+        primaryTrust ||
+        mergedTrusts[0] ||
+        null;
       setTrustInfo(effectiveTrust);
       if (effectiveTrust?.name) localStorage.setItem('selected_trust_name', effectiveTrust.name);
     } catch (error) {
@@ -247,24 +276,61 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
     if (!user) return;
     let parsedUser = null;
     try { parsedUser = JSON.parse(user); } catch { return; }
-    const membersId = parsedUser?.members_id || parsedUser?.member_id || parsedUser?.id;
-    if (!membersId) return;
+    const fallbackIdsFromMemberships = Array.isArray(parsedUser?.hospital_memberships)
+      ? parsedUser.hospital_memberships.map((m) => m?.members_id).filter(Boolean)
+      : [];
+    const membersIds = Array.from(
+      new Set(
+        [
+          parsedUser?.members_id,
+          parsedUser?.member_id,
+          parsedUser?.id,
+          ...fallbackIdsFromMemberships
+        ]
+          .filter(Boolean)
+          .map((id) => String(id))
+      )
+    );
+    if (membersIds.length === 0) return;
     hasLoadedMemberTrusts.current = true;
     const loadMemberTrusts = async () => {
       try {
-        const memberships = await fetchMemberTrusts(membersId);
-        if (!Array.isArray(memberships) || memberships.length === 0) return;
-        const uniqueTrusts = [];
-        const seenTrustIds = new Set();
-        for (const trust of memberships) {
-          if (!trust.id || seenTrustIds.has(trust.id)) continue;
-          seenTrustIds.add(trust.id);
-          uniqueTrusts.push(trust);
-        }
+        const membershipResults = await Promise.all(
+          membersIds.map((memberId) => fetchMemberTrusts(memberId).catch(() => []))
+        );
+        const membershipTrusts = membershipResults
+          .flat()
+          .map((trust) => ({
+            id: trust.id || null,
+            name: trust.name || null,
+            icon_url: trust.icon_url || null,
+            remark: trust.remark || null,
+            is_active: trust.is_active
+          }));
+
+        const linkResults = await Promise.all(
+          membersIds.map((memberId) => getMemberTrustLinks(memberId).catch(() => ({ success: false, data: [] })))
+        );
+        const linkTrusts = linkResults
+          .flatMap((res) => (res?.success && Array.isArray(res?.data) ? res.data : []))
+          .map((link) => ({
+            id: link?.trust_id || link?.Trust?.id || null,
+            name: link?.Trust?.name || null,
+            icon_url: link?.Trust?.icon_url || null,
+            remark: link?.remark1 || link?.remark2 || null,
+            is_active: link?.is_active !== false
+          }));
+
+        const uniqueTrusts = mergeUniqueTrusts(membershipTrusts, linkTrusts);
         if (uniqueTrusts.length === 0) return;
-        setTrustList((prev) => { if (Array.isArray(prev) && prev.length >= uniqueTrusts.length) return prev; return uniqueTrusts; });
-        const primaryTrust = uniqueTrusts.find((t) => t.is_active) || uniqueTrusts[0];
-        const effectiveTrustId = normalizeTrustId(selectedTrustId) || normalizeTrustId(primaryTrust?.id) || '';
+
+        const primaryTrust = parsedUser?.primary_trust || uniqueTrusts.find((t) => t.is_active) || uniqueTrusts[0];
+        setTrustList((prev) => mergeUniqueTrusts(prev, uniqueTrusts));
+        const effectiveTrustId =
+          normalizeTrustId(selectedTrustId) ||
+          normalizeTrustId(defaultTrust?.id) ||
+          normalizeTrustId(primaryTrust?.id) ||
+          '';
         if (effectiveTrustId && effectiveTrustId !== selectedTrustId) {
           setSelectedTrustId(effectiveTrustId);
           localStorage.setItem('selected_trust_id', effectiveTrustId);
