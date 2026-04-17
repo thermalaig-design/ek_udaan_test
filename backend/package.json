@@ -5,6 +5,7 @@
   "main": "server.js",
   "type": "module",
   "scripts": {
+     "build": "echo 'No build step'",
     "update-appointment-notification": "node update_appointment_with_notification.js",
     "setup-trust": "node setup_trust.js",
     "start": "node server.js",
