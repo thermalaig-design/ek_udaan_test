@@ -31,6 +31,7 @@ import Gallery from './Gallery';
 import OtherMemberships from './OtherMemberships';
 import AdminUserProfiles from './admin/AdminUserProfiles';
 import { getCurrentNotificationContext, matchesNotificationForContext } from './services/notificationAudience';
+import { applyThemeCssVariables } from './utils/themeUtils';
 
 import {
   useAndroidBackHandler,
@@ -41,48 +42,6 @@ import {
   useSwipeBackNavigation,
   useTheme
 } from './hooks';
-
-const hexToRgb = (hex) => {
-  const value = String(hex || '').trim().replace('#', '');
-  if (!/^[\da-fA-F]{3,8}$/.test(value)) return null;
-  const normalized = value.length === 3
-    ? value.split('').map((c) => c + c).join('')
-    : value.slice(0, 6);
-  const parsed = Number.parseInt(normalized, 16);
-  if (!Number.isFinite(parsed)) return null;
-  return {
-    r: (parsed >> 16) & 255,
-    g: (parsed >> 8) & 255,
-    b: parsed & 255,
-  };
-};
-
-const rgbToHex = ({ r, g, b }) =>
-  `#${[r, g, b]
-    .map((channel) => Math.max(0, Math.min(255, Math.round(channel))).toString(16).padStart(2, '0'))
-    .join('')}`;
-
-const mixHex = (base, target, ratio) => {
-  const baseRgb = hexToRgb(base);
-  const targetRgb = hexToRgb(target);
-  if (!baseRgb || !targetRgb) return base;
-  const t = Math.max(0, Math.min(1, ratio));
-  return rgbToHex({
-    r: baseRgb.r + (targetRgb.r - baseRgb.r) * t,
-    g: baseRgb.g + (targetRgb.g - baseRgb.g) * t,
-    b: baseRgb.b + (targetRgb.b - baseRgb.b) * t,
-  });
-};
-
-const shiftHex = (base, amount) => {
-  const rgb = hexToRgb(base);
-  if (!rgb) return base;
-  return rgbToHex({
-    r: rgb.r + amount,
-    g: rgb.g + amount,
-    b: rgb.b + amount,
-  });
-};
 
 const HospitalTrusteeApp = () => {
   const LAST_VISITED_ROUTE_KEY = 'lastVisitedRoute';
@@ -138,25 +97,7 @@ const HospitalTrusteeApp = () => {
   }, []);
 
   useEffect(() => {
-    const root = document.documentElement;
-    const primaryCandidate = appTheme?.primary || '#C0241A';
-    const secondaryCandidate = appTheme?.secondary || '#2B2F7E';
-    const primary = hexToRgb(primaryCandidate) ? primaryCandidate : '#C0241A';
-    const secondary = hexToRgb(secondaryCandidate) ? secondaryCandidate : '#2B2F7E';
-    const accent = appTheme?.accent || '#FDECEA';
-    const accentBg = appTheme?.accentBg || '#EAEBF8';
-
-    root.style.setProperty('--brand-red', primary);
-    root.style.setProperty('--brand-red-dark', shiftHex(primary, -36));
-    root.style.setProperty('--brand-red-mid', shiftHex(primary, 22));
-    root.style.setProperty('--brand-red-light', mixHex(primary, '#ffffff', 0.86));
-    root.style.setProperty('--brand-navy', secondary);
-    root.style.setProperty('--brand-navy-dark', shiftHex(secondary, -32));
-    root.style.setProperty('--brand-navy-light', mixHex(secondary, '#ffffff', 0.88));
-    root.style.setProperty('--app-accent', accent);
-    root.style.setProperty('--app-accent-bg', accentBg);
-    root.style.setProperty('--app-navbar-bg', appTheme?.navbarBg || 'rgba(234,235,248,0.88)');
-    root.style.setProperty('--app-page-bg', appTheme?.pageBg || 'linear-gradient(160deg,#fff5f5 0%,#ffffff 50%,#f0f1fb 100%)');
+    applyThemeCssVariables(appTheme);
 
     const styleId = 'trust-custom-css-global';
     const existing = document.getElementById(styleId);

@@ -730,7 +730,7 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
     <div
       ref={mainContainerRef}
       className={`flex flex-col relative ${isMenuOpen ? 'overflow-hidden max-h-screen' : 'overflow-hidden'}`}
-      style={{ background: theme.pageBg, minHeight: '100%' }}
+      style={{ background: 'var(--page-bg, var(--app-page-bg))', minHeight: '100%' }}
     >
       {/* Decorative blobs (theme-aware) */}
       <div
@@ -776,17 +776,17 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
       {/* ══ Light Navbar (theme-aware) ══ */}
       <div
         role="navigation"
-        className="sticky top-0 z-50 w-full"
+        className="theme-navbar sticky top-0 z-50 w-full"
         style={{
-          background: theme.navbarBg,
-          backdropFilter: 'blur(12px)',
-          WebkitBackdropFilter: 'blur(12px)',
+          background: 'var(--navbar-bg, var(--app-navbar-bg))',
+          backdropFilter: 'blur(var(--navbar-blur, 12px))',
+          WebkitBackdropFilter: 'blur(var(--navbar-blur, 12px))',
           boxShadow: `0 2px 16px ${theme.secondary}22`,
-          borderBottom: `1px solid ${theme.primary}18`,
+          borderBottom: '1px solid var(--navbar-border)',
         }}
       >
         {/* Thin top accent bar */}
-        <div className="h-[3px]" style={{ background: `linear-gradient(90deg, ${theme.secondary}, ${theme.primary}, ${theme.secondary})` }} />
+        <div className="h-[3px]" style={{ background: 'var(--navbar-accent)' }} />
 
         {/* Top row: hamburger | logo+name | bell */}
         <div
@@ -1000,22 +1000,22 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
             </div>
           ) : null,
           marquee: ff('feature_marquee') && marqueeUpdates.length > 0 ? (
-            <div className="mt-0 mb-2 w-full overflow-hidden" style={{ background: `linear-gradient(90deg, ${theme.primary} 0%, ${theme.secondary} 100%)`, boxShadow: `0 2px 12px ${theme.primary}4D` }} key="marquee">
+            <div className="mt-0 mb-2 w-full overflow-hidden" style={{ background: 'var(--marquee-bg)', boxShadow: `0 2px 12px ${theme.primary}4D` }} key="marquee">
               <div className="flex items-stretch">
                 <div className="flex-shrink-0 px-3 flex items-center gap-2" style={{ background: 'rgba(0,0,0,0.25)' }}>
                   <span className="relative flex h-2 w-2">
                     <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-70" />
                     <span className="relative inline-flex rounded-full h-2 w-2 bg-white" />
                   </span>
-                  <span className="text-white text-[11px] font-bold uppercase tracking-widest whitespace-nowrap">
+                  <span className="text-[11px] font-bold uppercase tracking-widest whitespace-nowrap" style={{ color: 'var(--marquee-text)' }}>
                     {flagsData?.feature_marquee?.display_name || 'Updates'}
                   </span>
                 </div>
-                <div className="w-px bg-white/30 my-1.5" />
+                <div className="w-px my-1.5" style={{ background: 'color-mix(in srgb, var(--marquee-text) 30%, transparent)' }} />
                 <div className="overflow-hidden flex-1 py-2">
                   <div className="marquee-track flex">
                     {[...marqueeUpdates, ...marqueeUpdates].map((msg, i) => (
-                      <span key={i} className="whitespace-nowrap text-white text-xs font-semibold px-6">⭐ {msg}</span>
+                      <span key={i} className="whitespace-nowrap text-xs font-semibold px-6" style={{ color: 'var(--marquee-text)' }}>⭐ {msg}</span>
                     ))}
                   </div>
                 </div>

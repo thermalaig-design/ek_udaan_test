@@ -245,12 +245,25 @@ const Sidebar = ({ isOpen, onClose, onNavigate, currentPage, onLogout }) => {
       {/* Sidebar panel — absolute, left-anchored, full height */}
       <div
         ref={sidebarRef}
-        className="absolute left-0 top-0 bottom-0 w-72 bg-white shadow-2xl z-50 flex flex-col"
+        className="theme-sidebar absolute left-0 top-0 bottom-0 w-72 shadow-2xl z-50 flex flex-col"
         data-sidebar="true"
-        style={{ maxWidth: '85vw', touchAction: 'pan-y', borderRight: `1px solid ${primary}14`, overflow: 'hidden', WebkitOverflowScrolling: 'touch', willChange: 'transform', display: 'flex', flexDirection: 'column' }}
+        style={{
+          maxWidth: '85vw',
+          touchAction: 'pan-y',
+          background: 'var(--sidebar-bg, #ffffff)',
+          backdropFilter: 'blur(var(--sidebar-blur, 12px))',
+          WebkitBackdropFilter: 'blur(var(--sidebar-blur, 12px))',
+          opacity: 'var(--sidebar-opacity, 1)',
+          borderRight: '1px solid var(--sidebar-border)',
+          overflow: 'hidden',
+          WebkitOverflowScrolling: 'touch',
+          willChange: 'transform',
+          display: 'flex',
+          flexDirection: 'column'
+        }}
       >
         {/* Brand accent at top */}
-        <div style={{ height: '4px', background: `linear-gradient(90deg, ${primary} 0%, ${secondary} 60%, ${primary} 100%)` }} />
+        <div style={{ height: '4px', background: 'var(--sidebar-accent)' }} />
         {/* ── Profile Card Header ── */}
         <div
           className="px-5 pt-14 pb-5 flex-shrink-0 cursor-pointer"

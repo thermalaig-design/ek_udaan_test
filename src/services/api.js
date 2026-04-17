@@ -580,52 +580,116 @@ export const getSponsors = async (trustId = null, trustName = null) => {
       return { success: true, data: [] };
     }
 
-    const sponsorFieldsBase = `
-      id,
-      name,
-      position,
-      about,
-      photo_url,
-      company_name,
-      ref_no,
-      created_at,
-      updated_at,
-      phone,
-      badge_label,
-      email_id,
-      address,
-      city,
-      state,
-      whatsapp_number,
-      website_url,
-      catalog_url
-    `;
+    const sponsorFieldVariants = [
+      `
+        id,
+        name,
+        position,
+        about,
+        photo_url,
+        company_name,
+        ref_no,
+        created_at,
+        updated_at,
+        phone,
+        badge_label,
+        email_id,
+        address,
+        city,
+        state,
+        whatsapp_number,
+        website_url,
+        catalog_url
+      `,
+      `
+        id,
+        name,
+        position,
+        about,
+        photo_url,
+        company_name,
+        ref_no,
+        created_at,
+        updated_at,
+        "ContactNumber1",
+        badge_label,
+        email_id1,
+        address,
+        city,
+        state,
+        whatsapp_number,
+        website_url,
+        catalog_url
+      `,
+      `
+        id,
+        name,
+        position,
+        about,
+        photo_url,
+        company_name,
+        ref_no,
+        created_at,
+        updated_at,
+        badge_label,
+        address,
+        city,
+        state,
+        whatsapp_number,
+        website_url,
+        catalog_url
+      `
+    ];
 
-    const runSponsorFlashQuery = async (withSponsorActive = true) => {
-      const sponsorFields = withSponsorActive
-        ? `is_active,${sponsorFieldsBase}`
-        : sponsorFieldsBase;
-      return supabase
-        .from('sponsor_flash')
-        .select(`
-          id,
-          trust_id,
-          start_date,
-          end_date,
-          duration_seconds,
-          priority,
-          sponsors (${sponsorFields})
-        `)
-        .eq('trust_id', resolvedTrustId)
-        .eq('status', 'active');
-    };
+    const flashFieldVariants = [
+      `
+        id,
+        trust_id,
+        start_date,
+        end_date,
+        duration_seconds,
+        priority
+      `,
+      `
+        id,
+        trust_id,
+        start_date,
+        end_date,
+        priority
+      `
+    ];
 
-    let { data, error } = await runSponsorFlashQuery(true);
-    if (error && /is_active/i.test(String(error?.message || ''))) {
-      const fallback = await runSponsorFlashQuery(false);
-      data = fallback.data;
-      error = fallback.error;
+    const activeModes = ['is_active', 'status', 'none'];
+    let data = null;
+    let error = null;
+
+    for (const sponsorFields of sponsorFieldVariants) {
+      for (const flashFields of flashFieldVariants) {
+        for (const activeMode of activeModes) {
+          let query = supabase
+            .from('sponsor_flash')
+            .select(`
+              ${flashFields},
+              sponsors (${sponsorFields})
+            `)
+            .eq('trust_id', resolvedTrustId);
+
+          if (activeMode === 'is_active') {
+            query = query.eq('is_active', true);
+          } else if (activeMode === 'status') {
+            query = query.eq('status', 'active');
+          }
+
+          const result = await query;
+          data = result.data;
+          error = result.error;
+          if (!error) break;
+        }
+        if (!error) break;
+      }
+      if (!error) break;
     }
+
     if (error) throw error;
 
     const today = getTodayLocal();
@@ -634,7 +698,6 @@ export const getSponsors = async (trustId = null, trustName = null) => {
       .filter((row) => {
         const sponsor = Array.isArray(row?.sponsors) ? row.sponsors[0] : row?.sponsors || null;
         if (!sponsor) return false;
-        if (typeof sponsor.is_active === 'boolean' && sponsor.is_active !== true) return false;
         if (row.start_date && !/^\d{4}-\d{2}-\d{2}$/.test(row.start_date)) return false;
         if (row.end_date && !/^\d{4}-\d{2}-\d{2}$/.test(row.end_date)) return false;
         const startOk = !row.start_date || row.start_date <= today;
@@ -662,9 +725,9 @@ export const getSponsors = async (trustId = null, trustName = null) => {
         ref_no: item.sponsor_ref.ref_no,
         created_at: item.sponsor_ref.created_at,
         updated_at: item.sponsor_ref.updated_at,
-        phone: item.sponsor_ref.phone,
+        phone: item.sponsor_ref.phone || item.sponsor_ref.ContactNumber1 || null,
         badge_label: item.sponsor_ref.badge_label,
-        email_id: item.sponsor_ref.email_id,
+        email_id: item.sponsor_ref.email_id || item.sponsor_ref.email_id1 || null,
         address: item.sponsor_ref.address,
         city: item.sponsor_ref.city,
         state: item.sponsor_ref.state,
@@ -699,9 +762,8 @@ export const getSponsors = async (trustId = null, trustName = null) => {
 export const getSponsorById = async (id) => {
   try {
     const { supabase } = await import('./supabaseClient.js');
-    const { data, error } = await supabase
-      .from('sponsors')
-      .select(`
+    const sponsorFieldVariants = [
+      `
         id,
         name,
         position,
@@ -720,11 +782,69 @@ export const getSponsorById = async (id) => {
         whatsapp_number,
         website_url,
         catalog_url
-      `)
-      .eq('id', id)
-      .limit(1);
+      `,
+      `
+        id,
+        name,
+        position,
+        about,
+        photo_url,
+        company_name,
+        ref_no,
+        created_at,
+        updated_at,
+        "ContactNumber1",
+        badge_label,
+        email_id1,
+        address,
+        city,
+        state,
+        whatsapp_number,
+        website_url,
+        catalog_url
+      `,
+      `
+        id,
+        name,
+        position,
+        about,
+        photo_url,
+        company_name,
+        ref_no,
+        created_at,
+        updated_at,
+        badge_label,
+        address,
+        city,
+        state,
+        whatsapp_number,
+        website_url,
+        catalog_url
+      `
+    ];
+
+    let data = null;
+    let error = null;
+    for (const fields of sponsorFieldVariants) {
+      const result = await supabase
+        .from('sponsors')
+        .select(fields)
+        .eq('id', id)
+        .limit(1);
+      data = result.data;
+      error = result.error;
+      if (!error) break;
+    }
+
     if (error) throw error;
-    const sponsor = Array.isArray(data) ? data[0] : data;
+    const rawSponsor = Array.isArray(data) ? data[0] : data;
+    const sponsor = rawSponsor
+      ? {
+        ...rawSponsor,
+        phone: rawSponsor.phone || rawSponsor.ContactNumber1 || null,
+        email_id: rawSponsor.email_id || rawSponsor.email_id1 || null
+      }
+      : null;
     return { success: true, data: sponsor ? [sponsor] : [] };
   } catch (error) {
     console.error('Error fetching sponsor:', error);
