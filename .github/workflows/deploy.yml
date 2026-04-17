@@ -27,7 +27,7 @@ jobs:
             npm run build
             cd backend
             npm install
-            pm2 restart mahila-live
+            pm2 restart mahila-mandal-live
 
       - name: Deploy to Testing
         if: github.ref == 'refs/heads/testing'
@@ -43,4 +43,4 @@ jobs:
             npm run build
             cd backend
             npm install
-            pm2 restart mahila-testing
+            pm2 restart mahila-mandal-testing
