@@ -110,24 +110,10 @@ function OTPVerification() {
       localStorage.setItem('user', JSON.stringify(user));
       localStorage.setItem('isLoggedIn', 'true');
 
-      const memberships = Array.isArray(user?.hospital_memberships) ? user.hospital_memberships : [];
-      const baseMembership = memberships.find((m) => String(m?.trust_id || '') === String(TRUST_ID));
-      const fallbackMembership = baseMembership ||
-        memberships.find((m) => m?.is_active && m?.trust_id) ||
-        memberships[0] ||
-        null;
-      const selectedTrustId =
-        fallbackMembership?.trust_id ||
-        user?.primary_trust?.id ||
-        localStorage.getItem('selected_trust_id') ||
-        TRUST_ID;
-      const selectedTrustName =
-        fallbackMembership?.trust_name ||
-        user?.primary_trust?.name ||
-        localStorage.getItem('selected_trust_name') ||
-        '';
-
-      if (selectedTrustId) localStorage.setItem('selected_trust_id', String(selectedTrustId));
+      // Keep app context pinned to base trust on login (Ek Udaan).
+      const selectedTrustId = TRUST_ID;
+      const selectedTrustName = trustInfo?.name || localStorage.getItem('selected_trust_name') || '';
+      localStorage.setItem('selected_trust_id', String(selectedTrustId));
       if (selectedTrustName) localStorage.setItem('selected_trust_name', String(selectedTrustName));
 
       // Pre-warm directory cache in background (non-blocking)
