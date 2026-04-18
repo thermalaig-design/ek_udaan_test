@@ -473,17 +473,19 @@ const Sidebar = ({ isOpen, onClose, onNavigate, currentPage, onLogout }) => {
           <div className="px-3 pb-8" style={{ borderTop: `1px solid ${primary}14` }}>
             <button
               onClick={() => {
-                localStorage.removeItem('user');
-                localStorage.removeItem('isLoggedIn');
-                localStorage.removeItem('lastVisitedRoute');
-                localStorage.removeItem('selected_trust_id');
-                localStorage.removeItem('selected_trust_name');
-                sessionStorage.removeItem('selectedMember');
-                sessionStorage.removeItem('previousScreen');
-                sessionStorage.removeItem('previousScreenName');
-                sessionStorage.removeItem('trust_selected_in_session');
                 if (typeof onLogout === 'function') onLogout();
-                else navigate('/login', { replace: true });
+                else {
+                  localStorage.removeItem('user');
+                  localStorage.removeItem('isLoggedIn');
+                  localStorage.removeItem('lastVisitedRoute');
+                  localStorage.removeItem('selected_trust_id');
+                  localStorage.removeItem('selected_trust_name');
+                  sessionStorage.removeItem('selectedMember');
+                  sessionStorage.removeItem('previousScreen');
+                  sessionStorage.removeItem('previousScreenName');
+                  sessionStorage.removeItem('trust_selected_in_session');
+                  navigate('/login', { replace: true });
+                }
                 if (onClose) onClose();
               }}
               className="w-full flex items-center justify-between px-4 rounded-xl font-bold active:opacity-80 transition-all active:scale-95 select-none"

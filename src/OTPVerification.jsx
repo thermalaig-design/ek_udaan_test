@@ -310,18 +310,18 @@ function OTPVerification() {
 }
 
 // ─── Design tokens ─────────────────────────────────────────────────────────────
-const RED      = '#C0241A';
-const RED_DARK = '#9B1A13';
-const NAVY     = '#2B2F7E';
+const RED      = 'var(--brand-red, #C0241A)';
+const RED_DARK = 'var(--brand-red-dark, #9B1A13)';
+const NAVY     = 'var(--brand-navy, #2B2F7E)';
 const WHITE    = '#FFFFFF';
-const GRAY     = '#64748b';
-const BORDER   = '#e2e8f0';
+const GRAY     = 'var(--body-text-color, #64748b)';
+const BORDER   = 'rgba(148, 163, 184, 0.35)';
 
 const styles = {
   page: {
     fontFamily: "'Inter', sans-serif",
     minHeight: '100vh',
-    background: 'linear-gradient(135deg, #fff5f5 0%, #ffffff 40%, #f0f1fb 100%)',
+    background: 'var(--page-bg, linear-gradient(135deg, #fff5f5 0%, #ffffff 40%, #f0f1fb 100%))',
     position: 'relative', overflow: 'hidden',
     display: 'flex', alignItems: 'center', justifyContent: 'center',
     padding: '24px 16px',

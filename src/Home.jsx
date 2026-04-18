@@ -624,34 +624,38 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
         if (uniqueTrusts.length === 0) return;
 
         const primaryTrust = parsedUser?.primary_trust || uniqueTrusts.find((t) => t.is_active) || uniqueTrusts[0];
+        const merged = mergeUniqueTrusts(uniqueTrusts);
+        // Ensure default trust is always included (Ek Udaan)
+        const withDefault = ensureDefaultTrustIncluded(merged, defaultTrust);
         setTrustList(() => {
-          const merged = mergeUniqueTrusts(uniqueTrusts);
-          // Ensure default trust is always included (Ek Udaan)
-          const withDefault = ensureDefaultTrustIncluded(merged, defaultTrust);
           // Cache full trust list so it appears instantly on next refresh
           try { localStorage.setItem('trust_list_cache', JSON.stringify(withDefault)); } catch { /* ignore */ }
           console.log(`✅ Final trust list (${withDefault.length} trusts):`, withDefault.map(t => ({ name: t.name, id: t.id.substring(0, 8) })));
           return withDefault;
         });
         const normalizedSelected = normalizeTrustId(selectedTrustId);
-        const selectedExistsInUnique = uniqueTrusts.some((t) => normalizeTrustId(t.id) === normalizedSelected);
+        const selectedExistsInFinalList = withDefault.some((t) => normalizeTrustId(t.id) === normalizedSelected);
         const defaultInUniqueId = normalizeTrustId(defaultTrust?.id);
         const shouldForceDefault =
           !getSessionSelectionFlag() &&
           defaultInUniqueId &&
-          uniqueTrusts.some((t) => normalizeTrustId(t.id) === defaultInUniqueId);
+          withDefault.some((t) => normalizeTrustId(t.id) === defaultInUniqueId);
         const effectiveTrustId =
           (shouldForceDefault ? defaultInUniqueId : '') ||
-          (selectedExistsInUnique ? normalizedSelected : '') ||
+          (selectedExistsInFinalList ? normalizedSelected : '') ||
           normalizeTrustId(primaryTrust?.id) ||
           normalizeTrustId(defaultTrust?.id) ||
-          normalizeTrustId(uniqueTrusts[0]?.id) ||
+          normalizeTrustId(withDefault[0]?.id) ||
           '';
         if (effectiveTrustId && effectiveTrustId !== selectedTrustId) {
           setSelectedTrustId(effectiveTrustId);
           localStorage.setItem('selected_trust_id', effectiveTrustId);
         }
-        const effectiveTrust = uniqueTrusts.find((t) => normalizeTrustId(t.id) === effectiveTrustId) || primaryTrust || uniqueTrusts[0] || null;
+        const effectiveTrust =
+          withDefault.find((t) => normalizeTrustId(t.id) === effectiveTrustId) ||
+          primaryTrust ||
+          withDefault[0] ||
+          null;
         if (effectiveTrust) {
           setTrustInfo(effectiveTrust);
           if (effectiveTrust.name) localStorage.setItem('selected_trust_name', effectiveTrust.name);
@@ -661,7 +665,7 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
       }
     };
     loadMemberTrusts();
-  }, [selectedTrustId]);
+  }, [selectedTrustId, defaultTrust?.id]);
 
 
   // Feature flags
@@ -1944,7 +1948,6 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
 };
 
 export default Home;
-
 
 
 

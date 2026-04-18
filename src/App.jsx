@@ -32,7 +32,6 @@ import OtherMemberships from './OtherMemberships';
 import AdminUserProfiles from './admin/AdminUserProfiles';
 import { getCurrentNotificationContext, matchesNotificationForContext } from './services/notificationAudience';
 import { applyThemeCssVariables } from './utils/themeUtils';
-import { fetchTrustById } from './services/trustService';
 
 import {
   useAndroidBackHandler,
@@ -45,6 +44,8 @@ import {
 } from './hooks';
 
 const HospitalTrusteeApp = () => {
+  const BASE_TRUST_ID = import.meta.env.VITE_DEFAULT_TRUST_ID || 'b353d2ff-ec3b-4b90-a896-69f40662084e';
+  const BASE_TRUST_NAME = import.meta.env.VITE_DEFAULT_TRUST_NAME || 'Ek Udaan';
   const LAST_VISITED_ROUTE_KEY = 'lastVisitedRoute';
   const PUBLIC_ROUTES = ['/login', '/otp-verification', '/special-otp-verification', '/terms-and-conditions', '/privacy-policy', '/developers', '/vip-login'];
   const navigate = useNavigate();
@@ -67,7 +68,10 @@ const HospitalTrusteeApp = () => {
     }
     return '';
   });
-  const { theme: appTheme } = useTheme(activeTrustId || null);
+  const authThemeRoutes = ['/login', '/otp-verification', '/special-otp-verification', '/vip-login'];
+  const shouldUseBaseTheme = authThemeRoutes.includes(location.pathname);
+  const resolvedThemeTrustId = shouldUseBaseTheme ? BASE_TRUST_ID : (activeTrustId || BASE_TRUST_ID);
+  const { theme: appTheme } = useTheme(resolvedThemeTrustId);
 
   // Initialize Android features
   useAndroidBackHandler();
@@ -87,12 +91,16 @@ const HospitalTrusteeApp = () => {
     localStorage.removeItem('isLoggedIn');
     localStorage.removeItem('user');
     localStorage.removeItem(LAST_VISITED_ROUTE_KEY);
-    localStorage.removeItem('selected_trust_id');
-    localStorage.removeItem('selected_trust_name');
+    localStorage.setItem('selected_trust_id', BASE_TRUST_ID);
+    localStorage.setItem('selected_trust_name', BASE_TRUST_NAME);
     sessionStorage.removeItem('selectedMember');
     sessionStorage.removeItem('previousScreen');
     sessionStorage.removeItem('previousScreenName');
     sessionStorage.removeItem('trust_selected_in_session');
+    setActiveTrustId(BASE_TRUST_ID);
+    window.dispatchEvent(new CustomEvent('trust-changed', {
+      detail: { trustId: BASE_TRUST_ID, trustName: BASE_TRUST_NAME }
+    }));
     navigate('/login', { replace: true });
   };
 
