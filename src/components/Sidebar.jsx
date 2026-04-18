@@ -382,9 +382,10 @@ const Sidebar = ({ isOpen, onClose, onNavigate, currentPage, onLogout }) => {
             {ff('feature_share_app') && <button
               onClick={async () => {
                 const APP_URL = 'https://play.google.com/store/apps/details?id=com.maharajaagarsen.app';
-                const shareText = 'MAH SETU App - Maharaja Agrasen Hospital ka official app. Download karo Google Play Store se:';
+                const appName = localStorage.getItem('selected_trust_name') || import.meta.env.VITE_DEFAULT_TRUST_NAME || 'Ek Udaan';
+                const shareText = `${appName} App - official community app. Download karo Google Play Store se:`;
                 const shareData = {
-                  title: 'MAH SETU - Maharaja Agrasen Hospital',
+                  title: appName,
                   text: shareText,
                   url: APP_URL,
                 };
@@ -394,7 +395,7 @@ const Sidebar = ({ isOpen, onClose, onNavigate, currentPage, onLogout }) => {
                       title: shareData.title,
                       text: `${shareText} ${APP_URL}`,
                       url: APP_URL,
-                      dialogTitle: 'Share MAH SETU App',
+                      dialogTitle: `Share ${appName} App`,
                     });
                     return;
                   }

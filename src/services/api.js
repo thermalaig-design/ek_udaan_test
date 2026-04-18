@@ -1,5 +1,6 @@
 ﻿import axios from 'axios';
 import { getCurrentNotificationContext } from './notificationAudience';
+import { supabase } from './supabaseClient.js';
 
 const buildNotificationContentKey = (notification) => {
   const title = String(notification?.title || '').trim().toLowerCase();
@@ -495,11 +496,9 @@ export const saveProfile = async (profileData, profilePhotoFile) => {
     throw error;
   }
 };
-// Get marquee updates â€” direct Supabase (no backend needed)
+// Get marquee updates Ã¢â‚¬â€ direct Supabase (no backend needed)
 export const getMarqueeUpdates = async (trustId = null, trustName = null) => {
   try {
-    const { supabase } = await import('./supabaseClient.js');
-
     // Resolve trustId from trustName if needed
     let resolvedTrustId = trustId || null;
     if (!resolvedTrustId && trustName) {
@@ -537,7 +536,6 @@ export const getMarqueeUpdates = async (trustId = null, trustName = null) => {
 // Get sponsor information
 export const getSponsors = async (trustId = null, trustName = null) => {
   try {
-    const { supabase } = await import('./supabaseClient.js');
     const getTodayLocal = () => {
       const now = new Date();
       const year = now.getFullYear();
@@ -592,6 +590,33 @@ export const getSponsors = async (trustId = null, trustName = null) => {
     if (!resolvedTrustId) {
       return { success: true, data: [] };
     }
+
+    const normalizeSponsor = (row, extra = {}) => ({
+      id: row?.id,
+      name: row?.name,
+      position: row?.position,
+      about: row?.about,
+      photo_url: row?.photo_url,
+      company_name: row?.company_name,
+      ref_no: row?.ref_no,
+      created_at: row?.created_at,
+      updated_at: row?.updated_at,
+      phone: row?.phone || row?.ContactNumber1 || null,
+      badge_label: row?.badge_label,
+      email_id: row?.email_id || row?.email_id1 || null,
+      address: row?.address,
+      city: row?.city,
+      state: row?.state,
+      whatsapp_number: row?.whatsapp_number,
+      website_url: row?.website_url,
+      catalog_url: row?.catalog_url,
+      ...extra
+    });
+
+    const isMissingColumnError = (err, table, column) => {
+      const message = String(err?.message || '').toLowerCase();
+      return message.includes(`column ${table}.${column} does not exist`);
+    };
 
     const sponsorFieldVariants = [
       `
@@ -673,91 +698,62 @@ export const getSponsors = async (trustId = null, trustName = null) => {
     ];
 
     const activeModes = ['is_active', 'status', 'none'];
-    let data = null;
-    let error = null;
+    const SCHEMA_CACHE_KEY = 'sponsor_schema_v1';
+    let cachedSchema = null;
 
-    for (const sponsorFields of sponsorFieldVariants) {
-      for (const flashFields of flashFieldVariants) {
-        for (const activeMode of activeModes) {
-          let query = supabase
-            .from('sponsor_flash')
-            .select(`
-              ${flashFields},
-              sponsors (${sponsorFields})
-            `)
-            .eq('trust_id', resolvedTrustId);
-
-          if (activeMode === 'is_active') {
-            query = query.eq('is_active', true);
-          } else if (activeMode === 'status') {
-            query = query.eq('status', 'active');
-          }
-
-          const result = await query;
-          data = result.data;
-          error = result.error;
-          if (!error) break;
-        }
-        if (!error) break;
-      }
-      if (!error) break;
+    try {
+      const stored =
+        (typeof window !== 'undefined' && localStorage.getItem(SCHEMA_CACHE_KEY)) ||
+        (typeof window !== 'undefined' && sessionStorage.getItem(SCHEMA_CACHE_KEY));
+      if (stored) cachedSchema = JSON.parse(stored);
+    } catch {
+      // ignore
     }
-
-    if (error) throw error;
 
     const today = getTodayLocal();
     const userMobileDigits = getUserMobileDigits();
-    const mapped = (data || [])
-      .filter((row) => {
-        const sponsor = Array.isArray(row?.sponsors) ? row.sponsors[0] : row?.sponsors || null;
-        if (!sponsor) return false;
-        const startDate = toDateOnly(row.start_date);
-        const endDate = toDateOnly(row.end_date);
-        if (row.start_date && !startDate) return false;
-        if (row.end_date && !endDate) return false;
-        const startOk = !startDate || startDate <= today;
-        // null end_date = no expiry (always active); otherwise must not be past
-        const endOk = !endDate || endDate >= today;
-        return startOk && endOk;
-      })
-      .map((row) => ({
-        sponsor_ref: Array.isArray(row?.sponsors) ? row.sponsors[0] || null : row?.sponsors || null,
-        flash_id: row.id,
-        trust_id: row.trust_id,
-        start_date: row.start_date,
-        end_date: row.end_date,
-        duration_seconds: row.duration_seconds,
-        flash_priority: row.priority
-      }))
-      .filter((item) => item.sponsor_ref)
-      .map((item) => ({
-        id: item.sponsor_ref.id,
-        name: item.sponsor_ref.name,
-        position: item.sponsor_ref.position,
-        about: item.sponsor_ref.about,
-        photo_url: item.sponsor_ref.photo_url,
-        company_name: item.sponsor_ref.company_name,
-        ref_no: item.sponsor_ref.ref_no,
-        created_at: item.sponsor_ref.created_at,
-        updated_at: item.sponsor_ref.updated_at,
-        phone: item.sponsor_ref.phone || item.sponsor_ref.ContactNumber1 || null,
-        badge_label: item.sponsor_ref.badge_label,
-        email_id: item.sponsor_ref.email_id || item.sponsor_ref.email_id1 || null,
-        address: item.sponsor_ref.address,
-        city: item.sponsor_ref.city,
-        state: item.sponsor_ref.state,
-        whatsapp_number: item.sponsor_ref.whatsapp_number,
-        website_url: item.sponsor_ref.website_url,
-        catalog_url: item.sponsor_ref.catalog_url,
-        is_user_match: isRefMatch(item.sponsor_ref.ref_no, userMobileDigits),
-        flash_id: item.flash_id,
-        trust_id: item.trust_id,
-        start_date: item.start_date,
-        end_date: item.end_date,
-        duration_seconds: item.duration_seconds,
-        flash_priority: item.flash_priority
-      }))
-      .sort((a, b) => {
+    let mapped = [];
+    let flashError = null;
+
+    // Fast path: try common schema first to avoid multiple sequential fallback queries.
+    // If this works, we return immediately for much faster first paint on Home.
+    const mapFlashRows = (rows) =>
+      (rows || [])
+        .filter((row) => {
+          const sponsor = Array.isArray(row?.sponsors) ? row.sponsors[0] : row?.sponsors || null;
+          if (!sponsor) return false;
+          const startDate = toDateOnly(row.start_date);
+          const endDate = toDateOnly(row.end_date);
+          if (row.start_date && !startDate) return false;
+          if (row.end_date && !endDate) return false;
+          const startOk = !startDate || startDate <= today;
+          const endOk = !endDate || endDate >= today;
+          return startOk && endOk;
+        })
+        .map((row) => ({
+          sponsor_ref: Array.isArray(row?.sponsors) ? row.sponsors[0] || null : row?.sponsors || null,
+          flash_id: row.id,
+          trust_id: row.trust_id,
+          start_date: row.start_date,
+          end_date: row.end_date,
+          duration_seconds: row.duration_seconds,
+          flash_priority: row.priority
+        }))
+        .filter((item) => item.sponsor_ref)
+        .map((item) =>
+          normalizeSponsor(item.sponsor_ref, {
+            is_user_match: isRefMatch(item.sponsor_ref.ref_no, userMobileDigits),
+            flash_id: item.flash_id,
+            trust_id: item.trust_id,
+            start_date: item.start_date,
+            end_date: item.end_date,
+            duration_seconds: item.duration_seconds,
+            flash_priority: item.flash_priority
+          })
+        );
+
+    const sortSponsors = (list) => {
+      list.sort((a, b) => {
         const priorityDiff = (b.flash_priority || 0) - (a.flash_priority || 0);
         if (priorityDiff !== 0) return priorityDiff;
         if (a.is_user_match !== b.is_user_match) return a.is_user_match ? -1 : 1;
@@ -765,14 +761,316 @@ export const getSponsors = async (trustId = null, trustName = null) => {
         if (refDiff !== 0) return refDiff;
         return String(a.company_name || '').localeCompare(String(b.company_name || ''));
       });
+      return list;
+    };
 
-    return { success: true, data: mapped };
+    if (cachedSchema?.mode !== 'direct') {
+      const fastFlashSelect = `
+        id,
+        trust_id,
+        start_date,
+        end_date,
+        duration_seconds,
+        priority,
+        sponsors (
+          id,
+          name,
+          position,
+          about,
+          photo_url,
+          company_name,
+          ref_no,
+          created_at,
+          updated_at,
+          phone,
+          badge_label,
+          email_id,
+          address,
+          city,
+          state,
+          whatsapp_number,
+          website_url,
+          catalog_url
+        )
+      `;
+      const fastFlashResult = await supabase
+        .from('sponsor_flash')
+        .select(fastFlashSelect)
+        .eq('trust_id', resolvedTrustId)
+        .eq('is_active', true)
+        .order('priority', { ascending: false });
+
+      if (!fastFlashResult.error) {
+        const fastMapped = mapFlashRows(fastFlashResult.data || []);
+        if (fastMapped.length > 0) {
+          return { success: true, data: sortSponsors(fastMapped) };
+        }
+      }
+    }
+
+    const fastDirectSelect = `
+      id,
+      trust_id,
+      name,
+      position,
+      about,
+      photo_url,
+      company_name,
+      ref_no,
+      priority,
+      created_at,
+      updated_at,
+      phone,
+      badge_label,
+      email_id,
+      address,
+      city,
+      state,
+      whatsapp_number,
+      website_url,
+      catalog_url
+    `;
+    const fastDirectResult = await supabase
+      .from('sponsors')
+      .select(fastDirectSelect)
+      .eq('trust_id', resolvedTrustId)
+      .eq('is_active', true)
+      .order('priority', { ascending: false });
+
+    if (!fastDirectResult.error) {
+      const fastDirectMapped = (fastDirectResult.data || []).map((row) =>
+        normalizeSponsor(row, {
+          trust_id: row?.trust_id || resolvedTrustId || null,
+          is_user_match: isRefMatch(row?.ref_no, userMobileDigits),
+          flash_id: null,
+          start_date: null,
+          end_date: null,
+          duration_seconds: null,
+          flash_priority: row?.priority || 0
+        })
+      );
+      return { success: true, data: sortSponsors(fastDirectMapped) };
+    }
+
+    if (cachedSchema?.mode !== 'direct') {
+      let data = null;
+      let error = null;
+
+      const tryFlashQuery = async (sponsorFields, flashFields, activeMode) => {
+        let query = supabase
+          .from('sponsor_flash')
+          .select(`${flashFields}, sponsors (${sponsorFields})`)
+          .eq('trust_id', resolvedTrustId);
+        if (activeMode === 'is_active') query = query.eq('is_active', true);
+        else if (activeMode === 'status') query = query.eq('status', 'active');
+        return await query;
+      };
+
+      if (cachedSchema && cachedSchema.sf && cachedSchema.ff && cachedSchema.am) {
+        const result = await tryFlashQuery(cachedSchema.sf, cachedSchema.ff, cachedSchema.am);
+        if (!result.error) {
+          data = result.data;
+          error = null;
+        } else {
+          cachedSchema = null;
+          try {
+            if (typeof window !== 'undefined') {
+              sessionStorage.removeItem(SCHEMA_CACHE_KEY);
+              localStorage.removeItem(SCHEMA_CACHE_KEY);
+            }
+          } catch {
+            // ignore
+          }
+        }
+      }
+
+      if (!cachedSchema) {
+        outer:
+        for (const sponsorFields of sponsorFieldVariants) {
+          for (const flashFields of flashFieldVariants) {
+            for (const activeMode of activeModes) {
+              const result = await tryFlashQuery(sponsorFields, flashFields, activeMode);
+              data = result.data;
+              error = result.error;
+              if (!error) {
+                try {
+                  if (typeof window !== 'undefined') {
+                    const payload = JSON.stringify({ sf: sponsorFields, ff: flashFields, am: activeMode });
+                    sessionStorage.setItem(SCHEMA_CACHE_KEY, payload);
+                    localStorage.setItem(SCHEMA_CACHE_KEY, payload);
+                  }
+                } catch {
+                  // ignore
+                }
+                break outer;
+              }
+            }
+          }
+        }
+      }
+
+      if (error) {
+        flashError = error;
+        try {
+          if (typeof window !== 'undefined') {
+            const payload = JSON.stringify({ mode: 'direct' });
+            sessionStorage.setItem(SCHEMA_CACHE_KEY, payload);
+            localStorage.setItem(SCHEMA_CACHE_KEY, payload);
+          }
+        } catch {
+          // ignore
+        }
+      } else {
+        mapped = (data || [])
+          .filter((row) => {
+            const sponsor = Array.isArray(row?.sponsors) ? row.sponsors[0] : row?.sponsors || null;
+            if (!sponsor) return false;
+            const startDate = toDateOnly(row.start_date);
+            const endDate = toDateOnly(row.end_date);
+            if (row.start_date && !startDate) return false;
+            if (row.end_date && !endDate) return false;
+            const startOk = !startDate || startDate <= today;
+            const endOk = !endDate || endDate >= today;
+            return startOk && endOk;
+          })
+          .map((row) => ({
+            sponsor_ref: Array.isArray(row?.sponsors) ? row.sponsors[0] || null : row?.sponsors || null,
+            flash_id: row.id,
+            trust_id: row.trust_id,
+            start_date: row.start_date,
+            end_date: row.end_date,
+            duration_seconds: row.duration_seconds,
+            flash_priority: row.priority
+          }))
+          .filter((item) => item.sponsor_ref)
+          .map((item) =>
+            normalizeSponsor(item.sponsor_ref, {
+              is_user_match: isRefMatch(item.sponsor_ref.ref_no, userMobileDigits),
+              flash_id: item.flash_id,
+              trust_id: item.trust_id,
+              start_date: item.start_date,
+              end_date: item.end_date,
+              duration_seconds: item.duration_seconds,
+              flash_priority: item.flash_priority
+            })
+          );
+      }
+    }
+
+    if (!mapped.length) {
+      const directFieldVariants = [
+        `
+          id,
+          trust_id,
+          name,
+          position,
+          about,
+          photo_url,
+          company_name,
+          ref_no,
+          priority,
+          created_at,
+          updated_at,
+          phone,
+          badge_label,
+          email_id,
+          address,
+          city,
+          state,
+          whatsapp_number,
+          website_url,
+          catalog_url
+        `,
+        `
+          id,
+          trust_id,
+          name,
+          position,
+          about,
+          photo_url,
+          company_name,
+          ref_no,
+          priority,
+          created_at,
+          updated_at,
+          "ContactNumber1",
+          badge_label,
+          email_id1,
+          address,
+          city,
+          state,
+          whatsapp_number,
+          website_url,
+          catalog_url
+        `,
+        `
+          id,
+          trust_id,
+          name,
+          position,
+          about,
+          photo_url,
+          company_name,
+          ref_no,
+          created_at,
+          updated_at
+        `
+      ];
+      const directActiveModes = ['is_active', 'status', 'none'];
+
+      let directRows = [];
+      let directError = null;
+
+      outerDirect:
+      for (const fields of directFieldVariants) {
+        for (const activeMode of directActiveModes) {
+          let query = supabase.from('sponsors').select(fields);
+          if (resolvedTrustId) query = query.eq('trust_id', resolvedTrustId);
+          if (activeMode === 'is_active') query = query.eq('is_active', true);
+          else if (activeMode === 'status') query = query.eq('status', 'active');
+
+          let result = await query;
+
+          if (result.error && resolvedTrustId && isMissingColumnError(result.error, 'sponsors', 'trust_id')) {
+            let trustlessQuery = supabase.from('sponsors').select(fields);
+            if (activeMode === 'is_active') trustlessQuery = trustlessQuery.eq('is_active', true);
+            else if (activeMode === 'status') trustlessQuery = trustlessQuery.eq('status', 'active');
+            result = await trustlessQuery;
+          }
+
+          directRows = result.data || [];
+          directError = result.error || null;
+
+          if (!directError) break outerDirect;
+        }
+      }
+
+      if (directError) {
+        if (flashError) {
+          console.warn('[Sponsors] sponsor_flash and direct sponsors lookup both failed:', flashError, directError);
+        }
+        throw directError;
+      }
+
+      mapped = (directRows || []).map((row) =>
+        normalizeSponsor(row, {
+          trust_id: row?.trust_id || resolvedTrustId || null,
+          is_user_match: isRefMatch(row?.ref_no, userMobileDigits),
+          flash_id: null,
+          start_date: null,
+          end_date: null,
+          duration_seconds: null,
+          flash_priority: row?.priority || 0
+        })
+      );
+    }
+
+    return { success: true, data: sortSponsors(mapped) };
   } catch (error) {
     console.error('Error fetching sponsors:', error);
     throw error;
   }
 };
-
 // Get specific sponsor by ID
 export const getSponsorById = async (id) => {
   try {
@@ -889,7 +1187,7 @@ export const getUserReports = async () => {
   }
 };
 
-// Get user notifications â€” directly from Supabase
+// Get user notifications Ã¢â‚¬â€ directly from Supabase
 export const getUserNotifications = async () => {
   try {
     const { supabase } = await import('./supabaseClient.js');
@@ -913,7 +1211,7 @@ export const getUserNotifications = async () => {
       const patientName = String(row?.patient_name || '').trim();
       const membershipNumber = String(row?.membership_number || '').trim();
       const appointmentUserId = String(row?.user_id || '').trim();
-      // âœ… patient_phone explicitly â€” this is what the Supabase trigger stores as user_id
+      // Ã¢Å“â€¦ patient_phone explicitly Ã¢â‚¬â€ this is what the Supabase trigger stores as user_id
       const patientPhone = String(row?.patient_phone || '').trim();
 
       if (patientName) fallbackUserIds.add(patientName);
@@ -983,7 +1281,7 @@ export const getUserNotifications = async () => {
   }
 };
 
-// Mark notification as read â€” directly via Supabase
+// Mark notification as read Ã¢â‚¬â€ directly via Supabase
 export const markNotificationAsRead = async (id) => {
   try {
     const { supabase } = await import('./supabaseClient.js');
@@ -1000,7 +1298,7 @@ export const markNotificationAsRead = async (id) => {
   }
 };
 
-// Mark all notifications as read â€” directly via Supabase
+// Mark all notifications as read Ã¢â‚¬â€ directly via Supabase
 export const markAllNotificationsAsRead = async () => {
   try {
     const { supabase } = await import('./supabaseClient.js');
@@ -1027,7 +1325,7 @@ export const markAllNotificationsAsRead = async () => {
       if (membershipNumber) fallbackUserIds.add(membershipNumber);
       if (appointmentUserId) fallbackUserIds.add(appointmentUserId);
 
-      // âœ… patient_phone variants â€” matches notifications stored by trigger using patient_phone
+      // Ã¢Å“â€¦ patient_phone variants Ã¢â‚¬â€ matches notifications stored by trigger using patient_phone
       if (patientPhone) {
         fallbackUserIds.add(patientPhone);
         const digitsOnly = patientPhone.replace(/\D/g, '');
@@ -1072,7 +1370,7 @@ export const markAllNotificationsAsRead = async () => {
   }
 };
 
-// Get member trust links â€” direct Supabase query (no backend needed)
+// Get member trust links Ã¢â‚¬â€ direct Supabase query (no backend needed)
 export const getMemberTrustLinks = async (memberId) => {
   try {
     if (!memberId) {
@@ -1112,7 +1410,7 @@ export const getMemberTrustLinks = async (memberId) => {
   }
 };
 
-// Delete/dismiss a specific notification â€” uses Supabase directly (no backend needed)
+// Delete/dismiss a specific notification Ã¢â‚¬â€ uses Supabase directly (no backend needed)
 export const deleteNotification = async (id) => {
   try {
     const { supabase } = await import('./supabaseClient.js');
@@ -1189,11 +1487,12 @@ export const preloadCommonData = async () => {
       hospitals: hospitals.status === 'fulfilled' ? hospitals.value : null
     };
 
-    console.log('âœ… Preloaded common data for faster directory loading');
+    console.log('Ã¢Å“â€¦ Preloaded common data for faster directory loading');
     return result;
   } catch (error) {
     console.error('Error preloading common data:', error);
     return {};
   }
 };
+
 

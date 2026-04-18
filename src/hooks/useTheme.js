@@ -45,24 +45,28 @@ export const useTheme = (trustId) => {
             .maybeSingle()
         ]);
 
-        if (templateResult.error || !templateResult.data) {
-          setTheme({ ...DEFAULT_THEME, trustId });
-          return;
-        }
-
         const overrides = trustResult.data?.theme_overrides || {};
+        const templateRow = templateResult.data || {
+          id: null,
+          trust_id: trustId,
+          home_layout: DEFAULT_THEME.homeLayout,
+          animations: DEFAULT_THEME.animations,
+          custom_css: '',
+          template_key: DEFAULT_THEME.templateKey || 'mahila',
+          theme_config: DEFAULT_THEME.themeConfig || {}
+        };
         const resolved = buildThemeFromTemplate({
-          templateRow: templateResult.data,
+          templateRow,
           trustOverrides: overrides,
           trustId
         });
 
         console.log('[useTheme] Loaded from DB:', {
           trustId,
-          template: templateResult.data,
+          template: templateResult.data || null,
           overrides,
           resolved,
-          source: 'SUPABASE'
+          source: templateResult.data ? 'SUPABASE' : 'TRUST_OVERRIDES_ONLY'
         });
 
         sessionStorage.setItem(cacheKey, JSON.stringify(resolved));

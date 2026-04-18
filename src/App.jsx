@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Routes, Route, useNavigate, useLocation, Navigate } from 'react-router-dom';
 import { LocalNotifications } from '@capacitor/local-notifications';
 import { initPushNotifications } from './services/pushNotificationService';
@@ -32,6 +32,7 @@ import OtherMemberships from './OtherMemberships';
 import AdminUserProfiles from './admin/AdminUserProfiles';
 import { getCurrentNotificationContext, matchesNotificationForContext } from './services/notificationAudience';
 import { applyThemeCssVariables } from './utils/themeUtils';
+import { fetchTrustById } from './services/trustService';
 
 import {
   useAndroidBackHandler,
@@ -52,7 +53,20 @@ const HospitalTrusteeApp = () => {
   const [selectedMember, setSelectedMember] = useState(null);
   const [previousScreen, setPreviousScreen] = useState(null);
   const [previousScreenName, setPreviousScreenName] = useState(null);
-  const [activeTrustId, setActiveTrustId] = useState(() => localStorage.getItem('selected_trust_id') || '');
+  const [activeTrustId, setActiveTrustId] = useState(() => {
+    const selected = localStorage.getItem('selected_trust_id') || '';
+    if (selected) return selected;
+    try {
+      const cachedDefault = localStorage.getItem('default_trust_cache');
+      if (cachedDefault) {
+        const parsed = JSON.parse(cachedDefault);
+        if (parsed?.id) return String(parsed.id);
+      }
+    } catch {
+      // ignore malformed cache
+    }
+    return '';
+  });
   const { theme: appTheme } = useTheme(activeTrustId || null);
 
   // Initialize Android features
@@ -69,9 +83,33 @@ const HospitalTrusteeApp = () => {
     return !!user && user !== 'null' && user !== 'undefined' && isLoggedIn;
   };
 
+  const clearAuthAndRedirectToLogin = () => {
+    localStorage.removeItem('isLoggedIn');
+    localStorage.removeItem('user');
+    localStorage.removeItem(LAST_VISITED_ROUTE_KEY);
+    localStorage.removeItem('selected_trust_id');
+    localStorage.removeItem('selected_trust_name');
+    sessionStorage.removeItem('selectedMember');
+    sessionStorage.removeItem('previousScreen');
+    sessionStorage.removeItem('previousScreenName');
+    sessionStorage.removeItem('trust_selected_in_session');
+    navigate('/login', { replace: true });
+  };
+
   useEffect(() => {
     const syncTrustId = () => {
-      const next = localStorage.getItem('selected_trust_id') || '';
+      let next = localStorage.getItem('selected_trust_id') || '';
+      if (!next) {
+        try {
+          const cachedDefault = localStorage.getItem('default_trust_cache');
+          if (cachedDefault) {
+            const parsed = JSON.parse(cachedDefault);
+            next = parsed?.id ? String(parsed.id) : '';
+          }
+        } catch {
+          // ignore malformed cache
+        }
+      }
       setActiveTrustId((prev) => (prev === next ? prev : next));
     };
 
@@ -98,7 +136,6 @@ const HospitalTrusteeApp = () => {
 
   useEffect(() => {
     applyThemeCssVariables(appTheme);
-
     const styleId = 'trust-custom-css-global';
     const existing = document.getElementById(styleId);
     if (existing) existing.remove();
@@ -114,98 +151,7 @@ const HospitalTrusteeApp = () => {
     };
   }, [appTheme]);
 
-  const clearAuthAndRedirectToLogin = () => {
-    localStorage.removeItem('isLoggedIn');
-    localStorage.removeItem('user');
-    localStorage.removeItem(LAST_VISITED_ROUTE_KEY);
-    localStorage.removeItem('selected_trust_id');
-    localStorage.removeItem('selected_trust_name');
-    sessionStorage.removeItem('selectedMember');
-    sessionStorage.removeItem('previousScreen');
-    sessionStorage.removeItem('previousScreenName');
-    sessionStorage.removeItem('trust_selected_in_session');
-    navigate('/login', { replace: true });
-  };
-
-  // Persist current route so app can resume where user left off after app restart.
-  // Note: /vip-login is intentionally saved (not filtered out) so registered members
-  // always return to their VIP home page.
-  useEffect(() => {
-    if (!isAuthenticated()) return;
-    // Save all authenticated routes, including /vip-login
-    const doNotSave = ['/login', '/otp-verification', '/special-otp-verification', '/terms-and-conditions', '/privacy-policy'];
-    if (doNotSave.includes(location.pathname)) return;
-    localStorage.setItem(LAST_VISITED_ROUTE_KEY, location.pathname);
-  }, [location.pathname]);
-
-  // On app boot/reopen: restore last route for logged-in users, otherwise force login route.
-  useEffect(() => {
-    const authed = isAuthenticated();
-    if (!authed) {
-      if (!PUBLIC_ROUTES.includes(location.pathname)) {
-        console.log('ðŸ” Not authenticated, redirecting to login');
-        navigate('/login', { replace: true });
-      }
-      return;
-    }
-
-    const savedRoute = localStorage.getItem(LAST_VISITED_ROUTE_KEY);
-    console.log('ðŸ“ App mounted - Current path:', location.pathname, 'Saved route:', savedRoute);
-
-    // Restore saved route when at root â€” skip if already on the right page
-    const noRestoreRoutes = ['/login', '/otp-verification', '/special-otp-verification', '/terms-and-conditions', '/privacy-policy'];
-    if (location.pathname === '/' && savedRoute && !noRestoreRoutes.includes(savedRoute) && savedRoute !== '/') {
-      console.log('â¬…ï¸ Restoring saved route:', savedRoute);
-      setTimeout(() => {
-        navigate(savedRoute, { replace: true });
-      }, 100);
-    }
-  }, []);
-
-  // â”€â”€â”€ Notification Tap â†’ Open Notifications Page â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-  useEffect(() => {
-    // When user taps a phone notification, navigate to /notifications
-    const subscription = LocalNotifications.addListener(
-      'localNotificationActionPerformed',
-      (action) => {
-        console.log('ðŸ”” Notification tapped:', action);
-        const notificationId =
-          action?.notification?.extra?.notificationId ||
-          action?.notification?.extra?.notification_id ||
-          action?.notification?.data?.notificationId ||
-          action?.notification?.id ||
-          null;
-
-        if (notificationId) {
-          sessionStorage.setItem('openNotificationId', String(notificationId));
-        }
-
-        const isLoggedIn = localStorage.getItem('isLoggedIn');
-        if (isLoggedIn) {
-          navigate('/notifications');
-        }
-      }
-    );
-    return () => {
-      subscription.then(s => s.remove()).catch(() => { });
-    };
-  }, [navigate]);
-
-  // â”€â”€â”€ FCM Push Registration (Android) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-  useEffect(() => {
-    let cleanup;
-    const setupPush = async () => {
-      cleanup = await initPushNotifications();
-    };
-    setupPush();
-    return () => {
-      if (typeof cleanup === 'function') {
-        cleanup();
-      }
-    };
-  }, []);
-
-  // â”€â”€â”€ Push Tap Deep Link Fallback â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // Push tap deep link fallback
   useEffect(() => {
     const shouldOpen = localStorage.getItem('openNotificationsFromPush');
     const isLoggedIn = localStorage.getItem('isLoggedIn');

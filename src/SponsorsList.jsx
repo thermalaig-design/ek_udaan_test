@@ -4,6 +4,9 @@ import { getSponsors } from './services/api';
 import { fetchMemberTrusts, fetchTrustById } from './services/trustService';
 import { useTheme } from './hooks';
 
+const SPONSORS_LIST_CACHE_PREFIX = 'sponsors_list_cache_v1';
+const buildSponsorsListCacheKey = (trustId) => `${SPONSORS_LIST_CACHE_PREFIX}_${trustId || 'all'}`;
+
 const SponsorsList = ({ onNavigate, onBack }) => {
   const [trusts, setTrusts] = useState([]);
   const [trustSponsors, setTrustSponsors] = useState({});
@@ -20,8 +23,56 @@ const SponsorsList = ({ onNavigate, onBack }) => {
 
   useEffect(() => {
     const loadTrustsAndSponsors = async () => {
+      const cacheKey = buildSponsorsListCacheKey(selectedTrustId);
+      let cacheApplied = false;
+
+      // Show cached sponsors instantly; refresh from API in background.
       try {
-        setIsLoading(true);
+        const cached = localStorage.getItem(cacheKey);
+        if (cached) {
+          const parsed = JSON.parse(cached);
+          const cachedTrusts = Array.isArray(parsed?.trusts) ? parsed.trusts : [];
+          const cachedMap = parsed?.sponsorsByTrust && typeof parsed.sponsorsByTrust === 'object'
+            ? parsed.sponsorsByTrust
+            : {};
+          const hasAnySponsors = Object.values(cachedMap).some(
+            (list) => Array.isArray(list) && list.length > 0
+          );
+
+          if (cachedTrusts.length > 0 && hasAnySponsors) {
+            setTrusts(cachedTrusts);
+            setTrustSponsors(cachedMap);
+            setIsLoading(false);
+            cacheApplied = true;
+          }
+        }
+      } catch {
+        // ignore malformed cache
+      }
+
+      if (!cacheApplied && selectedTrustId) {
+        try {
+          const trustName = localStorage.getItem('selected_trust_name') || 'Trust Sponsors';
+          const rawSponsorCache = localStorage.getItem(`sponsors_cache_${selectedTrustId}`);
+          if (rawSponsorCache) {
+            const parsedSponsorCache = JSON.parse(rawSponsorCache);
+            const sponsorList = Array.isArray(parsedSponsorCache)
+              ? parsedSponsorCache
+              : (Array.isArray(parsedSponsorCache?.data) ? parsedSponsorCache.data : []);
+            if (Array.isArray(sponsorList) && sponsorList.length > 0) {
+              setTrusts([{ id: selectedTrustId, name: trustName, is_active: true }]);
+              setTrustSponsors({ [selectedTrustId]: sponsorList });
+              setIsLoading(false);
+              cacheApplied = true;
+            }
+          }
+        } catch {
+          // ignore malformed cache
+        }
+      }
+
+      try {
+        if (!cacheApplied) setIsLoading(true);
         const userStr = localStorage.getItem('user');
         const user = userStr ? JSON.parse(userStr) : null;
         const membersId = user?.members_id || user?.member_id || user?.id || null;
@@ -68,10 +119,24 @@ const SponsorsList = ({ onNavigate, onBack }) => {
         }, {});
 
         setTrustSponsors(sponsorMap);
+        try {
+          localStorage.setItem(
+            cacheKey,
+            JSON.stringify({
+              ts: Date.now(),
+              trusts: uniqueTrusts,
+              sponsorsByTrust: sponsorMap
+            })
+          );
+        } catch {
+          // ignore cache write failures
+        }
       } catch (err) {
         console.error('Error loading sponsor list:', err);
-        setTrusts([]);
-        setTrustSponsors({});
+        if (!cacheApplied) {
+          setTrusts([]);
+          setTrustSponsors({});
+        }
       } finally {
         setIsLoading(false);
       }

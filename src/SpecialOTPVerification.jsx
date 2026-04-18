@@ -4,6 +4,9 @@ import { useBackNavigation } from './hooks';
 import { specialLogin } from './services/authService';
 import { fetchDirectoryData } from './services/directoryService';
 
+const OTP_FLOW_KEY = 'otp_flow_allowed';
+const TRUST_ID = import.meta.env.VITE_DEFAULT_TRUST_ID || 'b353d2ff-ec3b-4b90-a896-69f40662084e';
+
 function SpecialOTPVerification() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -15,6 +18,19 @@ function SpecialOTPVerification() {
 
   const user = location.state?.user || null;
   const phoneNumber = location.state?.phoneNumber || '';
+  const isSpecialFlowAllowed = sessionStorage.getItem(OTP_FLOW_KEY) === 'special';
+  const canRenderSpecialOtp = Boolean(user && phoneNumber && isSpecialFlowAllowed);
+
+  React.useEffect(() => {
+    const isLoggedIn = localStorage.getItem('isLoggedIn') === 'true';
+    if (isLoggedIn) {
+      navigate('/', { replace: true });
+      return;
+    }
+    if (!canRenderSpecialOtp) {
+      navigate('/login', { replace: true });
+    }
+  }, [canRenderSpecialOtp, navigate]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -30,13 +46,29 @@ function SpecialOTPVerification() {
       if (user) {
         localStorage.setItem('user', JSON.stringify(user));
         localStorage.setItem('isLoggedIn', 'true');
-        const selectedTrustId = user?.primary_trust?.id || localStorage.getItem('selected_trust_id');
-        const selectedTrustName = user?.primary_trust?.name || localStorage.getItem('selected_trust_name');
+        const memberships = Array.isArray(user?.hospital_memberships) ? user.hospital_memberships : [];
+        const baseMembership = memberships.find((m) => String(m?.trust_id || '') === String(TRUST_ID));
+        const fallbackMembership = baseMembership ||
+          memberships.find((m) => m?.is_active && m?.trust_id) ||
+          memberships[0] ||
+          null;
+        const selectedTrustId =
+          fallbackMembership?.trust_id ||
+          user?.primary_trust?.id ||
+          localStorage.getItem('selected_trust_id') ||
+          TRUST_ID;
+        const selectedTrustName =
+          fallbackMembership?.trust_name ||
+          user?.primary_trust?.name ||
+          localStorage.getItem('selected_trust_name');
+        if (selectedTrustId) localStorage.setItem('selected_trust_id', String(selectedTrustId));
+        if (selectedTrustName) localStorage.setItem('selected_trust_name', String(selectedTrustName));
         fetchDirectoryData(selectedTrustId || null, selectedTrustName || null).catch(err =>
           console.warn('Failed to pre-load directory data:', err)
         );
         try { sessionStorage.removeItem('trust_selected_in_session'); } catch { /* ignore */ }
-        navigate('/');
+        try { sessionStorage.removeItem(OTP_FLOW_KEY); } catch { /* ignore */ }
+        navigate('/', { replace: true });
       } else {
         setError('User data not found. Please try again.');
       }
@@ -48,7 +80,12 @@ function SpecialOTPVerification() {
     }
   };
 
-  const handleBack = () => navigate('/login');
+  const handleBack = () => {
+    try { sessionStorage.removeItem(OTP_FLOW_KEY); } catch { /* ignore */ }
+    navigate('/login', { replace: true });
+  };
+
+  if (!canRenderSpecialOtp) return null;
 
   return (
     <div className="brand-page min-h-screen flex items-center justify-center px-4 py-8 relative overflow-hidden">

@@ -4,6 +4,37 @@ const TABLE = 'gallery_photos';
 const FOLDERS_TABLE = 'gallery_folders';
 const BUCKET = 'gallery';
 export const UNASSIGNED_FOLDER_ID = 'unassigned';
+const GALLERY_CACHE_PREFIX = 'latest_gallery_cache_v1';
+const GALLERY_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
+const resolveLatestGalleryCacheKey = (trustId = null, limit = 6) => {
+  const trustKey = trustId ? String(trustId) : 'global';
+  return `${GALLERY_CACHE_PREFIX}:${trustKey}:${limit}`;
+};
+
+export const getCachedLatestGalleryImages = (trustId = null, limit = 6) => {
+  try {
+    const raw = sessionStorage.getItem(resolveLatestGalleryCacheKey(trustId, limit));
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!parsed?.ts || !Array.isArray(parsed?.data)) return [];
+    if (Date.now() - parsed.ts > GALLERY_CACHE_TTL_MS) return [];
+    return parsed.data;
+  } catch {
+    return [];
+  }
+};
+
+const setCachedLatestGalleryImages = (trustId = null, limit = 6, data = []) => {
+  try {
+    sessionStorage.setItem(
+      resolveLatestGalleryCacheKey(trustId, limit),
+      JSON.stringify({ ts: Date.now(), data: Array.isArray(data) ? data : [] })
+    );
+  } catch {
+    // ignore cache failures
+  }
+};
 
 function getPublicUrl(storagePath) {
   if (!storagePath) return null;
@@ -165,7 +196,13 @@ export async function fetchImagesByFolder(folderId = null, trustId = null) {
 }
 
 // Fetch latest gallery images from database
-export async function fetchLatestGalleryImages(limit = 6, trustId = null) {
+export async function fetchLatestGalleryImages(limit = 6, trustId = null, opts = {}) {
+  const preferCache = opts?.preferCache !== false;
+  if (preferCache) {
+    const cached = getCachedLatestGalleryImages(trustId, limit);
+    if (cached.length > 0) return cached;
+  }
+
   const joinSelect = trustId
     ? 'id, storage_path, folder_id, created_at, public_url, gallery_folders!inner ( id, name, trust_id )'
     : 'id, storage_path, folder_id, created_at, public_url, gallery_folders ( id, name, trust_id )';
@@ -183,7 +220,9 @@ export async function fetchLatestGalleryImages(limit = 6, trustId = null) {
 
   if (error) throw error;
 
-  return (data || []).map(mapRowToImage).filter((img) => img.url);
+  const mapped = (data || []).map(mapRowToImage).filter((img) => img.url);
+  setCachedLatestGalleryImages(trustId, limit, mapped);
+  return mapped;
 }
 
 // Fetch all gallery images from database

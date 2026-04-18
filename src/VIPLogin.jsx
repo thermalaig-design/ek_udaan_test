@@ -31,7 +31,7 @@ import { checkPhoneNumber, verifyOTP } from './services/authService';
 import { fetchDirectoryData } from './services/directoryService';
 import logo from '../new_logo.png';
 
-const DEFAULT_TRUST_NAME = 'Mahila Mandal';
+const DEFAULT_TRUST_NAME = import.meta.env.VITE_DEFAULT_TRUST_NAME || 'Ek Udaan';
 
 // ── Step definitions ──────────────────────────────────────────────────────────
 // step 'phone'     → enter phone number

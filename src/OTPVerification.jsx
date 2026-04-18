@@ -3,50 +3,95 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { useBackNavigation } from './hooks';
 import { verifyOTP } from './services/authService';
 import { fetchDirectoryData } from './services/directoryService';
-import { fetchDefaultTrust, fetchTrustByName } from './services/trustService';
+import { fetchTrustById } from './services/trustService';
 import { getMemberTrustLinks } from './services/api';
-import logo from '../new_logo.png';
 
+// ─── Constants ────────────────────────────────────────────────────────────────
+const TRUST_ID = import.meta.env.VITE_DEFAULT_TRUST_ID || 'b353d2ff-ec3b-4b90-a896-69f40662084e';
+const TRUST_CACHE_KEY = 'cached_trust_info';
+const TRUST_CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
+const STATIC_LOGO_URL = '/app-logo.png';
+const OTP_FLOW_KEY = 'otp_flow_allowed';
+
+// ─── Cache helpers ─────────────────────────────────────────────────────────────
+const getCachedTrust = () => {
+  try {
+    const raw = localStorage.getItem(TRUST_CACHE_KEY);
+    if (!raw) return null;
+    const { data, ts } = JSON.parse(raw);
+    if (Date.now() - ts > TRUST_CACHE_TTL_MS) {
+      localStorage.removeItem(TRUST_CACHE_KEY);
+      return null;
+    }
+    return data;
+  } catch {
+    return null;
+  }
+};
+
+const setCachedTrust = (trust) => {
+  try {
+    localStorage.setItem(TRUST_CACHE_KEY, JSON.stringify({ data: trust, ts: Date.now() }));
+  } catch { /* ignore */ }
+};
+
+// ─── Component ─────────────────────────────────────────────────────────────────
 function OTPVerification() {
   const navigate = useNavigate();
   const location = useLocation();
   useBackNavigation(() => navigate('/login'));
+
   const [otp, setOtp] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [focused, setFocused] = useState(false);
-  const [trustInfo, setTrustInfo] = useState(null);
+
+  // Serve from cache instantly — no flash
+  const [trustInfo, setTrustInfo] = useState(() => getCachedTrust() || null);
 
   const user = location.state?.user || null;
   const phoneNumber = location.state?.phoneNumber || '';
+  const isOtpFlowAllowed = sessionStorage.getItem(OTP_FLOW_KEY) === 'normal';
+  const canRenderOtpPage = Boolean(user && phoneNumber && isOtpFlowAllowed);
 
   useEffect(() => {
-    let isActive = true;
-    const loadTrust = async () => {
+    const isLoggedIn = localStorage.getItem('isLoggedIn') === 'true';
+    if (isLoggedIn) {
+      navigate('/', { replace: true });
+      return;
+    }
+    if (!canRenderOtpPage) {
+      navigate('/login', { replace: true });
+    }
+  }, [canRenderOtpPage, navigate]);
+
+  // Keep trust info fresh (background refresh, no blocking)
+  useEffect(() => {
+    let active = true;
+
+    const refresh = async () => {
       try {
-        const namedTrust = await fetchTrustByName('Mahila Mandal');
-        if (namedTrust) {
-          setTrustInfo(namedTrust);
-          if (namedTrust.id) localStorage.setItem('selected_trust_id', namedTrust.id);
-          if (namedTrust.name) localStorage.setItem('selected_trust_name', namedTrust.name);
-          return;
-        }
-        const preferredTrustId = localStorage.getItem('selected_trust_id');
-        const trust = await fetchDefaultTrust(preferredTrustId);
-        if (isActive) setTrustInfo(trust);
-        if (trust?.name) localStorage.setItem('selected_trust_name', trust.name);
+        const trust = await fetchTrustById(TRUST_ID);
+        if (!active || !trust) return;
+        setTrustInfo(trust);
+        setCachedTrust(trust);
+        localStorage.setItem('selected_trust_id', trust.id);
+        localStorage.setItem('selected_trust_name', trust.name || '');
       } catch (err) {
-        console.warn('Failed to load trust info for OTP:', err);
+        console.warn('[OTP] Trust refresh failed:', err?.message || err);
       }
     };
-    loadTrust();
-    return () => { isActive = false; };
-  }, [user]);
 
+    refresh();
+    return () => { active = false; };
+  }, []);
+
+  // ─── OTP Submit ─────────────────────────────────────────────────────────────
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
     setError('');
+
     try {
       const result = await verifyOTP(phoneNumber, otp);
       if (!result.success) {
@@ -54,166 +99,360 @@ function OTPVerification() {
         setLoading(false);
         return;
       }
-      if (user) {
-        localStorage.setItem('user', JSON.stringify(user));
-        localStorage.setItem('isLoggedIn', 'true');
-        const selectedTrustId = user?.primary_trust?.id || localStorage.getItem('selected_trust_id');
-        const selectedTrustName = user?.primary_trust?.name || localStorage.getItem('selected_trust_name');
-        fetchDirectoryData(selectedTrustId || null, selectedTrustName || null).catch(err =>
-          console.warn('Failed to pre-load directory data:', err)
-        );
-        // Pre-fetch and cache member trust links for sidebar
-        const membersId = user?.members_id || user?.id;
-        if (membersId) {
-          getMemberTrustLinks(membersId).then((res) => {
+
+      if (!user) {
+        setError('User data not found. Please go back and try again.');
+        setLoading(false);
+        return;
+      }
+
+      // Persist session
+      localStorage.setItem('user', JSON.stringify(user));
+      localStorage.setItem('isLoggedIn', 'true');
+
+      const memberships = Array.isArray(user?.hospital_memberships) ? user.hospital_memberships : [];
+      const baseMembership = memberships.find((m) => String(m?.trust_id || '') === String(TRUST_ID));
+      const fallbackMembership = baseMembership ||
+        memberships.find((m) => m?.is_active && m?.trust_id) ||
+        memberships[0] ||
+        null;
+      const selectedTrustId =
+        fallbackMembership?.trust_id ||
+        user?.primary_trust?.id ||
+        localStorage.getItem('selected_trust_id') ||
+        TRUST_ID;
+      const selectedTrustName =
+        fallbackMembership?.trust_name ||
+        user?.primary_trust?.name ||
+        localStorage.getItem('selected_trust_name') ||
+        '';
+
+      if (selectedTrustId) localStorage.setItem('selected_trust_id', String(selectedTrustId));
+      if (selectedTrustName) localStorage.setItem('selected_trust_name', String(selectedTrustName));
+
+      // Pre-warm directory cache in background (non-blocking)
+      fetchDirectoryData(selectedTrustId, selectedTrustName).catch(err =>
+        console.warn('[OTP] Directory pre-fetch failed:', err)
+      );
+
+      // Pre-cache member trust links for sidebar (non-blocking)
+      const membersId = user?.members_id || user?.id;
+      if (membersId) {
+        getMemberTrustLinks(membersId)
+          .then(res => {
             if (res.success && Array.isArray(res.data) && res.data.length > 0) {
               localStorage.setItem(`memberTrustLinks_${membersId}`, JSON.stringify(res.data));
-              console.log(`✅ Pre-cached ${res.data.length} trust link(s) for member ${membersId}`);
             }
-          }).catch((err) => console.warn('Failed to pre-load trust links:', err));
-        }
-        try { sessionStorage.removeItem('trust_selected_in_session'); } catch { /* ignore */ }
-        navigate('/', { replace: true });
-      } else {
-        setError('User data not found. Please try again.');
+          })
+          .catch(err => console.warn('[OTP] Trust links pre-fetch failed:', err));
       }
+
+      try { sessionStorage.removeItem('trust_selected_in_session'); } catch { /* ignore */ }
+      try { sessionStorage.removeItem(OTP_FLOW_KEY); } catch { /* ignore */ }
+
+      navigate('/', { replace: true });
     } catch (err) {
-      console.error('❌ Error verifying OTP:', err);
+      console.error('[OTP] Verify error:', err);
       setError('Failed to verify OTP. Please try again.');
     } finally {
       setLoading(false);
     }
   };
 
-  const handleBack = () => navigate('/login');
+  const handleBack = () => {
+    try { sessionStorage.removeItem(OTP_FLOW_KEY); } catch { /* ignore */ }
+    navigate('/login', { replace: true });
+  };
 
+  // ─── Derived values ──────────────────────────────────────────────────────────
+  const displayLogo = trustInfo?.icon_url || STATIC_LOGO_URL;
+  const displayName = trustInfo?.name || '';
+
+  if (!canRenderOtpPage) return null;
+
+  // ─── Render ──────────────────────────────────────────────────────────────────
   return (
-    <div className="brand-page min-h-screen flex items-center justify-center px-4 py-8 relative overflow-hidden">
-      {/* Decorative blobs */}
-      <div className="pointer-events-none absolute -top-20 -left-20 w-72 h-72 rounded-full"
-        style={{ background: 'radial-gradient(circle, rgba(192,36,26,0.15) 0%, transparent 70%)' }} />
-      <div className="pointer-events-none absolute -bottom-24 -right-16 w-80 h-80 rounded-full"
-        style={{ background: 'radial-gradient(circle, rgba(43,47,126,0.12) 0%, transparent 70%)' }} />
+    <div style={styles.page}>
+      {/* Ambient blobs */}
+      <div style={styles.blobTL} />
+      <div style={styles.blobBR} />
 
-      <div className="relative w-full max-w-md" style={{ animation: 'fadeUp 0.5s ease-out both' }}>
-        <div className="brand-card overflow-hidden">
+      <div style={styles.wrapper}>
+        <div style={styles.card}>
+
           {/* Top accent bar */}
-          <div className="brand-accent-bar" />
+          <div style={styles.topBar} />
 
           {/* Logo */}
-          <div className="flex justify-center mt-6 mb-4">
-            <div className="w-20 h-20 rounded-full flex items-center justify-center p-1"
-              style={{ boxShadow: '0 0 0 4px #FDECEA, 0 6px 20px rgba(192,36,26,0.18)', background: '#fff' }}>
+          <div style={styles.logoWrap}>
+            <div style={styles.logoRing}>
               <img
-                src={trustInfo?.icon_url || logo}
-                alt={trustInfo?.name || 'Hospital Logo'}
-                className="w-full h-full object-contain rounded-full"
+                src={displayLogo}
+                alt={displayName || 'Trust Logo'}
+                style={styles.logoImg}
                 loading="eager"
+                onError={(e) => {
+                  e.currentTarget.onerror = null;
+                  e.currentTarget.src = STATIC_LOGO_URL;
+                }}
               />
             </div>
           </div>
 
           {/* Header */}
-          <div className="text-center px-6 mb-6">
-            <h2 className="text-2xl font-extrabold tracking-tight" style={{ color: '#2B2F7E' }}>
-              Verify OTP
-            </h2>
-            <div className="flex items-center justify-center gap-2 mt-2 mb-3">
-              <span className="flex-1 h-px" style={{ background: 'linear-gradient(to right, transparent, #C0241A)' }} />
-              <span className="w-1.5 h-1.5 rounded-full" style={{ background: '#C0241A' }} />
-              <span className="flex-1 h-px" style={{ background: 'linear-gradient(to left, transparent, #C0241A)' }} />
+          <div style={styles.headerWrap}>
+            <h1 style={styles.heading}>Verify OTP</h1>
+            <div style={styles.divider}>
+              <span style={styles.divLine} />
+              <span style={styles.divDot} />
+              <span style={styles.divLine} />
             </div>
-            <p className="text-sm text-gray-500 font-medium">
-              Enter the 6-digit OTP sent to
-            </p>
+            <p style={styles.subtext}>Enter the 6-digit OTP sent to</p>
             {phoneNumber && (
-              <p className="font-bold text-base mt-1" style={{ color: '#2B2F7E' }}>
-                +91 {phoneNumber}
-              </p>
+              <p style={styles.phone}>+91 {phoneNumber}</p>
             )}
           </div>
 
           {/* Form */}
-          <form onSubmit={handleSubmit} className="px-6 pb-6 space-y-4">
+          <form onSubmit={handleSubmit} style={styles.form}>
             <div>
-              <label className="block text-xs font-bold uppercase tracking-widest mb-2"
-                style={{ color: '#2B2F7E' }}>
-                OTP Code
-              </label>
+              <label style={styles.label}>OTP Code</label>
               <input
                 type="text"
                 placeholder="— — — — — —"
                 value={otp}
-                onChange={(e) => setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                onChange={e => setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
                 maxLength={6}
                 required
                 onFocus={() => setFocused(true)}
                 onBlur={() => setFocused(false)}
-                className="w-full px-5 py-4 text-2xl text-center tracking-[0.5em] font-bold rounded-2xl outline-none transition-all"
+                autoComplete="one-time-code"
+                inputMode="numeric"
                 style={{
-                  border: focused ? '2px solid #C0241A' : '2px solid #e2e8f0',
-                  background: focused ? '#fff8f8' : '#f8fafc',
-                  color: '#1e293b',
-                  boxShadow: focused ? '0 0 0 4px rgba(192,36,26,0.10)' : 'none',
-                  fontFamily: "'Inter', sans-serif",
+                  ...styles.otpInput,
+                  ...(focused ? styles.otpInputFocus : {}),
                 }}
               />
             </div>
 
             {error && (
-              <div className="rounded-2xl px-4 py-3 text-sm font-medium flex items-center gap-2"
-                style={{ background: '#FDECEA', border: '1.5px solid rgba(192,36,26,0.25)', color: '#9B1A13' }}>
+              <div style={styles.errorBox}>
                 <span>⚠️</span>
                 <span>{error}</span>
               </div>
             )}
 
-            <div className="flex gap-3 pt-1">
+            <div style={styles.btnRow}>
               <button
                 type="button"
                 onClick={handleBack}
-                className="flex-1 py-4 rounded-2xl font-bold text-base transition-all active:scale-[0.98]"
-                style={{ background: '#EAEBF8', color: '#2B2F7E' }}
+                style={styles.backBtn}
               >
                 ← Back
               </button>
               <button
                 type="submit"
                 disabled={loading || otp.length !== 6}
-                className="flex-[2] py-4 rounded-2xl font-bold text-base text-white transition-all active:scale-[0.98] btn-brand"
+                style={{
+                  ...styles.verifyBtn,
+                  ...(loading || otp.length !== 6 ? styles.verifyBtnDisabled : {}),
+                }}
               >
                 {loading ? (
-                  <span className="flex items-center justify-center gap-2">
-                    <span className="inline-block w-4 h-4 border-2 border-white/30 border-t-white rounded-full"
-                      style={{ animation: 'spin 0.75s linear infinite' }} />
-                    Verifying...
+                  <span style={styles.btnInner}>
+                    <span style={styles.spinner} />
+                    Verifying…
                   </span>
-                ) : 'Verify OTP ✓'}
+                ) : (
+                  <span style={styles.btnInner}>Verify OTP ✓</span>
+                )}
               </button>
             </div>
           </form>
 
           {/* Resend */}
-          <div className="border-t pb-5 pt-4 text-center" style={{ borderColor: '#f1f5f9' }}>
-            <p className="text-sm text-gray-500">
+          <div style={styles.resendWrap}>
+            <p style={styles.resendText}>
               Didn't receive the OTP?{' '}
-              <button
-                onClick={handleBack}
-                className="font-bold transition-colors"
-                style={{ color: '#C0241A' }}
-              >
+              <button onClick={handleBack} style={styles.resendBtn}>
                 Try again
               </button>
             </p>
           </div>
+
         </div>
       </div>
 
       <style>{`
-        @keyframes spin { to { transform: rotate(360deg); } }
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+        @keyframes fadeUp {
+          from { opacity: 0; transform: translateY(28px); }
+          to   { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes float1 {
+          0%,100% { transform: translateY(0) scale(1); }
+          50%      { transform: translateY(-20px) scale(1.05); }
+        }
+        @keyframes float2 {
+          0%,100% { transform: translateY(0) scale(1); }
+          50%      { transform: translateY(16px) scale(0.97); }
+        }
+        @keyframes pulseRing {
+          0%,100% { box-shadow: 0 0 0 0   rgba(192,36,26,0.20); }
+          50%      { box-shadow: 0 0 0 12px rgba(192,36,26,0); }
+        }
+        @keyframes spin {
+          to { transform: rotate(360deg); }
+        }
       `}</style>
     </div>
   );
 }
+
+// ─── Design tokens ─────────────────────────────────────────────────────────────
+const RED      = '#C0241A';
+const RED_DARK = '#9B1A13';
+const NAVY     = '#2B2F7E';
+const WHITE    = '#FFFFFF';
+const GRAY     = '#64748b';
+const BORDER   = '#e2e8f0';
+
+const styles = {
+  page: {
+    fontFamily: "'Inter', sans-serif",
+    minHeight: '100vh',
+    background: 'linear-gradient(135deg, #fff5f5 0%, #ffffff 40%, #f0f1fb 100%)',
+    position: 'relative', overflow: 'hidden',
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    padding: '24px 16px',
+  },
+  blobTL: {
+    position: 'absolute', top: '-80px', left: '-80px',
+    width: '300px', height: '300px', borderRadius: '50%',
+    background: 'radial-gradient(circle, rgba(192,36,26,0.15) 0%, transparent 70%)',
+    animation: 'float1 7s ease-in-out infinite', pointerEvents: 'none',
+  },
+  blobBR: {
+    position: 'absolute', bottom: '-100px', right: '-80px',
+    width: '340px', height: '340px', borderRadius: '50%',
+    background: 'radial-gradient(circle, rgba(43,47,126,0.12) 0%, transparent 70%)',
+    animation: 'float2 9s ease-in-out infinite', pointerEvents: 'none',
+  },
+  wrapper: {
+    position: 'relative', width: '100%', maxWidth: '420px',
+    animation: 'fadeUp 0.55s ease-out both',
+  },
+  card: {
+    background: WHITE, borderRadius: '28px',
+    boxShadow: '0 24px 60px rgba(192,36,26,0.10), 0 8px 24px rgba(43,47,126,0.08)',
+    border: '1px solid rgba(192,36,26,0.10)',
+    overflow: 'hidden', padding: '0 0 28px 0',
+  },
+  topBar: {
+    height: '5px',
+    background: `linear-gradient(90deg, ${RED} 0%, ${NAVY} 60%, ${RED} 100%)`,
+  },
+  logoWrap: {
+    display: 'flex', justifyContent: 'center',
+    marginTop: '28px', marginBottom: '16px',
+  },
+  logoRing: {
+    width: '80px', height: '80px', borderRadius: '50%',
+    background: WHITE,
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    boxShadow: '0 0 0 4px #FDECEA, 0 6px 20px rgba(192,36,26,0.18)',
+    animation: 'pulseRing 3s ease-in-out infinite',
+    padding: '6px',
+  },
+  logoImg: {
+    width: '100%', height: '100%',
+    objectFit: 'contain', borderRadius: '50%',
+  },
+  logoMonogram: {
+    width: '100%', height: '100%', borderRadius: '50%',
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    background: 'linear-gradient(135deg, #FDECEA 0%, #EAEBF8 100%)',
+    color: NAVY, fontWeight: 800, fontSize: '24px', letterSpacing: '1px',
+  },
+
+  headerWrap: { textAlign: 'center', padding: '0 24px', marginBottom: '20px' },
+  heading: { fontSize: '24px', fontWeight: 800, color: NAVY, margin: '0 0 6px 0', letterSpacing: '-0.4px' },
+  divider: {
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    gap: '8px', margin: '0 auto 10px auto', width: '120px',
+  },
+  divLine: {
+    flex: 1, height: '1.5px',
+    background: `linear-gradient(to right, transparent, ${RED})`,
+    borderRadius: '2px',
+  },
+  divDot: { width: '6px', height: '6px', borderRadius: '50%', background: RED, display: 'inline-block' },
+  subtext: { fontSize: '13px', color: GRAY, margin: 0, fontWeight: 500 },
+  phone: { fontSize: '16px', fontWeight: 700, color: NAVY, margin: '4px 0 0 0' },
+
+  form: { padding: '0 24px', display: 'flex', flexDirection: 'column', gap: '14px' },
+  label: { display: 'block', fontSize: '12px', fontWeight: 700, color: NAVY, textTransform: 'uppercase', letterSpacing: '0.10em', marginBottom: '8px' },
+  otpInput: {
+    width: '100%', boxSizing: 'border-box',
+    padding: '16px 12px', fontSize: '28px',
+    textAlign: 'center', letterSpacing: '0.5em',
+    fontWeight: 700, color: '#1e293b',
+    border: `2px solid ${BORDER}`, borderRadius: '16px',
+    background: '#f8fafc', outline: 'none',
+    fontFamily: "'Inter', monospace",
+    transition: 'all 0.22s ease',
+  },
+  otpInputFocus: {
+    borderColor: RED, background: '#fff8f8',
+    boxShadow: '0 0 0 4px rgba(192,36,26,0.10)',
+  },
+
+  errorBox: {
+    display: 'flex', alignItems: 'center', gap: '8px',
+    background: '#FDECEA', border: '1.5px solid rgba(192,36,26,0.25)',
+    borderRadius: '12px', padding: '12px 14px',
+    fontSize: '13px', fontWeight: 500, color: RED_DARK,
+  },
+
+  btnRow: { display: 'flex', gap: '12px', marginTop: '4px' },
+  backBtn: {
+    flex: 1, padding: '14px', borderRadius: '16px',
+    border: 'none', cursor: 'pointer',
+    background: '#EAEBF8', color: NAVY,
+    fontSize: '15px', fontWeight: 700,
+    fontFamily: "'Inter', sans-serif",
+    transition: 'all 0.2s ease',
+  },
+  verifyBtn: {
+    flex: 2, padding: '14px', borderRadius: '16px',
+    border: 'none', cursor: 'pointer',
+    background: `linear-gradient(135deg, ${RED} 0%, ${RED_DARK} 50%, ${NAVY} 100%)`,
+    color: WHITE, fontSize: '15px', fontWeight: 700,
+    fontFamily: "'Inter', sans-serif",
+    boxShadow: '0 8px 24px rgba(192,36,26,0.30)',
+    transition: 'all 0.2s ease',
+  },
+  verifyBtnDisabled: { opacity: 0.52, cursor: 'not-allowed', boxShadow: 'none' },
+  btnInner: { display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' },
+  spinner: {
+    width: '16px', height: '16px',
+    border: '2.5px solid rgba(255,255,255,0.35)',
+    borderTop: '2.5px solid #fff',
+    borderRadius: '50%', display: 'inline-block',
+    animation: 'spin 0.75s linear infinite',
+  },
+
+  resendWrap: {
+    marginTop: '20px', paddingTop: '16px',
+    borderTop: `1px solid ${BORDER}`, textAlign: 'center',
+  },
+  resendText: { fontSize: '13px', color: GRAY, margin: 0 },
+  resendBtn: {
+    background: 'none', border: 'none', cursor: 'pointer',
+    color: RED, fontWeight: 700, fontSize: '13px',
+    fontFamily: "'Inter', sans-serif",
+    padding: 0,
+  },
+};
 
 export default OTPVerification;

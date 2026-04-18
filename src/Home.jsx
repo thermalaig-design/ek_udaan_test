@@ -4,12 +4,18 @@ import Sidebar from './components/Sidebar';
 import TermsModal from './components/TermsModal';
 import ImageSlider from './components/ImageSlider';
 import { getProfile, getMarqueeUpdates, getSponsors, getUserNotifications, markNotificationAsRead, markAllNotificationsAsRead, deleteNotification, getMemberTrustLinks } from './services/api';
-import { fetchLatestGalleryImages } from './services/galleryService';
+import { fetchLatestGalleryImages, getCachedLatestGalleryImages } from './services/galleryService';
 import { registerSidebarState, useTheme } from './hooks';
 import { supabase } from './services/supabaseClient';
 import { getCurrentNotificationContext, matchesNotificationForContext } from './services/notificationAudience';
 import { fetchFeatureFlags, subscribeFeatureFlags, isFeatureEnabled } from './services/featureFlags';
-import { fetchAllTrusts, fetchMemberTrusts, fetchTrustByName, fetchTrustById, fetchDefaultTrust } from './services/trustService';
+import { fetchMemberTrusts, fetchTrustByName, fetchTrustById, fetchDefaultTrust } from './services/trustService';
+import { DEFAULT_THEME, buildThemeFromTemplate } from './utils/themeUtils';
+
+const DEFAULT_TRUST_NAME = import.meta.env.VITE_DEFAULT_TRUST_NAME || 'Ek Udaan';
+const DEFAULT_TRUST_LOGO = '/new_logo.png';
+const SPONSOR_CACHE_TTL_MS = 5 * 60 * 1000;
+const SPONSOR_CHUNK_SIZE = 5;
 
 const buildNotificationContentKey = (notification) => {
   const title = String(notification?.title || '').trim().toLowerCase();
@@ -36,11 +42,89 @@ const mergeUniqueTrusts = (...collections) => {
         name: trust.name || null,
         icon_url: trust.icon_url || null,
         remark: trust.remark || null,
-        is_active: Boolean(trust.is_active)
+        is_active: Boolean(trust.is_active) !== false
       });
     });
 
   return merged;
+};
+
+// Ensure default trust (Ek Udaan) is always in the list
+const ensureDefaultTrustIncluded = (trustList, defaultTrust, baseAppId = 'b353d2ff-ec3b-4b90-a896-69f40662084e') => {
+  if (!trustList || trustList.length === 0) {
+    return defaultTrust ? [defaultTrust] : [];
+  }
+
+  // Check if default trust is already in the list by ID
+  const defaultId = String(defaultTrust?.id || baseAppId || '').trim();
+  const hasDefault = trustList.some((t) => String(t?.id || '').trim() === defaultId);
+
+  // If default trust is not here, add it to the beginning
+  if (!hasDefault && defaultTrust) {
+    return [defaultTrust, ...trustList];
+  }
+
+  return trustList;
+};
+
+const getCachedSponsorsForTrust = (trustId) => {
+  if (!trustId) return [];
+  try {
+    const direct = localStorage.getItem(`sponsors_cache_${trustId}`);
+    if (direct) {
+      const parsed = JSON.parse(direct);
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+    }
+  } catch {
+    // ignore malformed direct cache
+  }
+
+  // Fallback to sponsors list cache created by SponsorsList screen.
+  try {
+    const listCache = localStorage.getItem(`sponsors_list_cache_v1_${trustId}`);
+    if (listCache) {
+      const parsed = JSON.parse(listCache);
+      const byTrust = parsed?.sponsorsByTrust?.[trustId];
+      if (Array.isArray(byTrust) && byTrust.length > 0) return byTrust;
+    }
+  } catch {
+    // ignore malformed list cache
+  }
+
+  return [];
+};
+
+const readSponsorCache = (trustId) => {
+  if (!trustId) return { list: [], isFresh: false };
+  try {
+    const raw = localStorage.getItem(`sponsors_cache_${trustId}`);
+    if (!raw) return { list: [], isFresh: false };
+    const parsed = JSON.parse(raw);
+
+    // Backward-compatible: old cache format was plain array.
+    if (Array.isArray(parsed)) {
+      return { list: parsed, isFresh: parsed.length > 0 };
+    }
+
+    const list = Array.isArray(parsed?.data) ? parsed.data : [];
+    const ts = Number(parsed?.ts || 0);
+    const isFresh = ts > 0 && (Date.now() - ts) < SPONSOR_CACHE_TTL_MS;
+    return { list, isFresh };
+  } catch {
+    return { list: [], isFresh: false };
+  }
+};
+
+const writeSponsorCache = (trustId, list) => {
+  if (!trustId || !Array.isArray(list)) return;
+  try {
+    localStorage.setItem(
+      `sponsors_cache_${trustId}`,
+      JSON.stringify({ ts: Date.now(), data: list })
+    );
+  } catch {
+    // ignore
+  }
 };
 
 /* eslint-disable react-refresh/only-export-components */
@@ -56,19 +140,98 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const mainContainerRef = useRef(null);
   const channelRef = useRef(null);
-  const [userProfile, setUserProfile] = useState(null);
-  const [trustInfo, setTrustInfo] = useState(null);
-  const [trustList, setTrustList] = useState([]);
-  const [selectedTrustId, setSelectedTrustId] = useState(() =>
-    normalizeTrustId(localStorage.getItem('selected_trust_id') || '')
-  );
-  const [defaultTrust, setDefaultTrust] = useState(null);
+
+  // Welcome strip: initialize from localStorage instantly to avoid delay
+  const [userProfile, setUserProfile] = useState(() => {
+    try {
+      const user = localStorage.getItem('user');
+      if (!user) return null;
+      const parsed = JSON.parse(user);
+      const fallbackName = parsed.name || parsed.Name || parsed['Name'] || '';
+      if (!fallbackName) return null;
+      return { name: fallbackName, profilePhotoUrl: '' };
+    } catch { return null; }
+  });
+
+  // Trust: prefer user's last selection; fall back to env trust id.
+  const [selectedTrustId, setSelectedTrustId] = useState(() => {
+    const cachedSelected = normalizeTrustId(localStorage.getItem('selected_trust_id') || '');
+    let cachedDefaultId = '';
+    try {
+      const cachedDefault = localStorage.getItem('default_trust_cache');
+      if (cachedDefault) {
+        const parsed = JSON.parse(cachedDefault);
+        cachedDefaultId = normalizeTrustId(parsed?.id || '');
+      }
+    } catch {
+      // ignore malformed cache
+    }
+    const envId = normalizeTrustId(import.meta.env.VITE_DEFAULT_TRUST_ID || '');
+    return cachedSelected || cachedDefaultId || envId || '';
+  });
+
+  // Synchronously pre-populate trustInfo from cached default-trust data
+  const [trustInfo, setTrustInfo] = useState(() => {
+    try {
+      const cached = localStorage.getItem('default_trust_cache');
+      if (cached) return JSON.parse(cached);
+    } catch { /* ignore */ }
+    return null;
+  });
+
+  // trustList: pre-populate from full trust list cache so selector shows instantly
+  const [trustList, setTrustList] = useState(() => {
+    try {
+      const listCached = localStorage.getItem('trust_list_cache');
+      if (listCached) {
+        const list = JSON.parse(listCached);
+        if (Array.isArray(list) && list.length > 0) return list;
+      }
+      const cached = localStorage.getItem('default_trust_cache');
+      if (cached) return [JSON.parse(cached)];
+    } catch { /* ignore */ }
+    return [];
+  });
+
+  const [defaultTrust, setDefaultTrust] = useState(() => {
+    try {
+      const cached = localStorage.getItem('default_trust_cache');
+      if (cached) return JSON.parse(cached);
+    } catch { /* ignore */ }
+    return null;
+  });
   const [showTermsModal, setShowTermsModal] = useState(false);
   const [notifications, setNotifications] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
-  const [marqueeUpdates, setMarqueeUpdates] = useState([]);
-  const [sponsors, setSponsors] = useState([]);
+  const [marqueeUpdates, setMarqueeUpdates] = useState(() => {
+    try {
+      const trustId = localStorage.getItem('selected_trust_id') || import.meta.env.VITE_DEFAULT_TRUST_ID || '';
+      if (!trustId) return [];
+      const cached = localStorage.getItem(`marquee_cache_${trustId}`);
+      if (cached) return JSON.parse(cached);
+    } catch { /* ignore */ }
+    return [];
+  });
+
+  // Sponsors: load from localStorage cache instantly to avoid loading delay
+  const [sponsors, setSponsors] = useState(() => {
+    try {
+      const trustId = localStorage.getItem('selected_trust_id') || import.meta.env.VITE_DEFAULT_TRUST_ID || '';
+      if (!trustId) return [];
+      const primary = readSponsorCache(trustId).list;
+      if (Array.isArray(primary) && primary.length > 0) return primary;
+      return getCachedSponsorsForTrust(trustId);
+    } catch { /* ignore */ }
+    return [];
+  });
+  const [isSponsorsLoading, setIsSponsorsLoading] = useState(sponsors.length === 0);
+  const hasLoadedSponsorsOnce = useRef(sponsors.length > 0);
+  const [sponsorFetchSettledTrustId, setSponsorFetchSettledTrustId] = useState(
+    sponsors.length > 0
+      ? (normalizeTrustId(localStorage.getItem('selected_trust_id')) || normalizeTrustId(import.meta.env.VITE_DEFAULT_TRUST_ID) || '')
+      : ''
+  );
   const [sponsorIndex, setSponsorIndex] = useState(0);
   const [galleryImages, setGalleryImages] = useState([]);
   const [isGalleryLoading, setIsGalleryLoading] = useState(true);
@@ -77,18 +240,82 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
   const [flagsData, setFlagsData] = useState({}); // full metadata: { feature_key: { display_name, tagline, icon_url } }
   const hasLoadedMemberTrusts = useRef(false);
 
-  // ✅ Theme hook — hoisted before handleTrustSelect so clearThemeCache is available
-  const { theme, isThemeLoading, clearThemeCache } = useTheme(selectedTrustId);
+  // Theme for currently selected trust
+  const { theme, isThemeLoading } = useTheme(selectedTrustId);
 
   // Register sidebar state with Android back handler
   useEffect(() => {
     registerSidebarState(isMenuOpen, () => setIsMenuOpen(false));
   }, [isMenuOpen]);
 
+  // Warm theme cache for visible trusts so trust switching feels instant.
+  useEffect(() => {
+    let active = true;
+    const primeThemeCache = async () => {
+      try {
+        const trustIds = Array.from(
+          new Set((trustList || []).map((t) => normalizeTrustId(t?.id)).filter(Boolean))
+        );
+        if (trustIds.length === 0) return;
+
+        for (const trustId of trustIds) {
+          if (!active) return;
+          const cacheKey = `theme_cache_${trustId}`;
+          try {
+            if (sessionStorage.getItem(cacheKey)) continue;
+          } catch {
+            // ignore storage access issues
+          }
+
+          try {
+            const [templateResult, trustResult] = await Promise.all([
+              supabase
+                .from('app_templates')
+                .select('id, trust_id, home_layout, animations, custom_css, template_key, theme_config, updated_at')
+                .eq('trust_id', trustId)
+                .eq('is_active', true)
+                .order('updated_at', { ascending: false })
+                .limit(1)
+                .maybeSingle(),
+              supabase
+                .from('Trust')
+                .select('theme_overrides')
+                .eq('id', trustId)
+                .maybeSingle()
+            ]);
+
+            const overrides = trustResult?.data?.theme_overrides || {};
+            const templateRow = templateResult?.data || {
+              id: null,
+              trust_id: trustId,
+              home_layout: DEFAULT_THEME.homeLayout,
+              animations: DEFAULT_THEME.animations,
+              custom_css: '',
+              template_key: DEFAULT_THEME.templateKey || 'mahila',
+              theme_config: DEFAULT_THEME.themeConfig || {}
+            };
+            const resolved = buildThemeFromTemplate({
+              templateRow,
+              trustOverrides: overrides,
+              trustId
+            });
+            try { sessionStorage.setItem(cacheKey, JSON.stringify(resolved)); } catch { /* ignore */ }
+          } catch {
+            // ignore prefetch failures; main theme loader will handle actual switch
+          }
+        }
+      } catch {
+        // no-op
+      }
+    };
+
+    primeThemeCache();
+    return () => { active = false; };
+  }, [trustList]);
+
   const getSessionSelectionFlag = () => {
     if (typeof window === 'undefined') return false;
     try {
-      if (defaultTrust?.id) return;
       return sessionStorage.getItem('trust_selected_in_session') === 'true';
     } catch {
       return false;
@@ -108,29 +335,51 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
     let isActive = true;
     const loadDefaultTrust = async () => {
       try {
-        const hasSessionSelection = getSessionSelectionFlag();
-        const existingTrustId = localStorage.getItem('selected_trust_id');
-        if (hasSessionSelection && (existingTrustId || trustInfo?.id || defaultTrust?.id)) return;
-
         let trust = null;
-        if (existingTrustId) trust = await fetchTrustById(existingTrustId);
+        const envTrustId = import.meta.env.VITE_DEFAULT_TRUST_ID;
+        const envTrustName = import.meta.env.VITE_DEFAULT_TRUST_NAME;
+        const normalizedEnvTrustId = normalizeTrustId(envTrustId);
+        let resolvedViaEnv = false;
 
-        if (!trust) {
-          const envTrustId = import.meta.env.VITE_DEFAULT_TRUST_ID;
-          const envTrustName = import.meta.env.VITE_DEFAULT_TRUST_NAME;
-          if (envTrustId) trust = await fetchTrustById(envTrustId);
-          else if (envTrustName) trust = await fetchTrustByName(envTrustName);
+        if (envTrustId) {
+          trust = await fetchTrustById(envTrustId);
+          resolvedViaEnv = Boolean(trust);
+        } else if (envTrustName) {
+          trust = await fetchTrustByName(envTrustName);
+          resolvedViaEnv = Boolean(trust);
         }
 
         if (!trust) trust = await fetchDefaultTrust();
 
         if (isActive && trust) {
+          const normalizedDefaultId = normalizeTrustId(trust.id);
+          const currentSelected = normalizeTrustId(localStorage.getItem('selected_trust_id') || selectedTrustId);
+
           setDefaultTrust(trust);
-          setTrustList([trust]);
-          setTrustInfo(trust);
-          setSelectedTrustId(trust.id);
-          localStorage.setItem('selected_trust_id', trust.id);
-          if (trust.name) localStorage.setItem('selected_trust_name', trust.name);
+          setTrustList((prev) => {
+            const existing = (prev || []).find((t) => normalizeTrustId(t.id) === normalizedDefaultId);
+            if (existing) {
+              return (prev || []).map((t) =>
+                normalizeTrustId(t.id) === normalizedDefaultId ? { ...t, ...trust } : t
+              );
+            }
+            return [trust, ...(prev || [])];
+          });
+
+          // Apply as active trust only when nothing is selected yet.
+          // Also apply default when selected trust is just stale env id
+          // that failed to resolve (common after env/db trust id changes).
+          const shouldApplyDefaultSelection =
+            !currentSelected ||
+            (!resolvedViaEnv && normalizedEnvTrustId && currentSelected === normalizedEnvTrustId);
+          if (shouldApplyDefaultSelection) {
+            setSelectedTrustId(normalizedDefaultId);
+            localStorage.setItem('selected_trust_id', normalizedDefaultId);
+            if (trust.name) localStorage.setItem('selected_trust_name', trust.name);
+            setTrustInfo(trust);
+          }
+
+          try { localStorage.setItem('default_trust_cache', JSON.stringify(trust)); } catch { /* ignore */ }
         }
       } catch (err) {
         console.warn('Failed to load default trust:', err);
@@ -139,7 +388,6 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
     loadDefaultTrust();
     return () => { isActive = false; };
   }, []);
-
   // Close sidebar when clicking outside
   useEffect(() => {
     const handleClickOutside = (event) => {
@@ -201,13 +449,21 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
     };
   }, [isNotificationsOpen]);
 
-  // Load user profile
+  // Load user profile — state is already pre-filled synchronously above;
+  // this effect only upgrades it with the full profile from API/cache
   useEffect(() => {
     const loadProfile = async () => {
       const user = localStorage.getItem('user');
       if (user) {
         try {
           const parsedUser = JSON.parse(user);
+          const userKey = `userProfile_${parsedUser.Mobile || parsedUser.mobile || parsedUser.id || 'default'}`;
+          // First, apply cached profile photo if available
+          const savedProfile = localStorage.getItem(userKey);
+          if (savedProfile) {
+            const parsed = JSON.parse(savedProfile);
+            setUserProfile((prev) => ({ ...prev, ...parsed }));
+          }
           const userId = parsedUser['Membership number'] || parsedUser.mobile || parsedUser.id;
           if (userId) {
             try {
@@ -220,11 +476,6 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
               console.error('Error loading from Supabase:', error);
             }
           }
-          const userKey = `userProfile_${parsedUser.Mobile || parsedUser.mobile || parsedUser.id || 'default'}`;
-          const savedProfile = localStorage.getItem(userKey);
-          if (savedProfile) { setUserProfile(JSON.parse(savedProfile)); return; }
-          const fallbackName = parsedUser.name || parsedUser.Name || parsedUser['Name'] || '';
-          if (fallbackName) setUserProfile({ name: fallbackName, profilePhotoUrl: '' });
         } catch (error) {
           console.error('Error loading user profile:', error);
         }
@@ -245,18 +496,34 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
         name: m.trust_name || (m.trust_id ? 'Hospital' : null),
         icon_url: m.trust_icon_url || null,
         remark: m.trust_remark || null,
-        is_active: m.is_active
+        is_active: m.is_active !== false
       }));
       const uniqueTrusts = mergeUniqueTrusts(derivedTrusts);
       const primaryTrust = parsedUser.primary_trust || parsedUser.trust || derivedTrusts.find((t) => t.is_active) || derivedTrusts[0] || (parsedUser.trust_name ? { name: parsedUser.trust_name } : null);
       const normalizedTrusts = uniqueTrusts.length > 0 ? uniqueTrusts : primaryTrust ? [primaryTrust] : [];
-      const mergedTrusts = mergeUniqueTrusts(defaultTrust ? [defaultTrust] : [], normalizedTrusts);
+      // Keep only trusts linked to current member (no global/mixed trust carry-over).
+      let mergedTrusts = normalizedTrusts.length > 0
+        ? mergeUniqueTrusts(normalizedTrusts)
+        : mergeUniqueTrusts(defaultTrust ? [defaultTrust] : []);
+      
+      // Ensure default trust is always included
+      mergedTrusts = ensureDefaultTrustIncluded(mergedTrusts, defaultTrust);
+      
       setTrustList(mergedTrusts);
+      try { localStorage.setItem('trust_list_cache', JSON.stringify(mergedTrusts)); } catch { /* ignore */ }
 
+      const normalizedSelected = normalizeTrustId(selectedTrustId);
+      const selectedExistsInMerged = mergedTrusts.some((t) => normalizeTrustId(t.id) === normalizedSelected);
+      const defaultInMergedId = normalizeTrustId(defaultTrust?.id);
+      const shouldForceDefault =
+        !getSessionSelectionFlag() &&
+        defaultInMergedId &&
+        mergedTrusts.some((t) => normalizeTrustId(t.id) === defaultInMergedId);
       const effectiveTrustId =
-        normalizeTrustId(selectedTrustId) ||
-        normalizeTrustId(defaultTrust?.id) ||
+        (shouldForceDefault ? defaultInMergedId : '') ||
+        (selectedExistsInMerged ? normalizedSelected : '') ||
         normalizeTrustId(primaryTrust?.id) ||
+        normalizeTrustId(defaultTrust?.id) ||
         normalizeTrustId(mergedTrusts[0]?.id) ||
         '';
       if (effectiveTrustId && effectiveTrustId !== selectedTrustId) {
@@ -265,8 +532,8 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
       }
       const effectiveTrust =
         mergedTrusts.find((t) => normalizeTrustId(t.id) === effectiveTrustId) ||
-        defaultTrust ||
         primaryTrust ||
+        defaultTrust ||
         mergedTrusts[0] ||
         null;
       setTrustInfo(effectiveTrust);
@@ -283,8 +550,24 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
     if (!user) return;
     let parsedUser = null;
     try { parsedUser = JSON.parse(user); } catch { return; }
+    
+    const userDerivedTrusts = Array.isArray(parsedUser?.hospital_memberships)
+      ? parsedUser.hospital_memberships.map((m) => ({
+        id: m?.trust_id || m?.id || null,
+        name: m?.trust_name || null,
+        icon_url: m?.trust_icon_url || null,
+        remark: m?.trust_remark || null,
+        is_active: m?.is_active
+      }))
+      : [];
+    
+    console.log('📋 User derived trusts from hospital_memberships:', userDerivedTrusts.length, userDerivedTrusts.map(t => t.name).join(', '));
+    
     const fallbackIdsFromMemberships = Array.isArray(parsedUser?.hospital_memberships)
       ? parsedUser.hospital_memberships.map((m) => m?.members_id).filter(Boolean)
+      : [];
+    const explicitMemberIds = Array.isArray(parsedUser?.member_ids)
+      ? parsedUser.member_ids.filter(Boolean)
       : [];
     const membersIds = Array.from(
       new Set(
@@ -292,6 +575,7 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
           parsedUser?.members_id,
           parsedUser?.member_id,
           parsedUser?.id,
+          ...explicitMemberIds,
           ...fallbackIdsFromMemberships
         ]
           .filter(Boolean)
@@ -302,6 +586,8 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
     hasLoadedMemberTrusts.current = true;
     const loadMemberTrusts = async () => {
       try {
+        console.log('🔍 Fetching member trusts for IDs:', membersIds.join(', '));
+        
         const membershipResults = await Promise.all(
           membersIds.map((memberId) => fetchMemberTrusts(memberId).catch(() => []))
         );
@@ -314,6 +600,8 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
             remark: trust.remark || null,
             is_active: trust.is_active
           }));
+        
+        console.log('📊 Membership trusts found:', membershipTrusts.length, membershipTrusts.map(t => t.name).join(', '));
 
         const linkResults = await Promise.all(
           membersIds.map((memberId) => getMemberTrustLinks(memberId).catch(() => ({ success: false, data: [] })))
@@ -327,16 +615,37 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
             remark: link?.remark1 || link?.remark2 || null,
             is_active: link?.is_active !== false
           }));
+        
+        console.log('🔗 Link trusts found:', linkTrusts.length, linkTrusts.map(t => t.name).join(', '));
 
-        const uniqueTrusts = mergeUniqueTrusts(membershipTrusts, linkTrusts);
+        const uniqueTrusts = mergeUniqueTrusts(userDerivedTrusts, membershipTrusts, linkTrusts);
+        console.log('✨ Total unique trusts:', uniqueTrusts.length, uniqueTrusts.map(t => t.name).join(', '));
+        
         if (uniqueTrusts.length === 0) return;
 
         const primaryTrust = parsedUser?.primary_trust || uniqueTrusts.find((t) => t.is_active) || uniqueTrusts[0];
-        setTrustList((prev) => mergeUniqueTrusts(prev, uniqueTrusts));
+        setTrustList(() => {
+          const merged = mergeUniqueTrusts(uniqueTrusts);
+          // Ensure default trust is always included (Ek Udaan)
+          const withDefault = ensureDefaultTrustIncluded(merged, defaultTrust);
+          // Cache full trust list so it appears instantly on next refresh
+          try { localStorage.setItem('trust_list_cache', JSON.stringify(withDefault)); } catch { /* ignore */ }
+          console.log(`✅ Final trust list (${withDefault.length} trusts):`, withDefault.map(t => ({ name: t.name, id: t.id.substring(0, 8) })));
+          return withDefault;
+        });
+        const normalizedSelected = normalizeTrustId(selectedTrustId);
+        const selectedExistsInUnique = uniqueTrusts.some((t) => normalizeTrustId(t.id) === normalizedSelected);
+        const defaultInUniqueId = normalizeTrustId(defaultTrust?.id);
+        const shouldForceDefault =
+          !getSessionSelectionFlag() &&
+          defaultInUniqueId &&
+          uniqueTrusts.some((t) => normalizeTrustId(t.id) === defaultInUniqueId);
         const effectiveTrustId =
-          normalizeTrustId(selectedTrustId) ||
-          normalizeTrustId(defaultTrust?.id) ||
+          (shouldForceDefault ? defaultInUniqueId : '') ||
+          (selectedExistsInUnique ? normalizedSelected : '') ||
           normalizeTrustId(primaryTrust?.id) ||
+          normalizeTrustId(defaultTrust?.id) ||
+          normalizeTrustId(uniqueTrusts[0]?.id) ||
           '';
         if (effectiveTrustId && effectiveTrustId !== selectedTrustId) {
           setSelectedTrustId(effectiveTrustId);
@@ -353,6 +662,7 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
     };
     loadMemberTrusts();
   }, [selectedTrustId]);
+
 
   // Feature flags
   useEffect(() => {
@@ -379,30 +689,61 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
   }, [selectedTrustId, trustInfo?.id]);
 
   const handleTrustSelect = async (trustId) => {
-    clearThemeCache(trustId); // ✅ Clear cached theme for the newly selected trust
     const normalizedId = normalizeTrustId(trustId);
+    console.log(`🔄 Switching trust from "${selectedTrustId}" to "${normalizedId}"`);
+    
+    // Force reload by resetting all cached data states
+    setMarqueeUpdates([]);
+    setSponsors([]);
+    setSponsorIndex(0);
+    setGalleryImages([]);
+    setNotifications([]);
+    setUnreadCount(0);
+    setSponsorFetchSettledTrustId(''); // Force sponsor refetch
+    
+    // Clear localStorage caches for this operation to force refresh
+    try {
+      localStorage.removeItem(`sponsor_carousel_index_${normalizedId}`);
+    } catch { /* ignore */ }
+    
+    // Update selected trust
     setSelectedTrustId(normalizedId);
     localStorage.setItem('selected_trust_id', normalizedId);
     setSessionSelectionFlag();
+    
     const selected = trustList.find((t) => normalizeTrustId(t.id) === normalizedId) || null;
     setTrustInfo(selected);
-    if (selected?.name) localStorage.setItem('selected_trust_name', selected.name);
-    window.dispatchEvent(new CustomEvent('trust-changed', { detail: { trustId: normalizedId, trustName: selected?.name || null } }));
+    if (selected?.name) {
+      localStorage.setItem('selected_trust_name', selected.name);
+      console.log(`✓ Trust switched to: ${selected.name}`);
+    }
+    
+    window.dispatchEvent(new CustomEvent('trust-changed', { 
+      detail: { trustId: normalizedId, trustName: selected?.name || null } 
+    }));
+    
+    // Fetch and update fresh trust details
     try {
       const freshTrust = await fetchTrustById(normalizedId);
       if (freshTrust) {
+        console.log(`✓ Fetched fresh trust details: ${freshTrust.name}`);
         setTrustInfo(freshTrust);
-        setTrustList((prev) => (prev || []).map((t) => normalizeTrustId(t.id) === normalizedId ? { ...t, ...freshTrust } : t));
+        setTrustList((prev) => (prev || []).map((t) => 
+          normalizeTrustId(t.id) === normalizedId ? { ...t, ...freshTrust } : t
+        ));
         if (freshTrust.name) localStorage.setItem('selected_trust_name', freshTrust.name);
-        window.dispatchEvent(new CustomEvent('trust-changed', { detail: { trustId: normalizedId, trustName: freshTrust.name || null } }));
+        window.dispatchEvent(new CustomEvent('trust-changed', { 
+          detail: { trustId: normalizedId, trustName: freshTrust.name || null } 
+        }));
       }
     } catch (err) {
-      console.warn('Failed to refresh trust details:', err);
+      console.warn('Failed to refresh trust details:', err?.message);
     }
   };
 
   // Marquee updates
   useEffect(() => {
+    let active = true;
     const loadMarqueeUpdates = async () => {
       try {
         const trustId =
@@ -411,10 +752,31 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
           normalizeTrustId(localStorage.getItem('selected_trust_id')) ||
           null;
         const trustName = localStorage.getItem('selected_trust_name') || trustInfo?.name || null;
+
+        // Show cached marquee instantly while fetching fresh data
+        if (trustId) {
+          try {
+            const cached = localStorage.getItem(`marquee_cache_${trustId}`);
+            if (cached && active) {
+              const cachedUpdates = JSON.parse(cached);
+              if (Array.isArray(cachedUpdates) && cachedUpdates.length > 0) {
+                setMarqueeUpdates(cachedUpdates);
+              }
+            }
+          } catch { /* ignore */ }
+        }
+
         const response = await getMarqueeUpdates(trustId, trustName);
+        if (!active) return;
         if (response.success && response.data && response.data.length > 0) {
           const updates = response.data.map(item => item.message).filter(msg => msg && msg.trim() !== '');
-          if (updates.length > 0) setMarqueeUpdates(updates);
+          if (updates.length > 0) {
+            setMarqueeUpdates(updates);
+            // Cache for instant display next time
+            if (trustId) {
+              try { localStorage.setItem(`marquee_cache_${trustId}`, JSON.stringify(updates)); } catch { /* ignore */ }
+            }
+          }
         } else {
           setMarqueeUpdates([]);
         }
@@ -423,55 +785,167 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
         setMarqueeUpdates([]);
       }
     };
+    // No artificial delay — cached data shows in <1ms
     loadMarqueeUpdates();
+    return () => { active = false; };
   }, [selectedTrustId, trustInfo]);
 
-  // Sponsor
+  // Ref to track which trustId has already been fetched — avoids repeated/cancelled calls
+  const lastFetchedSponsorTrustId = useRef('');
+  
+  // Reset sponsor tracking ref when trust changes to force fresh load
   useEffect(() => {
-    const loadSponsor = async () => {
+    console.log(`🔄 Trust changed, resetting sponsor fetch tracking`);
+    lastFetchedSponsorTrustId.current = ''; // Reset so next fetch will be fresh
+  }, [selectedTrustId]);
+
+  // Sponsor: ref-based fetch that cannot be cancelled by re-renders
+  useEffect(() => {
+    let isActive = true;
+    const progressiveTimers = [];
+    let loadingSafetyTimer = null;
+
+    const trustId =
+      normalizeTrustId(selectedTrustId) ||
+      normalizeTrustId(trustInfo?.id) ||
+      normalizeTrustId(localStorage.getItem('selected_trust_id')) ||
+      normalizeTrustId(import.meta.env.VITE_DEFAULT_TRUST_ID) ||
+      '';
+    if (!trustId) {
+      setIsSponsorsLoading(false);
+      hasLoadedSponsorsOnce.current = true;
+      setSponsorFetchSettledTrustId('');
+      return;
+    }
+    const isSameTrustAsLastFetch = trustId === lastFetchedSponsorTrustId.current;
+
+    const trustName = localStorage.getItem('selected_trust_name') || null;
+    const { list: cachedList, isFresh } = readSponsorCache(trustId);
+    const hasCachedList = Array.isArray(cachedList) && cachedList.length > 0;
+    let hasImmediateSponsors = false;
+
+    // Step 1: Show cache immediately (synchronous, zero delay)
+    if (hasCachedList) {
+      setSponsors(cachedList);
+      hasLoadedSponsorsOnce.current = true;
+      setIsSponsorsLoading(false);
+      hasImmediateSponsors = true;
+    } else {
+      // Legacy/fallback cache path (from SponsorsList screen cache).
       try {
-        const trustId =
-          normalizeTrustId(selectedTrustId) ||
-          normalizeTrustId(trustInfo?.id) ||
-          normalizeTrustId(localStorage.getItem('selected_trust_id')) ||
-          null;
-        const trustName = localStorage.getItem('selected_trust_name') || trustInfo?.name || null;
-        if (!trustId) { setSponsors([]); return; }
-        const response = await getSponsors(trustId, trustName);
+        const fallbackList = getCachedSponsorsForTrust(trustId);
+        if (Array.isArray(fallbackList) && fallbackList.length > 0) {
+          setSponsors(fallbackList);
+          hasLoadedSponsorsOnce.current = true;
+          setIsSponsorsLoading(false);
+          hasImmediateSponsors = true;
+        } else {
+          setIsSponsorsLoading(true);
+        }
+      } catch {
+        setIsSponsorsLoading(true);
+      }
+    }
+
+    // Fresh cache hit: skip network call fully so second load stays instant.
+    if (isFresh && hasCachedList) {
+      lastFetchedSponsorTrustId.current = trustId;
+      hasLoadedSponsorsOnce.current = true;
+      setIsSponsorsLoading(false);
+      setSponsorFetchSettledTrustId(trustId);
+      return () => {
+        isActive = false;
+        progressiveTimers.forEach((id) => clearTimeout(id));
+      };
+    }
+
+    // Same trust pe rerender hua ho to loader me atakne se bachane ke liye:
+    // only skip fetch when we already have something visible.
+    if (isSameTrustAsLastFetch && (hasImmediateSponsors || hasLoadedSponsorsOnce.current)) {
+      setIsSponsorsLoading(false);
+      if (hasImmediateSponsors) setSponsorFetchSettledTrustId(trustId);
+      return () => {
+        isActive = false;
+        if (loadingSafetyTimer) clearTimeout(loadingSafetyTimer);
+        progressiveTimers.forEach((id) => clearTimeout(id));
+      };
+    }
+
+    lastFetchedSponsorTrustId.current = trustId;
+    if (!hasImmediateSponsors) {
+      // Safety: avoid infinite "Loading sponsors..." if network hangs.
+      loadingSafetyTimer = setTimeout(() => {
+        if (!isActive) return;
+        setIsSponsorsLoading(false);
+      }, 6000);
+    }
+
+    // Step 2: Fetch fresh data in background — promise-based, cannot be cancelled
+    getSponsors(trustId, trustName)
+      .then((response) => {
+        if (!isActive) return;
+        if (loadingSafetyTimer) clearTimeout(loadingSafetyTimer);
         if (response.success && Array.isArray(response.data) && response.data.length > 0) {
           const list = response.data;
-          setSponsors(list);
+          writeSponsorCache(trustId, list);
 
-          // Priority: user-match sponsor always first if present for this trust
           const matchIndex = list.findIndex((item) => item.is_user_match);
-          if (matchIndex >= 0) {
-            setSponsorIndex(matchIndex);
-            return;
-          }
-
-          // Otherwise restore last index for this trust
-          const trustKey = trustId ? `sponsor_carousel_index_${trustId}` : 'sponsor_carousel_index';
+          const trustKey = `sponsor_carousel_index_${trustId}`;
           let restoredIndex = 0;
           try {
             const storedIndex = localStorage.getItem(trustKey);
             const parsedIndex = Number(storedIndex);
-            if (Number.isFinite(parsedIndex) && parsedIndex >= 0) {
-              restoredIndex = parsedIndex;
-            }
-          } catch {
-            // ignore
-          }
+            if (Number.isFinite(parsedIndex) && parsedIndex >= 0) restoredIndex = parsedIndex;
+          } catch { /* ignore */ }
           if (restoredIndex >= list.length) restoredIndex = 0;
-          setSponsorIndex(restoredIndex);
-        } else {
+          const finalIndex = matchIndex >= 0 ? matchIndex : restoredIndex;
+
+          if (hasImmediateSponsors) {
+            // We already have visible data from cache, so refresh instantly.
+            setSponsors(list);
+            setSponsorIndex(finalIndex);
+          } else {
+            // No immediate cache: progressively reveal sponsors in small chunks.
+            setSponsors([]);
+            setIsSponsorsLoading(true);
+            for (let start = 0; start < list.length; start += SPONSOR_CHUNK_SIZE) {
+              const chunk = list.slice(start, start + SPONSOR_CHUNK_SIZE);
+              const chunkIndex = Math.floor(start / SPONSOR_CHUNK_SIZE);
+              const timerId = setTimeout(() => {
+                if (!isActive) return;
+                setSponsors((prev) => {
+                  const existingIds = new Set(prev.map((p) => p.id));
+                  const nextItems = chunk.filter((item) => !existingIds.has(item.id));
+                  return nextItems.length > 0 ? [...prev, ...nextItems] : prev;
+                });
+                if (chunkIndex === 0) setIsSponsorsLoading(false);
+                if (start + chunk.length >= list.length) {
+                  setSponsorIndex(finalIndex);
+                }
+              }, chunkIndex * 180);
+              progressiveTimers.push(timerId);
+            }
+          }
+        } else if (response.success && Array.isArray(response.data) && response.data.length === 0) {
           setSponsors([]);
         }
-      } catch (error) {
-        console.error('Error loading sponsor:', error);
-        setSponsors([]);
-      }
+        hasLoadedSponsorsOnce.current = true;
+        setSponsorFetchSettledTrustId(trustId);
+        setIsSponsorsLoading(false);
+      })
+      .catch((err) => {
+        console.error('Error loading sponsors:', err);
+        if (loadingSafetyTimer) clearTimeout(loadingSafetyTimer);
+        hasLoadedSponsorsOnce.current = true;
+        setSponsorFetchSettledTrustId(trustId);
+        setIsSponsorsLoading(false);
+      });
+
+    return () => {
+      isActive = false;
+      if (loadingSafetyTimer) clearTimeout(loadingSafetyTimer);
+      progressiveTimers.forEach((id) => clearTimeout(id));
     };
-    loadSponsor();
   }, [selectedTrustId, trustInfo?.id]);
 
   useEffect(() => {
@@ -506,30 +980,69 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
     return () => clearTimeout(timer);
   }, [sponsors, sponsorIndex]);
 
+  const currentSponsorTrustId =
+    normalizeTrustId(selectedTrustId) ||
+    normalizeTrustId(trustInfo?.id) ||
+    normalizeTrustId(localStorage.getItem('selected_trust_id')) ||
+    normalizeTrustId(import.meta.env.VITE_DEFAULT_TRUST_ID) ||
+    '';
+  const hasSettledSponsorsForCurrentTrust =
+    Boolean(currentSponsorTrustId) &&
+    sponsorFetchSettledTrustId === currentSponsorTrustId;
+  const isSponsorSectionLoading = !hasSettledSponsorsForCurrentTrust || isSponsorsLoading;
+  const sponsorChunkStart = sponsors.length > 0
+    ? Math.floor(sponsorIndex / SPONSOR_CHUNK_SIZE) * SPONSOR_CHUNK_SIZE
+    : 0;
+  const visibleSponsors = sponsors.slice(sponsorChunkStart, sponsorChunkStart + SPONSOR_CHUNK_SIZE);
+  const activeVisibleSponsorIndex = sponsorIndex - sponsorChunkStart;
+
   // Gallery
   useEffect(() => {
     if (import.meta.env.VITE_DISABLE_GALLERY === 'true') return;
+    let active = true;
     const loadGallery = async () => {
       try {
-        setIsGalleryLoading(true);
-        setGalleryError(null);
         const trustId =
           normalizeTrustId(selectedTrustId) ||
           normalizeTrustId(trustInfo?.id) ||
           normalizeTrustId(localStorage.getItem('selected_trust_id')) ||
           null;
-        if (!trustId) { setGalleryImages([]); setIsGalleryLoading(false); return; }
-        const images = await fetchLatestGalleryImages(6, trustId);
-        setGalleryImages(images);
+        if (!trustId) {
+          if (active) {
+            setGalleryImages([]);
+            setIsGalleryLoading(false);
+          }
+          return;
+        }
+
+        // Show cached gallery instantly (if available), then refresh in background.
+        const cachedImages = getCachedLatestGalleryImages(trustId, 6);
+        if (active) {
+          if (cachedImages.length > 0) {
+            setGalleryImages(cachedImages);
+            setIsGalleryLoading(false);
+          } else {
+            setIsGalleryLoading(true);
+          }
+          setGalleryError(null);
+        }
+
+        const images = await fetchLatestGalleryImages(6, trustId, { preferCache: false });
+        if (active) setGalleryImages(images);
       } catch (err) {
         console.error('Error loading gallery images:', err);
-        setGalleryError('Could not load gallery photos');
-        setGalleryImages([]);
+        if (active) {
+          setGalleryError('Could not load gallery photos');
+          setGalleryImages([]);
+        }
       } finally {
-        setIsGalleryLoading(false);
+        if (active) setIsGalleryLoading(false);
       }
     };
     loadGallery();
+    return () => {
+      active = false;
+    };
   }, [selectedTrustId, trustInfo?.id]);
 
   // Notifications
@@ -546,7 +1059,6 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
         console.error('Error fetching notifications:', error);
       }
     };
-    fetchNotifications();
     const handleBirthdayInserted = () => fetchNotifications();
     window.addEventListener('birthdayNotifInserted', handleBirthdayInserted);
     const handlePushNotificationArrived = () => fetchNotifications();
@@ -555,17 +1067,17 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
     window.addEventListener('pushNotificationClicked', handlePushNotificationClicked);
     const handleAppResumed = () => fetchNotifications();
     window.addEventListener('appResumed', handleAppResumed);
-    const delayed = setTimeout(fetchNotifications, 5000);
-    const interval = setInterval(fetchNotifications, 15000);
+    const initialDelay = setTimeout(fetchNotifications, 2200);
+    const interval = setInterval(fetchNotifications, 30000);
     return () => {
       clearInterval(interval);
-      clearTimeout(delayed);
+      clearTimeout(initialDelay);
       window.removeEventListener('birthdayNotifInserted', handleBirthdayInserted);
       window.removeEventListener('pushNotificationArrived', handlePushNotificationArrived);
       window.removeEventListener('pushNotificationClicked', handlePushNotificationClicked);
       window.removeEventListener('appResumed', handleAppResumed);
     };
-  }, []);
+  }, [selectedTrustId]);
 
   // Real-time notifications
   useEffect(() => {
@@ -599,8 +1111,9 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
         .subscribe();
       channelRef.current = channel;
     };
-    subscribeToNotifications();
+    const timer = setTimeout(subscribeToNotifications, 1800);
     return () => {
+      clearTimeout(timer);
       if (channelRef.current) {
         supabase.removeChannel(channelRef.current);
         channelRef.current = null;
@@ -737,17 +1250,8 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
     defaultTrust ||
     null;
 
-  const shouldShowTrustSelector = (() => {
-    if (trustList.length <= 1) return false;
-    try {
-      const userStr = localStorage.getItem('user');
-      if (!userStr) return false;
-      const parsed = JSON.parse(userStr);
-      const isRegistered = parsed?.isRegisteredMember;
-      return isRegistered === true || String(isRegistered).toLowerCase() === 'true';
-    } catch { return false; }
-  })();
-  const showTrustSelector = shouldShowTrustSelector && ff('feature_trustlist');
+  const shouldShowTrustSelector = trustList.length > 1;
+  const showTrustSelector = shouldShowTrustSelector;
 
   return (
     <div
@@ -848,19 +1352,17 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
               }}
             >
               <img
-                src={activeTrust?.icon_url || import.meta.env.VITE_LOGO_URL || '/src/assets/logo.png'}
-                alt={activeTrust?.name || 'Logo'}
+                src={activeTrust?.icon_url || defaultTrust?.icon_url || trustInfo?.icon_url || DEFAULT_TRUST_LOGO}
+                alt={activeTrust?.name || defaultTrust?.name || trustInfo?.name || DEFAULT_TRUST_NAME}
                 className="w-full h-full object-contain rounded-full"
               />
             </div>
-            {activeTrust?.name && (
-              <h1
-                className="font-extrabold text-[15px] truncate max-w-[130px]"
-                style={{ color: theme.secondary }}
-              >
-                {activeTrust.name}
-              </h1>
-            )}
+            <h1
+              className="font-extrabold text-[15px] truncate max-w-[130px]"
+              style={{ color: theme.secondary }}
+            >
+              {activeTrust?.name || defaultTrust?.name || trustInfo?.name || localStorage.getItem('selected_trust_name') || DEFAULT_TRUST_NAME}
+            </h1>
           </div>
 
           {/* Bell / placeholder */}
@@ -1078,7 +1580,7 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
                     </div>
                     <div>
                       <p className="text-sm font-bold text-center" style={{ color: theme.secondary }}>
-                        {(activeTrust?.name || defaultTrust?.name || 'Mahila Mandal')} Gallery
+                        {(activeTrust?.name || defaultTrust?.name || DEFAULT_TRUST_NAME)} Gallery
                       </p>
                       <p className="text-xs text-gray-400 text-center mt-0.5">{galleryError || 'Tap to open gallery'}</p>
                     </div>
@@ -1141,8 +1643,9 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
             </div>
           ) : null,
 
-          sponsors: ff('feature_sponsors') && sponsors.length > 0 ? (
+          sponsors: (
             <div className="px-4 mt-5 mb-4" key="sponsors">
+              {sponsors.length > 0 ? (
               <div className="relative">
                 <div className="relative overflow-hidden rounded-3xl">
                   <div
@@ -1152,13 +1655,14 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
                     }}
                   />
                   <div className="relative min-h-[168px]">
-                  {sponsors.map((sponsor, idx) => {
-                    const isActive = idx === sponsorIndex;
+                  {visibleSponsors.map((sponsor, idx) => {
+                    const globalIndex = sponsorChunkStart + idx;
+                    const isActive = idx === activeVisibleSponsorIndex;
                     const hasContact = sponsor.phone || sponsor.whatsapp_number || sponsor.website_url || sponsor.city || sponsor.state;
                     const locationLabel = [sponsor.city, sponsor.state].filter(Boolean).join(', ');
                     return (
                       <button
-                        key={sponsor.id}
+                        key={sponsor.id || `sponsor-${globalIndex}`}
                         onClick={() => {
                           try { sessionStorage.setItem('selectedSponsor', JSON.stringify(sponsor)); } catch { }
                           onNavigate('sponsors');
@@ -1297,32 +1801,86 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
                       <ChevronRight className="h-4 w-4" />
                     </button>
                     <div className="flex justify-center items-center gap-1.5 mt-2">
-                      {sponsors.map((_, idx) => (
+                      {visibleSponsors.map((_, idx) => {
+                        const globalIndex = sponsorChunkStart + idx;
+                        const isActive = globalIndex === sponsorIndex;
+                        return (
                         <button
-                          key={`sponsor-indicator-${idx}`}
-                          onClick={() => setSponsorIndex(idx)}
+                          key={`sponsor-indicator-${globalIndex}`}
+                          onClick={() => setSponsorIndex(globalIndex)}
                           className="h-1.5 rounded-full transition-all duration-300"
                           style={{
-                            width: idx === sponsorIndex ? 16 : 6,
-                            background: idx === sponsorIndex ? `linear-gradient(90deg, ${theme.primary}, ${theme.secondary})` : `${theme.primary}35`,
-                            boxShadow: idx === sponsorIndex ? `0 1px 5px ${theme.primary}38` : 'none',
+                            width: isActive ? 16 : 6,
+                            background: isActive ? `linear-gradient(90deg, ${theme.primary}, ${theme.secondary})` : `${theme.primary}35`,
+                            boxShadow: isActive ? `0 1px 5px ${theme.primary}38` : 'none',
                           }}
-                          aria-label={`Go to sponsor ${idx + 1}`}
+                          aria-label={`Go to sponsor ${globalIndex + 1}`}
                         />
-                      ))}
+                      );
+                      })}
                     </div>
                   </>
                 )}
               </div>
+              ) : (
+                <div
+                  className="relative overflow-hidden rounded-3xl"
+                  style={{
+                    boxShadow: `0 8px 24px ${theme.secondary}12`
+                  }}
+                >
+                  <div
+                    className="absolute inset-0 pointer-events-none"
+                    style={{
+                      background: `linear-gradient(135deg, ${theme.accentBg}66 0%, #ffffff 38%, ${theme.accent}66 100%)`,
+                    }}
+                  />
+                  <div
+                    className="relative rounded-3xl p-[1px]"
+                    style={{
+                      background: `linear-gradient(130deg, ${theme.primary}44 0%, ${theme.secondary}33 40%, ${theme.primary}2E 100%)`,
+                    }}
+                  >
+                    <div
+                      className="relative rounded-3xl p-4 min-h-[168px] overflow-hidden"
+                      style={{
+                        background: 'rgba(255,255,255,0.93)',
+                        backdropFilter: 'blur(8px)',
+                      }}
+                    >
+                      <div
+                        className="absolute inset-0 pointer-events-none opacity-45"
+                        style={{
+                          background: `repeating-linear-gradient(135deg, transparent 0 13px, ${theme.accentBg}44 13px 14px)`,
+                        }}
+                      />
+                      <div className="relative z-10 h-full flex items-center gap-3.5">
+                        <div className="w-16 h-16 rounded-[1.15rem] bg-slate-200 animate-pulse flex-shrink-0" />
+                        <div className="flex-1 min-w-0">
+                          <div className="h-3 w-24 rounded-full bg-slate-200 animate-pulse mb-2" />
+                          <div className="h-4 w-40 rounded-full bg-slate-200 animate-pulse mb-2" />
+                          <div className="h-3 w-28 rounded-full bg-slate-200 animate-pulse mb-3" />
+                          <p className="text-[12px] font-medium" style={{ color: '#64748b' }}>
+                            {isSponsorSectionLoading
+                              ? 'Loading sponsors...'
+                              : 'No active sponsors available right now.'}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
 
             </div>
-          ) : null,
+          ),
         };
 
         const baseLayout = Array.isArray(theme.homeLayout) && theme.homeLayout.length > 0
           ? theme.homeLayout
           : ['gallery', 'quickActions', 'sponsors'];
         const orderedLayout = baseLayout.filter((key) => key !== 'trustList');
+        if (!orderedLayout.includes('sponsors')) orderedLayout.push('sponsors');
         if (showTrustSelector) orderedLayout.unshift('trustList');
         return orderedLayout.map((key) => SECTIONS[key] || null);
       })()}
@@ -1386,6 +1944,11 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
 };
 
 export default Home;
+
+
+
+
+
 
 
 

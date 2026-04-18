@@ -1,20 +1,37 @@
-﻿import { useAppTheme } from './context/ThemeContext';
 import React, { useEffect, useState } from 'react';
 import { ArrowLeft, Building2, Globe, Mail, MapPin, Phone, Star } from 'lucide-react';
 import { getSponsorById, getSponsors } from './services/api';
 import { useTheme } from './hooks';
 
+const getCachedSponsorsForTrust = (trustId) => {
+  if (!trustId) return [];
+  try {
+    const raw = localStorage.getItem(`sponsors_cache_${trustId}`);
+    const parsed = raw ? JSON.parse(raw) : [];
+    if (Array.isArray(parsed)) return parsed;
+    if (Array.isArray(parsed?.data)) return parsed.data;
+    return [];
+  } catch {
+    return [];
+  }
+};
+
 const SponsorDetails = ({ onBack }) => {
   const selectedTrustId = localStorage.getItem('selected_trust_id') || '';
   const { theme } = useTheme(selectedTrustId);
-  const [sponsor, setSponsor] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [sponsor, setSponsor] = useState(() => {
+    try {
+      const raw = sessionStorage.getItem('selectedSponsor');
+      return raw ? JSON.parse(raw) : null;
+    } catch {
+      return null;
+    }
+  });
+  const [loading, setLoading] = useState(() => !sponsor);
 
   useEffect(() => {
     const loadSponsorDetails = async () => {
       try {
-        setLoading(true);
-
         const trustId = localStorage.getItem('selected_trust_id') || null;
         const trustName = localStorage.getItem('selected_trust_name') || null;
 
@@ -27,11 +44,40 @@ const SponsorDetails = ({ onBack }) => {
         }
 
         let resolvedSponsor = null;
-        let trustSponsors = [];
+        let trustSponsors = getCachedSponsorsForTrust(trustId);
+
+        if (selectedSponsor?.id) {
+          resolvedSponsor = trustSponsors.find((item) => item.id === selectedSponsor.id) || null;
+        }
+
+        if (!resolvedSponsor && selectedSponsor) {
+          resolvedSponsor = selectedSponsor;
+        }
+
+        if (!resolvedSponsor && trustSponsors.length > 0) {
+          resolvedSponsor = trustSponsors[0];
+        }
+
+        if (resolvedSponsor) {
+          setSponsor(resolvedSponsor);
+          setLoading(false);
+        } else {
+          setLoading(true);
+        }
 
         const listRes = await getSponsors(trustId, trustName);
         if (listRes?.success && Array.isArray(listRes.data)) {
           trustSponsors = listRes.data;
+          if (trustId) {
+            try {
+              localStorage.setItem(
+                `sponsors_cache_${trustId}`,
+                JSON.stringify({ ts: Date.now(), data: trustSponsors })
+              );
+            } catch {
+              // ignore cache write errors
+            }
+          }
         }
 
         if (selectedSponsor?.id) {
@@ -63,7 +109,6 @@ const SponsorDetails = ({ onBack }) => {
         setSponsor(resolvedSponsor || null);
       } catch (error) {
         console.error('Error loading sponsor details:', error);
-        setSponsor(null);
       } finally {
         setLoading(false);
       }
@@ -220,3 +265,4 @@ const SponsorDetails = ({ onBack }) => {
 };
 
 export default SponsorDetails;
+
