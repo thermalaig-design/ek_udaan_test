@@ -81,7 +81,7 @@ app.get('/favicon.ico', (req, res) => res.status(204).end());
 app.get('/', (req, res) => {
   res.json({
     success: true,
-    message: 'MAH SETU Backend API running 🚀',
+    message: 'Mahila Mandal Backend API running',
     status: 'healthy',
     timestamp: new Date().toISOString(),
     endpoints: {
@@ -100,7 +100,7 @@ app.get('/', (req, res) => {
 app.get('/api', (req, res) => {
   res.json({
     success: true,
-    message: 'MAH SETU API',
+    message: 'Mahila Mandal API',
     version: '1.0.0',
     endpoints: {
       auth: '/api/auth',
@@ -148,4 +148,5 @@ app.listen(PORT, () => {
 
 initFirebaseAdmin();
 startNotificationPushWorker();
+
 
