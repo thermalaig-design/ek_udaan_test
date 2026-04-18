@@ -127,6 +127,26 @@ const writeSponsorCache = (trustId, list) => {
   }
 };
 
+const normalizeMemberName = (value) => {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  const lowered = raw.toLowerCase();
+  const blockedNames = new Set([
+    'aaaaa',
+    'gau grass',
+    'guest user',
+    'test user',
+    'null',
+    'undefined',
+    'n/a',
+    'na'
+  ]);
+  const compact = raw.replace(/\s+/g, '');
+  const repeatedSingleChar = /^([a-zA-Z])\1{2,}$/.test(compact);
+  if (blockedNames.has(lowered) || repeatedSingleChar) return '';
+  return raw;
+};
+
 /* eslint-disable react-refresh/only-export-components */
 const Home = ({ onNavigate, onLogout, isMember }) => {
   const normalizeTrustId = (id) => {
@@ -147,7 +167,7 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
       const user = localStorage.getItem('user');
       if (!user) return null;
       const parsed = JSON.parse(user);
-      const fallbackName = parsed.name || parsed.Name || parsed['Name'] || '';
+      const fallbackName = normalizeMemberName(parsed.name || parsed.Name || parsed['Name'] || '');
       if (!fallbackName) return null;
       return { name: fallbackName, profilePhotoUrl: '' };
     } catch { return null; }
@@ -469,7 +489,8 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
             try {
               const response = await getProfile();
               if (response.success && response.profile) {
-                setUserProfile({ name: response.profile.name || '', profilePhotoUrl: response.profile.profile_photo_url || '' });
+                const normalizedName = normalizeMemberName(response.profile.name || '');
+                setUserProfile({ name: normalizedName, profilePhotoUrl: response.profile.profile_photo_url || '' });
                 return;
               }
             } catch (error) {
@@ -1201,24 +1222,76 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
   const ff = (key) => isFeatureEnabled(featureFlags, key);
   const normalizeQuickRoute = (route) => {
     const value = String(route || '').trim().toLowerCase();
-    if (value === 'noticeboard') return 'notices';
-    return value;
+    if (value === 'noticeboard' || value === 'notices') return 'notices';
+    if (value === 'event' || value === 'events') return 'events';
+    if (value === 'opd' || value === 'appointment' || value === 'appointments') return 'appointment';
+    if (value === 'referral' || value === 'reference' || value === 'references') return 'reference';
+    if (value === 'report' || value === 'reports') return 'reports';
+    if (value === 'directory' || value === 'healthcare-trustee-directory') return 'directory';
+    return value || '';
+  };
+
+  const resolveQuickIcon = (route, explicitIcon) => {
+    const icon = String(explicitIcon || '').trim();
+    if (icon) return icon;
+    const normalized = normalizeQuickRoute(route);
+    const iconByRoute = {
+      notices: '/icons/quick-access/noticeboard.svg',
+      events: '/icons/quick-access/events.svg',
+      directory: '/icons/quick-access/directory.svg',
+      appointment: '/icons/quick-access/opd.svg',
+      reference: '/icons/quick-access/referral.svg',
+      reports: '/icons/quick-access/reports.svg',
+    };
+    return iconByRoute[normalized] || '/icons/quick-access/directory.svg';
   };
 
   // Build Quick Access tiles from Supabase flag metadata.
   const dbQuickActions = Object.entries(flagsData)
-    .filter(([_, data]) => data?.is_enabled && data?.route && data?.icon_url)
+    .filter(([_, data]) => data?.is_enabled && data?.route)
     .map(([key, data]) => ({
       id: key,
       route: normalizeQuickRoute(data.route),
       displayName: data.display_name || key,
       tagline: data.tagline || '',
-      icon_url: data.icon_url || '',
+      icon_url: resolveQuickIcon(data.route, data.icon_url),
       quick_order: data.quick_order ?? null,
     }));
 
-  // Fallback tiles ensure Events and Noticeboard still render even before flag rows are seeded.
+  // Fallback tiles ensure quick-access is still visible even when flag rows are partially seeded.
   const fallbackQuickActions = [
+    ff('feature_directory') ? {
+      id: 'feature_directory_fallback',
+      route: 'directory',
+      displayName: 'Directory',
+      tagline: 'Member directory',
+      icon_url: '/icons/quick-access/directory.svg',
+      quick_order: 50,
+    } : null,
+    ff('feature_opd') ? {
+      id: 'feature_opd_fallback',
+      route: 'appointment',
+      displayName: 'OPD',
+      tagline: 'Book appointments',
+      icon_url: '/icons/quick-access/opd.svg',
+      quick_order: 60,
+    } : null,
+    ff('feature_referral') ? {
+      id: 'feature_referral_fallback',
+      route: 'reference',
+      displayName: 'Referral',
+      tagline: 'Share references',
+      icon_url: '/icons/quick-access/referral.svg',
+      quick_order: 70,
+    } : null,
+    ff('feature_reports') ? {
+      id: 'feature_reports_fallback',
+      route: 'reports',
+      displayName: 'Reports',
+      tagline: 'View reports',
+      icon_url: '/icons/quick-access/reports.svg',
+      quick_order: 75,
+    } : null,
     ff('feature_noticeboard') ? {
       id: 'feature_noticeboard_fallback',
       route: 'notices',
@@ -1948,8 +2021,6 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
 };
 
 export default Home;
-
-
 
 
 

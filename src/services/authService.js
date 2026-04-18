@@ -20,6 +20,26 @@ const buildMockUser = (phoneNumber) => ({
 
 const normalizePhone = (value) => String(value || '').replace(/\D/g, '');
 
+const normalizeMemberName = (value) => {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  const lowered = raw.toLowerCase();
+  const blockedNames = new Set([
+    'aaaaa',
+    'gau grass',
+    'guest user',
+    'test user',
+    'null',
+    'undefined',
+    'n/a',
+    'na'
+  ]);
+  const compact = raw.replace(/\s+/g, '');
+  const repeatedSingleChar = /^([a-zA-Z])\1{2,}$/.test(compact);
+  if (blockedNames.has(lowered) || repeatedSingleChar) return '';
+  return raw;
+};
+
 const pickPrimaryMembership = (memberships = [], preferredTrustId = '') => {
   const list = Array.isArray(memberships) ? memberships : [];
   if (list.length === 0) return null;
@@ -86,7 +106,7 @@ export const checkPhoneNumber = async (phoneNumber) => {
         id: newMember?.members_id || newMember?.['S.No.'] || cleanedPhone,
         members_id: newMember?.members_id || newMember?.['S.No.'] || cleanedPhone,
         member_ids: [newMember?.members_id || newMember?.['S.No.'] || cleanedPhone],
-        name: newMember?.['Name'] || 'Guest User',
+        name: normalizeMemberName(newMember?.['Name']),
         mobile: newMember?.['Mobile'] || cleanedPhone,
         email: newMember?.['Email'] || '',
         type: 'Guest',
@@ -277,7 +297,7 @@ export const checkPhoneNumber = async (phoneNumber) => {
       id: member.members_id || member['S.No.'],
       members_id: member.members_id || member['S.No.'],
       member_ids: membersIds,
-      name: member['Name'] || '',
+      name: normalizeMemberName(member['Name']),
       mobile: member['Mobile'] || cleanedPhone,
       email: member['Email'] || '',
       type: primaryMembership?.role || 'Trustee',
