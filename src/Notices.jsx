@@ -1,8 +1,15 @@
 import React, { useEffect, useState } from 'react';
-import { ArrowRight, Bell, Calendar, Home as HomeIcon, Menu, X } from 'lucide-react';
+import { Bell, Calendar, Home as HomeIcon, Menu, X, Paperclip, RefreshCw, Star, ChevronRight, FileText } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import Sidebar from './components/Sidebar';
 import { useAppTheme } from './context/ThemeContext';
-import { fetchNoticeboardItems } from './services/communityService';
+import {
+  clearNoticeboardCache,
+  getNoticeboardSnapshot,
+  loadNoticeboardPage,
+  noticeboardConfig,
+  readNoticeboardProgress
+} from './services/noticeboardStore';
 
 const formatDateRange = (startDate, endDate) => {
   const toLabel = (value) => {
@@ -24,15 +31,67 @@ const formatDateRange = (startDate, endDate) => {
   if (start && end) return `${start} - ${end}`;
   if (start) return `From ${start}`;
   if (end) return `Till ${end}`;
-  return 'Always active';
+  return '';
 };
 
 const Notices = ({ onNavigate }) => {
+  const navigate = useNavigate();
   const theme = useAppTheme();
+  const NOTICE_SCROLL_KEY = 'noticeboard_scroll_y';
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [notices, setNotices] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [selectedTrustId, setSelectedTrustId] = useState(() => localStorage.getItem('selected_trust_id') || '');
+  const [hasMoreNotices, setHasMoreNotices] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const syncFromStore = (trustId) => {
+    const snapshot = getNoticeboardSnapshot(trustId);
+    setNotices(Array.isArray(snapshot.notices) ? snapshot.notices : []);
+    setHasMoreNotices(Boolean(snapshot.hasMoreNotices));
+  };
+
+  const loadPage = async ({ trustId, page, forceRefresh = false, trustName = null }) => {
+    if (!trustId) {
+      setNotices([]);
+      setHasMoreNotices(false);
+      return;
+    }
+    const res = await loadNoticeboardPage({
+      trustId,
+      trustName,
+      page,
+      pageSize: noticeboardConfig.PAGE_SIZE,
+      forceRefresh
+    });
+    syncFromStore(trustId);
+    const progress = readNoticeboardProgress(trustId);
+    console.log(
+      '[Noticeboard][Debug] page=',
+      page,
+      'hasMoreNotices=',
+      Boolean(progress.hasMoreNotices),
+      'returned_ids=',
+      Array.isArray(res?.notices) ? res.notices.map((n) => n?.id).filter(Boolean) : [],
+      'returned_types=',
+      Array.isArray(res?.notices) ? res.notices.map((n) => n?.type).filter(Boolean) : []
+    );
+    if (res?.debug) {
+      console.log(
+        '[Noticeboard][Debug] trust=',
+        res.debug.trustId,
+        'member=',
+        res.debug.memberId,
+        'vipEligible=',
+        res.debug.vipEligible,
+        'regMemberMatch=',
+        res.debug.regMemberMatch?.id || null
+      );
+    }
+    if (res?.error) setError(res.error);
+  };
 
   useEffect(() => {
     if (isMenuOpen) {
@@ -64,21 +123,29 @@ const Notices = ({ onNavigate }) => {
     };
   }, [isMenuOpen]);
 
-  const loadNotices = async () => {
+  const loadNotices = async ({ forceRefresh = false } = {}) => {
     try {
-      setLoading(true);
       setError('');
       const trustId = localStorage.getItem('selected_trust_id') || null;
       const trustName = localStorage.getItem('selected_trust_name') || null;
-      const response = await fetchNoticeboardItems({ trustId, trustName, includeExpired: false });
-
-      if (!response.success) {
-        setError(response.message || 'Failed to fetch notices');
+      setSelectedTrustId(trustId || '');
+      if (!trustId) {
         setNotices([]);
+        setHasMoreNotices(false);
+        setLoading(false);
         return;
       }
 
-      setNotices(response.data || []);
+      const snapshot = getNoticeboardSnapshot(trustId);
+      if (!forceRefresh && Array.isArray(snapshot.notices) && snapshot.notices.length > 0) {
+        setNotices(snapshot.notices);
+        setHasMoreNotices(Boolean(snapshot.hasMoreNotices));
+        setLoading(false);
+      } else {
+        setLoading(true);
+      }
+
+      await loadPage({ trustId, trustName, page: 1, forceRefresh });
     } catch (err) {
       setError(err?.message || 'Failed to fetch notices');
       setNotices([]);
@@ -88,11 +155,55 @@ const Notices = ({ onNavigate }) => {
   };
 
   useEffect(() => {
-    loadNotices();
+    const savedScrollY = Number(sessionStorage.getItem(NOTICE_SCROLL_KEY) || 0);
+    if (savedScrollY > 0) {
+      window.requestAnimationFrame(() => {
+        window.scrollTo(0, savedScrollY);
+      });
+    }
+    loadNotices({ forceRefresh: false });
+    const handleTrustChanged = () => {
+      sessionStorage.removeItem(NOTICE_SCROLL_KEY);
+      loadNotices({ forceRefresh: false });
+    };
+    window.addEventListener('trust-changed', handleTrustChanged);
+    return () => {
+      window.removeEventListener('trust-changed', handleTrustChanged);
+    };
   }, []);
 
+  const handleLoadMore = async () => {
+    if (loadingMore || loading || !hasMoreNotices || !selectedTrustId) return;
+    try {
+      setLoadingMore(true);
+      const progress = readNoticeboardProgress(selectedTrustId);
+      const nextPage = Number(progress?.nextPage) > 0 ? Number(progress.nextPage) : 2;
+      await loadPage({ trustId: selectedTrustId, page: nextPage, forceRefresh: false, trustName: localStorage.getItem('selected_trust_name') || null });
+    } finally {
+      setLoadingMore(false);
+    }
+  };
+
+  const handleRefresh = async () => {
+    if (!selectedTrustId || refreshing) return;
+    try {
+      setRefreshing(true);
+      clearNoticeboardCache(selectedTrustId);
+      await loadNotices({ forceRefresh: true });
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
+  const openNoticeDetail = (noticeId) => {
+    const id = String(noticeId || '').trim();
+    if (!id) return;
+    sessionStorage.setItem(NOTICE_SCROLL_KEY, String(window.scrollY || 0));
+    navigate(`/notices/${encodeURIComponent(id)}`);
+  };
+
   return (
-    <div className={`bg-white min-h-screen pb-10 relative${isMenuOpen ? ' overflow-hidden max-h-screen' : ''}`}>
+    <div className={`bg-slate-50 min-h-screen pb-10 relative${isMenuOpen ? ' overflow-hidden max-h-screen' : ''}`}>
       <div className="theme-navbar border-b px-6 py-5 flex items-center justify-between sticky top-0 z-50 shadow-sm pointer-events-auto" style={{ paddingTop: 'max(env(safe-area-inset-top, 0px), 20px)' }}>
         <button
           onClick={() => setIsMenuOpen(!isMenuOpen)}
@@ -125,17 +236,35 @@ const Notices = ({ onNavigate }) => {
         currentPage="notices"
       />
 
-      <div className="bg-white px-6 pt-8 pb-4">
-        <div className="flex items-center gap-4">
-          <div className="bg-white p-3 rounded-2xl shadow-sm border border-gray-100">
-            <Bell className="h-12 w-12" style={{ color: theme.secondary }} />
-          </div>
-          <div>
-            <h1 className="text-2xl font-bold text-gray-800">Important Updates</h1>
-            <p className="text-gray-500 text-sm font-medium">Live notices from trust database</p>
+      <div className="px-6 pt-7 pb-4">
+        <div className="rounded-2xl border border-slate-200/80 bg-gradient-to-br from-white via-white to-slate-50 p-4 shadow-sm">
+          <div className="flex items-start gap-3">
+            <div className="h-11 w-11 rounded-xl border border-slate-200 bg-white/95 flex items-center justify-center shrink-0">
+              <Bell className="h-5 w-5" style={{ color: theme.secondary }} />
+            </div>
+            <div className="flex-1 min-w-0">
+              <h1 className="text-xl font-bold text-slate-800 leading-tight">Notice Board</h1>
+              <p className="text-slate-500 text-xs sm:text-sm mt-1">Important updates and active notices from your trust</p>
+            </div>
+            <button
+              onClick={handleRefresh}
+              disabled={refreshing}
+              className="h-9 w-9 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 disabled:opacity-60 flex items-center justify-center shrink-0"
+              title="Refresh notices"
+            >
+              <RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} style={{ color: theme.primary }} />
+            </button>
           </div>
         </div>
       </div>
+
+      {!loading && !error && notices.length > 0 && (
+        <div className="px-6 pb-2">
+          <p className="text-[11px] font-semibold text-gray-500">
+            {notices.length} active notice{notices.length === 1 ? '' : 's'}
+          </p>
+        </div>
+      )}
 
       {loading && (
         <div className="px-6 py-4 space-y-4 animate-pulse">
@@ -155,7 +284,7 @@ const Notices = ({ onNavigate }) => {
             <h3 className="font-bold text-red-800">Unable to load notices</h3>
             <p className="text-sm text-red-600 mt-1">{error}</p>
             <button
-              onClick={loadNotices}
+              onClick={() => loadNotices({ forceRefresh: true })}
               className="mt-4 px-4 py-2 rounded-xl text-white text-sm font-semibold"
               style={{ background: theme.primary }}
             >
@@ -167,46 +296,90 @@ const Notices = ({ onNavigate }) => {
 
       {!loading && !error && (
         <div className="px-6 py-4 space-y-4">
-          {notices.map((notice) => (
-            <div
+          {notices.map((notice) => {
+            const dateLabel = formatDateRange(notice.start_date, notice.end_date);
+            const isVip = String(notice?.type || '').toLowerCase() === 'vip';
+            return (
+            <button
               key={notice.id}
-              className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100 hover:shadow-md transition-all border-l-4"
-              style={{ borderLeftColor: theme.primary }}
+              onClick={() => openNoticeDetail(notice.id)}
+              className="w-full text-left bg-white rounded-2xl p-4 sm:p-5 border transition-all hover:shadow-md active:scale-[0.995] border-l-4 shadow-sm"
+              style={{
+                borderLeftColor: isVip ? '#D4AF37' : theme.primary,
+                borderColor: isVip ? '#F1E2A4' : '#E2E8F0',
+                background: isVip ? 'linear-gradient(180deg, #fffdf6 0%, #ffffff 45%)' : '#ffffff'
+              }}
             >
-              <div className="flex items-center justify-between mb-3">
-                <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full" style={{ color: theme.primary, background: `color-mix(in srgb, ${theme.primary} 10%, white)` }}>
-                  {notice.type || 'general'}
+              <div className="flex items-center justify-between gap-3 mb-3">
+                <span
+                  className="text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded-full inline-flex items-center gap-1"
+                  style={
+                    isVip
+                      ? { color: '#8A6A00', background: '#FDF3C7' }
+                      : { color: theme.primary, background: `color-mix(in srgb, ${theme.primary} 12%, white)` }
+                  }
+                >
+                  {isVip ? <Star className="h-3 w-3" fill="#D4AF37" color="#D4AF37" /> : null}
+                  {isVip ? 'VIP Notice' : 'GEN'}
                 </span>
-                <div className="flex items-center gap-1.5 text-gray-400 text-[10px] font-bold">
-                  <Calendar className="h-3 w-3" />
-                  {formatDateRange(notice.start_date, notice.end_date)}
+                {dateLabel && (
+                  <div className="flex items-center gap-1.5 text-gray-400 text-[10px] font-bold whitespace-nowrap">
+                    <Calendar className="h-3 w-3" />
+                    {dateLabel}
+                  </div>
+                )}
+              </div>
+
+              <h3 className="font-bold text-gray-800 text-lg mb-2 leading-tight">
+                {notice.name}
+              </h3>
+
+              {notice.description && (
+                <div className="mb-4">
+                  <p className="text-gray-600 text-sm leading-relaxed line-clamp-3">
+                    {notice.description}
+                  </p>
+                </div>
+              )}
+
+              <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-3">
+                <div className="flex items-center gap-1.5 text-xs font-medium text-slate-500">
+                  {Array.isArray(notice.attachments) && notice.attachments.length > 0 && (
+                    <>
+                      <Paperclip className="h-3.5 w-3.5" />
+                      {notice.attachments.length} Attachment{notice.attachments.length === 1 ? '' : 's'}
+                    </>
+                  )}
+                </div>
+                <div className="inline-flex items-center gap-1 text-xs font-semibold" style={{ color: theme.primary }}>
+                  Tap to view details
+                  <ChevronRight className="h-3.5 w-3.5" />
                 </div>
               </div>
-
-              <h3 className="font-bold text-gray-800 text-lg mb-2 leading-tight">{notice.name}</h3>
-
-              <p className="text-gray-600 text-sm leading-relaxed">
-                {notice.description || 'No description available.'}
-              </p>
-
-              <div className="mt-4 pt-4 border-t border-gray-50 flex items-center justify-between">
-                <span className="text-[11px] text-gray-500 font-medium">
-                  {(notice.attachments || []).length} attachment(s)
-                </span>
-                <span className="text-xs font-bold flex items-center gap-1" style={{ color: theme.primary }}>
-                  Latest Notice <ArrowRight className="h-3 w-3" />
-                </span>
-              </div>
-            </div>
-          ))}
+            </button>
+            );
+          })}
 
           {notices.length === 0 && (
             <div className="text-center py-20">
-              <div className="bg-gray-50 h-20 w-20 rounded-full flex items-center justify-center mx-auto mb-4 border border-dashed border-gray-300">
-                <Bell className="h-8 w-8 text-gray-300" />
+              <div className="bg-white h-20 w-20 rounded-full flex items-center justify-center mx-auto mb-4 border border-slate-200 shadow-sm">
+                <FileText className="h-8 w-8 text-slate-300" />
               </div>
-              <h3 className="text-gray-800 font-bold">No active notices</h3>
-              <p className="text-gray-500 text-sm mt-1">Noticeboard table is connected. Add records to show here.</p>
+              <h3 className="text-gray-800 font-bold">No active notices right now</h3>
+              <p className="text-gray-500 text-sm mt-1">You're all caught up.</p>
+            </div>
+          )}
+
+          {notices.length > 0 && hasMoreNotices && (
+            <div className="pt-2">
+              <button
+                onClick={handleLoadMore}
+                disabled={loadingMore}
+                className="w-full py-3 rounded-xl border border-gray-200 bg-white text-sm font-semibold disabled:opacity-60"
+                style={{ color: theme.primary }}
+              >
+                {loadingMore ? 'Loading more notices...' : 'Load more notices'}
+              </button>
             </div>
           )}
         </div>

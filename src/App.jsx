@@ -15,6 +15,7 @@ import Appointments from './Appointments';
 import Reports from './Reports';
 import Referral from './Referral';
 import Notices from './Notices';
+import NoticeDetail from './NoticeDetail';
 import Events from './Events';
 import Notifications from './Notifications';
 import HealthcareTrusteeDirectory from './HealthcareTrusteeDirectory';
@@ -792,6 +793,16 @@ const HospitalTrusteeApp = () => {
             <ProtectedRoute>
               <FeatureGuard featureKey="feature_noticeboard">
                 <Notices onNavigate={handleNavigate} />
+              </FeatureGuard>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/notices/:noticeId"
+          element={
+            <ProtectedRoute>
+              <FeatureGuard featureKey="feature_noticeboard">
+                <NoticeDetail onNavigate={handleNavigate} />
               </FeatureGuard>
             </ProtectedRoute>
           }
