@@ -4,13 +4,23 @@ import { useBackNavigation } from './hooks';
 import { fetchTrustById } from './services/trustService';
 
 const TRUST_ID = import.meta.env.VITE_DEFAULT_TRUST_ID || 'b353d2ff-ec3b-4b90-a896-69f40662084e';
-const TRUST_CACHE_KEY = 'cached_trust_info';
+// Use the base-trust-specific cache key (same as Login/OTP pages)
+const LOGIN_TRUST_CACHE_KEY = 'cached_base_trust_info';
+
+// ─── Design Tokens ────────────────────────────────────────────────────────────────
+const RED      = 'var(--brand-red, #C0241A)';
+const RED_DARK = 'var(--brand-red-dark, #9B1A13)';
+const NAVY     = 'var(--brand-navy, #2B2F7E)';
+const WHITE    = '#FFFFFF';
+const GRAY     = 'var(--body-text-color, #64748b)';
+const BORDER   = 'rgba(148, 163, 184, 0.35)';
 
 const getCachedTrust = () => {
   try {
-    const raw = localStorage.getItem(TRUST_CACHE_KEY);
+    const raw = localStorage.getItem(LOGIN_TRUST_CACHE_KEY);
     if (!raw) return null;
-    const { data, ts } = JSON.parse(raw);
+    const { data, ts, trustId } = JSON.parse(raw);
+    if (trustId && trustId !== TRUST_ID) { localStorage.removeItem(LOGIN_TRUST_CACHE_KEY); return null; }
     if (Date.now() - ts > 24 * 60 * 60 * 1000) return null;
     return data;
   } catch { return null; }
@@ -79,7 +89,7 @@ const TermsAndConditions = () => {
         setTrustInfo(trust);
         setContent(trust.terms_content || '');
         try {
-          localStorage.setItem(TRUST_CACHE_KEY, JSON.stringify({ data: trust, ts: Date.now() }));
+          localStorage.setItem(LOGIN_TRUST_CACHE_KEY, JSON.stringify({ data: trust, ts: Date.now(), trustId: TRUST_ID }));
         } catch {}
       } catch (err) {
         console.warn('[Terms] Load error:', err);
@@ -98,6 +108,11 @@ const TermsAndConditions = () => {
 
   return (
     <div style={s.page}>
+      {/* Decorative blobs */}
+      <div style={s.blobTL} />
+      <div style={s.blobBR} />
+      <div style={s.blobCenter} />
+
       {/* Header */}
       <div style={s.header}>
         <button onClick={() => navigate(-1)} style={s.backBtn} aria-label="Go back">
@@ -213,23 +228,59 @@ const TermsAndConditions = () => {
           0%   { background-position: -400px 0; }
           100% { background-position: 400px 0; }
         }
+        @keyframes float1 {
+          0%,100% { transform: translateY(0) scale(1); }
+          50%      { transform: translateY(-20px) scale(1.05); }
+        }
+        @keyframes float2 {
+          0%,100% { transform: translateY(0) scale(1); }
+          50%      { transform: translateY(16px) scale(0.97); }
+        }
+        @keyframes float3 {
+          0%,100% { transform: translateX(0); }
+          50%      { transform: translateX(14px); }
+        }
+        @keyframes fadeUp {
+          from { opacity: 0; transform: translateY(28px); }
+          to   { opacity: 1; transform: translateY(0); }
+        }
       `}</style>
     </div>
   );
 };
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
-const RED   = '#C0241A';
-const NAVY  = '#2B2F7E';
-
 const s = {
   page: {
     fontFamily: "'Inter', sans-serif",
     minHeight: '100vh',
-    background: '#f8fafc',
+    background: 'var(--page-bg, linear-gradient(135deg, #fff5f5 0%, #ffffff 40%, #f0f1fb 100%))',
+    position: 'relative',
+    overflow: 'hidden',
     display: 'flex',
     flexDirection: 'column',
   },
+
+  // Ambient blobs
+  blobTL: {
+    position: 'absolute', top: '-80px', left: '-80px',
+    width: '320px', height: '320px', borderRadius: '50%',
+    background: `radial-gradient(circle, ${RED}22 0%, transparent 70%)`,
+    animation: 'float1 7s ease-in-out infinite', pointerEvents: 'none',
+  },
+  blobBR: {
+    position: 'absolute', bottom: '-100px', right: '-80px',
+    width: '360px', height: '360px', borderRadius: '50%',
+    background: `radial-gradient(circle, ${NAVY}24 0%, transparent 70%)`,
+    animation: 'float2 9s ease-in-out infinite', pointerEvents: 'none',
+  },
+  blobCenter: {
+    position: 'absolute', top: '40%', left: '60%',
+    width: '200px', height: '200px', borderRadius: '50%',
+    background: `radial-gradient(circle, ${RED}12 0%, transparent 70%)`,
+    animation: 'float3 6s ease-in-out infinite', pointerEvents: 'none',
+  },
+
   header: {
     display: 'flex',
     alignItems: 'center',
@@ -237,12 +288,16 @@ const s = {
     padding: '16px 18px',
     background: `linear-gradient(135deg, ${RED} 0%, ${NAVY} 100%)`,
     color: '#fff',
+    position: 'relative',
+    zIndex: 10,
+    boxShadow: `0 8px 24px ${RED}33`,
   },
   backBtn: {
     width: '40px', height: '40px', borderRadius: '12px',
     border: 'none', background: 'rgba(255,255,255,0.18)',
     color: '#fff', cursor: 'pointer', flexShrink: 0,
     display: 'flex', alignItems: 'center', justifyContent: 'center',
+    transition: 'background 0.2s ease',
   },
   headerCenter: {
     display: 'flex', alignItems: 'center', gap: '12px', flex: 1,
@@ -271,26 +326,30 @@ const s = {
     display: 'flex',
     flexDirection: 'column',
     gap: '0',
+    position: 'relative',
+    zIndex: 1,
   },
   introCard: {
     display: 'flex', gap: '14px', alignItems: 'flex-start',
-    background: 'linear-gradient(135deg, #fff5f5 0%, #f0f1fb 100%)',
-    border: `1px solid rgba(192,36,26,0.15)`,
+    background: `linear-gradient(135deg, ${RED}12 0%, ${NAVY}12 100%)`,
+    border: `1.5px solid ${RED}28`,
     borderRadius: '16px',
     padding: '16px',
     marginBottom: '20px',
+    animation: 'fadeUp 0.55s ease-out 0.1s both',
   },
   introIcon: { fontSize: '28px', flexShrink: 0, lineHeight: 1 },
   introTitle: { fontWeight: 700, fontSize: '14px', color: NAVY, margin: '0 0 4px 0' },
-  introText: { fontSize: '13px', color: '#64748b', margin: 0, lineHeight: 1.5 },
+  introText: { fontSize: '13px', color: GRAY, margin: 0, lineHeight: 1.5 },
 
   section: {
-    background: '#fff',
+    background: WHITE,
     borderRadius: '16px',
     padding: '18px',
     marginBottom: '12px',
     boxShadow: '0 2px 10px rgba(0,0,0,0.05)',
-    border: '1px solid rgba(226,232,240,0.8)',
+    border: `1px solid ${BORDER}`,
+    animation: 'fadeUp 0.55s ease-out both',
   },
   sectionHeader: {
     display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '10px',
@@ -312,11 +371,11 @@ const s = {
   },
 
   footerCard: {
-    background: '#fff',
+    background: WHITE,
     borderRadius: '16px',
     padding: '16px 18px',
     marginTop: '8px',
-    border: '1px solid rgba(226,232,240,0.8)',
+    border: `1px solid ${BORDER}`,
   },
   footerRow: {
     display: 'flex', alignItems: 'center', gap: '10px',
@@ -331,7 +390,7 @@ const s = {
 
   errorBox: {
     display: 'flex', gap: '14px', alignItems: 'flex-start',
-    background: '#FDECEA', border: '1.5px solid rgba(192,36,26,0.25)',
+    background: '#FDECEA', border: `1.5px solid ${RED}40`,
     borderRadius: '16px', padding: '18px', marginTop: '8px',
   },
   emptyBox: {

@@ -1,158 +1,167 @@
-﻿import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft, Building2, ChevronRight, Star } from 'lucide-react';
-import { getSponsors } from './services/api';
-import { fetchMemberTrusts, fetchTrustById } from './services/trustService';
 import { useTheme } from './hooks';
+import { fetchTrustById } from './services/trustService';
+import {
+  flattenListPages,
+  getCachedListPage,
+  getListPage,
+  setPinnedSponsor,
+  setSelectedSponsorId,
+  sponsorConfig
+} from './services/sponsorStore';
 
-const SPONSORS_LIST_CACHE_PREFIX = 'sponsors_list_cache_v1';
-const buildSponsorsListCacheKey = (trustId) => `${SPONSORS_LIST_CACHE_PREFIX}_${trustId || 'all'}`;
+const SPONSOR_SCROLL_KEY = 'sponsor_list_scroll_top_v1';
 
 const SponsorsList = ({ onNavigate, onBack }) => {
-  const [trusts, setTrusts] = useState([]);
-  const [trustSponsors, setTrustSponsors] = useState({});
-  const [isLoading, setIsLoading] = useState(true);
   const selectedTrustId = localStorage.getItem('selected_trust_id') || '';
   const { theme } = useTheme(selectedTrustId);
 
-  const sortedTrusts = useMemo(() => {
-    return [...trusts].sort((a, b) => {
-      if (a.is_active !== b.is_active) return a.is_active ? -1 : 1;
-      return String(a.name || '').localeCompare(String(b.name || ''));
-    });
-  }, [trusts]);
+  const [trustName, setTrustName] = useState(localStorage.getItem('selected_trust_name') || 'Trust Sponsors');
+  const [items, setItems] = useState([]);
+  const [loadedPages, setLoadedPages] = useState([]);
+  const [currentPage, setCurrentPage] = useState(0);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(true);
+
+  const loadMoreRef = useRef(null);
+  const lockRef = useRef(false);
+
+  const refreshFromPages = useCallback((pages) => {
+    if (!selectedTrustId) return;
+    const merged = flattenListPages(selectedTrustId, pages, true);
+    setItems(merged);
+  }, [selectedTrustId]);
+
+  const loadNextPage = useCallback(async () => {
+    if (!selectedTrustId || !hasMore || isLoading || isLoadingMore || lockRef.current) return;
+
+    lockRef.current = true;
+    setIsLoadingMore(true);
+    const nextPage = currentPage + 1;
+    try {
+      const cachedPage = getCachedListPage(selectedTrustId, nextPage);
+      const pageRes = (cachedPage.sponsors.length > 0 && cachedPage.isFresh)
+        ? { sponsors: cachedPage.sponsors, hasMore: cachedPage.sponsors.length === sponsorConfig.LIST_PAGE_SIZE }
+        : await getListPage({ trustId: selectedTrustId, page: nextPage, pageSize: sponsorConfig.LIST_PAGE_SIZE });
+
+      const hasItems = Array.isArray(pageRes.sponsors) && pageRes.sponsors.length > 0;
+      if (!hasItems) {
+        setHasMore(false);
+        return;
+      }
+      setCurrentPage(nextPage);
+      setLoadedPages((prev) => {
+        const next = prev.includes(nextPage) ? prev : [...prev, nextPage];
+        refreshFromPages(next);
+        return next;
+      });
+      setHasMore(Boolean(pageRes.hasMore));
+    } catch (err) {
+      console.error('Error loading more sponsors:', err);
+    } finally {
+      lockRef.current = false;
+      setIsLoadingMore(false);
+    }
+  }, [selectedTrustId, hasMore, isLoading, isLoadingMore, currentPage, refreshFromPages]);
 
   useEffect(() => {
-    const loadTrustsAndSponsors = async () => {
-      const cacheKey = buildSponsorsListCacheKey(selectedTrustId);
-      let cacheApplied = false;
-
-      // Show cached sponsors instantly; refresh from API in background.
-      try {
-        const cached = localStorage.getItem(cacheKey);
-        if (cached) {
-          const parsed = JSON.parse(cached);
-          const cachedTrusts = Array.isArray(parsed?.trusts) ? parsed.trusts : [];
-          const cachedMap = parsed?.sponsorsByTrust && typeof parsed.sponsorsByTrust === 'object'
-            ? parsed.sponsorsByTrust
-            : {};
-          const hasAnySponsors = Object.values(cachedMap).some(
-            (list) => Array.isArray(list) && list.length > 0
-          );
-
-          if (cachedTrusts.length > 0 && hasAnySponsors) {
-            setTrusts(cachedTrusts);
-            setTrustSponsors(cachedMap);
-            setIsLoading(false);
-            cacheApplied = true;
-          }
-        }
-      } catch {
-        // ignore malformed cache
-      }
-
-      if (!cacheApplied && selectedTrustId) {
-        try {
-          const trustName = localStorage.getItem('selected_trust_name') || 'Trust Sponsors';
-          const rawSponsorCache = localStorage.getItem(`sponsors_cache_${selectedTrustId}`);
-          if (rawSponsorCache) {
-            const parsedSponsorCache = JSON.parse(rawSponsorCache);
-            const sponsorList = Array.isArray(parsedSponsorCache)
-              ? parsedSponsorCache
-              : (Array.isArray(parsedSponsorCache?.data) ? parsedSponsorCache.data : []);
-            if (Array.isArray(sponsorList) && sponsorList.length > 0) {
-              setTrusts([{ id: selectedTrustId, name: trustName, is_active: true }]);
-              setTrustSponsors({ [selectedTrustId]: sponsorList });
-              setIsLoading(false);
-              cacheApplied = true;
-            }
-          }
-        } catch {
-          // ignore malformed cache
-        }
-      }
-
-      try {
-        if (!cacheApplied) setIsLoading(true);
-        const userStr = localStorage.getItem('user');
-        const user = userStr ? JSON.parse(userStr) : null;
-        const membersId = user?.members_id || user?.member_id || user?.id || null;
-
-        let trustsList = [];
-        if (membersId) {
-          const memberTrusts = await fetchMemberTrusts(membersId);
-          trustsList = memberTrusts.filter((t) => t?.is_active !== false);
-        }
-
-        if (selectedTrustId) {
-          const selectedFromMembership = trustsList.filter((t) => t?.id === selectedTrustId);
-          if (selectedFromMembership.length) {
-            trustsList = selectedFromMembership;
-          } else {
-            const fallbackTrust = await fetchTrustById(selectedTrustId);
-            trustsList = fallbackTrust ? [fallbackTrust] : [];
-          }
-        } else if (!trustsList.length) {
-          const fallbackTrust = await fetchTrustById(localStorage.getItem('selected_trust_id') || '');
-          trustsList = fallbackTrust ? [fallbackTrust] : [];
-        }
-
-        const uniqueTrusts = [];
-        const seen = new Set();
-        trustsList.forEach((t) => {
-          if (!t?.id || seen.has(t.id)) return;
-          seen.add(t.id);
-          uniqueTrusts.push(t);
-        });
-
-        setTrusts(uniqueTrusts);
-
-        const sponsorEntries = await Promise.all(
-          uniqueTrusts.map(async (trust) => {
-            const res = await getSponsors(trust.id, trust.name);
-            return [trust.id, res?.success ? res.data || [] : []];
-          })
-        );
-
-        const sponsorMap = sponsorEntries.reduce((acc, [trustId, list]) => {
-          acc[trustId] = list;
-          return acc;
-        }, {});
-
-        setTrustSponsors(sponsorMap);
-        try {
-          localStorage.setItem(
-            cacheKey,
-            JSON.stringify({
-              ts: Date.now(),
-              trusts: uniqueTrusts,
-              sponsorsByTrust: sponsorMap
-            })
-          );
-        } catch {
-          // ignore cache write failures
-        }
-      } catch (err) {
-        console.error('Error loading sponsor list:', err);
-        if (!cacheApplied) {
-          setTrusts([]);
-          setTrustSponsors({});
-        }
-      } finally {
+    let active = true;
+    const init = async () => {
+      if (!selectedTrustId) {
+        setItems([]);
         setIsLoading(false);
+        setHasMore(false);
+        return;
+      }
+
+      try {
+        const trust = await fetchTrustById(selectedTrustId);
+        if (active && trust?.name) setTrustName(trust.name);
+      } catch {
+        // ignore trust metadata failures
+      }
+
+      const cachedFirst = getCachedListPage(selectedTrustId, 1);
+      if (cachedFirst.sponsors.length > 0) {
+        setLoadedPages([1]);
+        setCurrentPage(1);
+        setHasMore(cachedFirst.sponsors.length === sponsorConfig.LIST_PAGE_SIZE);
+        refreshFromPages([1]);
+        setIsLoading(false);
+        if (cachedFirst.isFresh) return;
+      }
+
+      try {
+        const first = await getListPage({ trustId: selectedTrustId, page: 1, pageSize: sponsorConfig.LIST_PAGE_SIZE });
+        if (!active) return;
+        const hasItems = Array.isArray(first.sponsors) && first.sponsors.length > 0;
+        setLoadedPages(hasItems ? [1] : []);
+        setCurrentPage(hasItems ? 1 : 0);
+        setHasMore(hasItems && Boolean(first.hasMore));
+        refreshFromPages(hasItems ? [1] : []);
+      } catch (err) {
+        if (active) console.error('Error loading sponsor list page 1:', err);
+      } finally {
+        if (active) setIsLoading(false);
       }
     };
 
-    loadTrustsAndSponsors();
-  }, [selectedTrustId]);
+    init();
+    return () => { active = false; };
+  }, [selectedTrustId, refreshFromPages]);
 
-  const openSponsor = (trust, sponsor) => {
+  useEffect(() => {
     try {
-      sessionStorage.setItem('selectedSponsor', JSON.stringify(sponsor));
+      const raw = sessionStorage.getItem(SPONSOR_SCROLL_KEY);
+      const value = Number(raw || 0);
+      if (Number.isFinite(value) && value > 0) {
+        requestAnimationFrame(() => window.scrollTo(0, value));
+      }
     } catch {
       // ignore
     }
-    if (trust?.id) localStorage.setItem('selected_trust_id', trust.id);
-    if (trust?.name) localStorage.setItem('selected_trust_name', trust.name);
+
+    return () => {
+      try { sessionStorage.setItem(SPONSOR_SCROLL_KEY, String(window.scrollY || 0)); } catch { /* ignore */ }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!loadMoreRef.current) return;
+    const observer = new IntersectionObserver(
+      async (entries) => {
+        const first = entries[0];
+        if (!first?.isIntersecting) return;
+        if (!selectedTrustId || !hasMore || isLoading || isLoadingMore || lockRef.current) return;
+        await loadNextPage();
+      },
+      { rootMargin: '160px 0px' }
+    );
+
+    observer.observe(loadMoreRef.current);
+    return () => observer.disconnect();
+  }, [selectedTrustId, hasMore, isLoading, isLoadingMore, loadNextPage]);
+
+  useEffect(() => {
+    if (!selectedTrustId || isLoading || isLoadingMore || !hasMore || lockRef.current) return;
+    if (loadedPages.length === 0) return;
+    if (!(items.length > 0 && items.length < sponsorConfig.LIST_PAGE_SIZE)) return;
+
+    const timer = setTimeout(() => {
+      void loadNextPage();
+    }, 80);
+
+    return () => clearTimeout(timer);
+  }, [selectedTrustId, isLoading, isLoadingMore, hasMore, items.length, loadedPages.length, loadNextPage]);
+
+  const list = useMemo(() => items, [items]);
+
+  const openSponsor = (sponsor) => {
+    if (!sponsor?.id) return;
+    setSelectedSponsorId(sponsor.id);
+    setPinnedSponsor(selectedTrustId, sponsor.id);
     onNavigate('sponsor-details');
   };
 
@@ -164,7 +173,7 @@ const SponsorsList = ({ onNavigate, onBack }) => {
         </button>
         <div>
           <h1 className="text-lg font-extrabold" style={{ color: theme.secondary }}>Sponsors</h1>
-          <p className="text-[11px] font-medium text-slate-400">Choose a sponsor to view details</p>
+          <p className="text-[11px] font-medium text-slate-400">{trustName}</p>
         </div>
       </div>
 
@@ -174,38 +183,24 @@ const SponsorsList = ({ onNavigate, onBack }) => {
             <div className="w-8 h-8 rounded-full border-2 border-t-transparent animate-spin mx-auto" style={{ borderColor: theme.primary, borderTopColor: 'transparent' }} />
             <p className="text-xs font-semibold mt-2" style={{ color: theme.secondary }}>Loading sponsors...</p>
           </div>
-        ) : sortedTrusts.length === 0 ? (
+        ) : list.length === 0 ? (
           <div className="rounded-2xl bg-white p-6 text-center border border-slate-200">
-            <p className="text-sm font-semibold text-slate-600">No trusts available</p>
+            <p className="text-sm font-semibold text-slate-600">No active sponsors available</p>
           </div>
         ) : (
-          sortedTrusts.map((trust) => {
-            const list = trustSponsors[trust.id] || [];
-            if (!list.length) return null;
-            return (
-              <div
-                key={trust.id}
-                className="rounded-3xl p-[1px]"
-                style={{
-                  background: `linear-gradient(135deg, ${theme.primary}26 0%, ${theme.secondary}18 50%, ${theme.primary}14 100%)`,
-                  boxShadow: `0 10px 24px ${theme.secondary}12`,
-                }}
-              >
-                <div className="rounded-3xl bg-white/95 backdrop-blur px-3 py-3">
-                  <div className="px-1 pb-2">
-                    <p className="text-[11px] font-extrabold uppercase tracking-[0.18em]" style={{ color: theme.primary }}>
-                      {trust.name || 'Trust Sponsors'}
-                    </p>
-                    {trust.remark && (
-                      <p className="text-[10px] text-slate-400 mt-0.5 truncate">{trust.remark}</p>
-                    )}
-                  </div>
-
-                  <div className="space-y-2">
+          <div
+            className="rounded-3xl p-[1px]"
+            style={{
+              background: `linear-gradient(135deg, ${theme.primary}26 0%, ${theme.secondary}18 50%, ${theme.primary}14 100%)`,
+              boxShadow: `0 10px 24px ${theme.secondary}12`,
+            }}
+          >
+            <div className="rounded-3xl bg-white/95 backdrop-blur px-3 py-3">
+              <div className="space-y-2">
                 {list.map((sponsor) => (
                   <button
                     key={sponsor.id}
-                    onClick={() => openSponsor(trust, sponsor)}
+                    onClick={() => openSponsor(sponsor)}
                     className="w-full flex items-center gap-3 rounded-2xl px-3.5 py-3 text-left transition-all active:scale-[0.985]"
                     style={{
                       background: `linear-gradient(135deg, #ffffff 0%, ${theme.accentBg || '#f8fafc'} 100%)`,
@@ -213,8 +208,8 @@ const SponsorsList = ({ onNavigate, onBack }) => {
                     }}
                   >
                     <div className="w-12 h-12 rounded-xl overflow-hidden flex items-center justify-center bg-slate-50 border border-slate-100 shadow-sm">
-                      {sponsor.photo_url ? (
-                        <img src={sponsor.photo_url} alt={sponsor.name} className="w-full h-full object-cover" />
+                      {(sponsor.photo_thumb_url || sponsor.photo_url) ? (
+                        <img src={sponsor.photo_thumb_url || sponsor.photo_url} alt={sponsor.name} className="w-full h-full object-cover" loading="lazy" />
                       ) : (
                         <Star className="h-4 w-4" style={{ color: theme.primary }} />
                       )}
@@ -226,7 +221,7 @@ const SponsorsList = ({ onNavigate, onBack }) => {
                       <div className="mt-0.5 flex items-center gap-1.5 min-w-0">
                         <Building2 className="h-3 w-3 text-slate-400 flex-shrink-0" />
                         <p className="text-[10px] font-semibold text-slate-500 truncate">
-                        {sponsor.company_name || sponsor.position || 'Community partner'}
+                          {sponsor.company_name || sponsor.position || 'Community partner'}
                         </p>
                       </div>
                     </div>
@@ -238,17 +233,19 @@ const SponsorsList = ({ onNavigate, onBack }) => {
                     </div>
                   </button>
                 ))}
-                  </div>
-                </div>
               </div>
-            );
-          })
+            </div>
+          </div>
         )}
+
+        <div ref={loadMoreRef} className="h-8 flex items-center justify-center">
+          {isLoadingMore ? (
+            <div className="w-5 h-5 rounded-full border-2 border-t-transparent animate-spin" style={{ borderColor: theme.primary, borderTopColor: 'transparent' }} />
+          ) : null}
+        </div>
       </div>
     </div>
   );
 };
 
 export default SponsorsList;
-
-

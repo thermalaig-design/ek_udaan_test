@@ -3,6 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { useBackNavigation } from './hooks';
 import { specialLogin } from './services/authService';
 import { fetchDirectoryData } from './services/directoryService';
+import { persistUserSession } from './utils/storageUtils';
 
 const OTP_FLOW_KEY = 'otp_flow_allowed';
 const TRUST_ID = import.meta.env.VITE_DEFAULT_TRUST_ID || 'b353d2ff-ec3b-4b90-a896-69f40662084e';
@@ -44,8 +45,12 @@ function SpecialOTPVerification() {
         return;
       }
       if (user) {
-        localStorage.setItem('user', JSON.stringify(user));
-        localStorage.setItem('isLoggedIn', 'true');
+        const persisted = persistUserSession(user);
+        if (!persisted.success) {
+          setError(persisted.message || 'Unable to save session on this device. Please try again.');
+          setLoading(false);
+          return;
+        }
         const memberships = Array.isArray(user?.hospital_memberships) ? user.hospital_memberships : [];
         const baseMembership = memberships.find((m) => String(m?.trust_id || '') === String(TRUST_ID));
         const fallbackMembership = baseMembership ||

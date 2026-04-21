@@ -6,20 +6,29 @@ import { fetchTrustById } from './services/trustService';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const TRUST_ID = import.meta.env.VITE_DEFAULT_TRUST_ID || 'b353d2ff-ec3b-4b90-a896-69f40662084e';
-const TRUST_CACHE_KEY = 'cached_trust_info';
+// Cache key specifically for the BASE/LOGIN trust — separate from session trust
+const LOGIN_TRUST_CACHE_KEY = 'cached_base_trust_info';
 const TRUST_CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
-const STATIC_LOGO_URL = '/app-logo.png';
+// No static fallback image — show monogram placeholder until Supabase icon_url loads
 const DEFAULT_TRUST_NAME = import.meta.env.VITE_DEFAULT_TRUST_NAME || 'Ek Udaan';
 const OTP_FLOW_KEY = 'otp_flow_allowed';
 
 // ─── Cache helpers ─────────────────────────────────────────────────────────────
-const getCachedTrust = () => {
+// IMPORTANT: Login page uses its own cache key (cached_base_trust_info) that is
+// ALWAYS tied to the BASE trust ID. This prevents the Home page's trust-switching
+// (which writes to selected_trust_id) from ever bleeding wrong logos into Login.
+const getCachedBaseTrust = () => {
   try {
-    const raw = localStorage.getItem(TRUST_CACHE_KEY);
+    const raw = localStorage.getItem(LOGIN_TRUST_CACHE_KEY);
     if (!raw) return null;
-    const { data, ts } = JSON.parse(raw);
+    const { data, ts, trustId } = JSON.parse(raw);
+    // Reject cache if it belongs to a different trust
+    if (trustId && trustId !== TRUST_ID) {
+      localStorage.removeItem(LOGIN_TRUST_CACHE_KEY);
+      return null;
+    }
     if (Date.now() - ts > TRUST_CACHE_TTL_MS) {
-      localStorage.removeItem(TRUST_CACHE_KEY);
+      localStorage.removeItem(LOGIN_TRUST_CACHE_KEY);
       return null;
     }
     return data;
@@ -28,9 +37,12 @@ const getCachedTrust = () => {
   }
 };
 
-const setCachedTrust = (trust) => {
+const setCachedBaseTrust = (trust) => {
   try {
-    localStorage.setItem(TRUST_CACHE_KEY, JSON.stringify({ data: trust, ts: Date.now() }));
+    localStorage.setItem(
+      LOGIN_TRUST_CACHE_KEY,
+      JSON.stringify({ data: trust, ts: Date.now(), trustId: TRUST_ID })
+    );
   } catch { /* ignore */ }
 };
 
@@ -44,8 +56,8 @@ function Login() {
   const [error, setError] = useState('');
   const [focused, setFocused] = useState(false);
 
-  // Initialize immediately from cache — avoids any flash/delay on refresh
-  const [trustInfo, setTrustInfo] = useState(() => getCachedTrust() || null);
+  // Initialize immediately from BASE-trust-specific cache — prevents wrong logo on refresh
+  const [trustInfo, setTrustInfo] = useState(() => getCachedBaseTrust() || null);
 
   // Logged-in users should not see login/OTP UI again on refresh.
   useEffect(() => {
@@ -56,30 +68,32 @@ function Login() {
     }
   }, [navigate]);
 
-  // Fetch trust info — serve from cache first, refresh in background
+  // Clear the OLD shared cache key — it may contain another trust's data from Home page
+  // This runs once on mount so stale logos can never bleed back to Login.
+  useEffect(() => {
+    try { localStorage.removeItem('cached_trust_info'); } catch { /* ignore */ }
+  }, []);
+
+  // Always fetch the BASE trust (TRUST_ID = Ek Udaan) — never reads selected_trust_id.
+  // Login page must always show Ek Udaan branding regardless of which trust was last active.
   useEffect(() => {
     let active = true;
 
     const loadTrust = async () => {
       try {
+        // Force fetch by the hardcoded BASE trust ID
         const trust = await fetchTrustById(TRUST_ID);
         if (!active || !trust) return;
 
         setTrustInfo(trust);
-        setCachedTrust(trust);
-
-        // Keep localStorage in sync so the rest of the app reads correct data
-        localStorage.setItem('selected_trust_id', trust.id);
-        localStorage.setItem('selected_trust_name', trust.name || '');
+        // Write to LOGIN-specific cache (isolated from Home page trust switching)
+        setCachedBaseTrust(trust);
       } catch (err) {
-        console.warn('[Login] Failed to refresh trust info:', err?.message || err);
-        // Cache is still serving — no UI impact
+        console.warn('[Login] Failed to refresh base trust info:', err?.message || err);
       }
     };
 
-    // If cache was empty, show a tiny loader until the fetch resolves
     loadTrust();
-
     return () => { active = false; };
   }, []);
 
@@ -125,9 +139,10 @@ function Login() {
     }
   };
 
-  // ─── Derived display values ──────────────────────────────────────────────────
+  // ─── Derived display values ────────────────────────────────────────────────────────────────
   const displayName = trustInfo?.name || DEFAULT_TRUST_NAME;
-  const displayLogo = trustInfo?.icon_url || STATIC_LOGO_URL;
+  // Only show logo when Supabase has returned a real icon_url — no fallback to /app-logo.png
+  const displayLogo = trustInfo?.icon_url || null;
 
   // ─── Render ──────────────────────────────────────────────────────────────────
   return (
@@ -143,19 +158,26 @@ function Login() {
           {/* Top accent bar */}
           <div style={styles.topBar} />
 
-          {/* Logo */}
+          {/* Logo — shows only Supabase icon_url; placeholder monogram shown while loading */}
           <div style={styles.logoWrap}>
             <div style={styles.logoRing}>
-              <img
-                src={displayLogo}
-                alt={displayName || 'Trust Logo'}
-                style={styles.logoImg}
-                loading="eager"
-                onError={(e) => {
-                  e.currentTarget.onerror = null;
-                  e.currentTarget.src = STATIC_LOGO_URL;
-                }}
-              />
+              {displayLogo ? (
+                <img
+                  src={displayLogo}
+                  alt={displayName || 'Trust Logo'}
+                  style={styles.logoImg}
+                  loading="eager"
+                  onError={(e) => {
+                    // If URL is broken, hide the img entirely; do not fall back to Mah-Setu logo
+                    e.currentTarget.style.display = 'none';
+                  }}
+                />
+              ) : (
+                // Neutral monogram while Supabase fetch is in progress
+                <div style={styles.logoMonogram}>
+                  {(displayName || 'EU').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()}
+                </div>
+              )}
             </div>
           </div>
 

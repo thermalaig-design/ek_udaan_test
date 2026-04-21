@@ -3,6 +3,7 @@ import { Routes, Route, useNavigate, useLocation, Navigate } from 'react-router-
 import { LocalNotifications } from '@capacitor/local-notifications';
 import { initPushNotifications } from './services/pushNotificationService';
 import { ThemeContext } from './context/ThemeContext';
+import { GalleryProvider } from './context/GalleryContext';
 import Login from './Login';
 import VIPLogin from './VIPLogin';
 import Home from './Home';
@@ -68,7 +69,7 @@ const HospitalTrusteeApp = () => {
     }
     return '';
   });
-  const authThemeRoutes = ['/login', '/otp-verification', '/special-otp-verification', '/vip-login'];
+  const authThemeRoutes = ['/login', '/otp-verification', '/special-otp-verification', '/vip-login', '/terms-and-conditions', '/privacy-policy'];
   const shouldUseBaseTheme = authThemeRoutes.includes(location.pathname);
   const resolvedThemeTrustId = shouldUseBaseTheme ? BASE_TRUST_ID : (activeTrustId || BASE_TRUST_ID);
   const { theme: appTheme } = useTheme(resolvedThemeTrustId);
@@ -670,9 +671,10 @@ const HospitalTrusteeApp = () => {
   }, [location.pathname]);
 
   return (
-    <ThemeContext.Provider value={appTheme}>
-    <div className={`bg-white min-h-screen relative shadow-2xl overflow-x-hidden ${(location.pathname === '/login' || location.pathname === '/otp-verification' || location.pathname === '/profile' || location.pathname === '/vip-login') ? 'overflow-hidden' : 'overflow-y-auto'
-      } max-w-full md:max-w-[430px] md:mx-auto`}>
+    <GalleryProvider>
+      <ThemeContext.Provider value={appTheme}>
+        <div className={`bg-white min-h-screen relative shadow-2xl overflow-x-hidden ${(location.pathname === '/login' || location.pathname === '/otp-verification' || location.pathname === '/profile' || location.pathname === '/vip-login') ? 'overflow-hidden' : 'overflow-y-auto'
+          } max-w-full md:max-w-[430px] md:mx-auto`}>
       <Routes>
         <Route
           path="/login"
@@ -942,8 +944,9 @@ const HospitalTrusteeApp = () => {
         />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
-    </div>
-    </ThemeContext.Provider>
+        </div>
+      </ThemeContext.Provider>
+    </GalleryProvider>
   );
 };
 

@@ -1,4 +1,4 @@
-﻿import axios from 'axios';
+import axios from 'axios';
 import { getCurrentNotificationContext } from './notificationAudience';
 import { supabase } from './supabaseClient.js';
 
@@ -533,48 +533,71 @@ export const getMarqueeUpdates = async (trustId = null, trustName = null) => {
   }
 };
 
-// Get sponsor information
-export const getSponsors = async (trustId = null, trustName = null) => {
-  try {
-    const getTodayLocal = () => {
-      const now = new Date();
-      const year = now.getFullYear();
-      const month = String(now.getMonth() + 1).padStart(2, '0');
-      const day = String(now.getDate()).padStart(2, '0');
-      return `${year}-${month}-${day}`;
-    };
-    const getUserMobileDigits = () => {
-      if (typeof window === 'undefined') return '';
-      try {
-        const userStr = localStorage.getItem('user');
-        if (!userStr) return '';
-        const user = JSON.parse(userStr);
-        const rawMobile = user?.Mobile || user?.mobile || user?.phone || '';
-        return String(rawMobile).replace(/\D/g, '');
-      } catch {
-        return '';
-      }
-    };
-    const isRefMatch = (refNo, userDigits) => {
-      if (!refNo || !userDigits) return false;
-      const refDigits = String(refNo).replace(/\D/g, '');
-      if (!refDigits) return false;
-      return refDigits === userDigits || refDigits.slice(-10) === userDigits.slice(-10);
-    };
-    const toDateOnly = (value) => {
-      if (!value) return null;
-      const raw = String(value).trim();
-      if (!raw) return null;
-      const datePart = raw.includes('T') ? raw.split('T')[0] : raw.split(' ')[0];
-      if (/^\d{4}-\d{2}-\d{2}$/.test(datePart)) return datePart;
-      const parsed = new Date(raw);
-      if (Number.isNaN(parsed.getTime())) return null;
-      const year = parsed.getFullYear();
-      const month = String(parsed.getMonth() + 1).padStart(2, '0');
-      const day = String(parsed.getDate()).padStart(2, '0');
-      return `${year}-${month}-${day}`;
-    };
+const SPONSOR_FLASH_ACTIVE_STATUS = 'active';
 
+const getTodayLocalYmd = () => {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+const toYmdOnly = (value) => {
+  if (value === null || value === undefined) return null;
+  const raw = String(value).trim();
+  if (!raw) return null;
+  const ymdMatch = raw.match(/^(\d{4}-\d{2}-\d{2})/);
+  if (ymdMatch) return ymdMatch[1];
+  const date = new Date(raw);
+  if (Number.isNaN(date.getTime())) return null;
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+const isFlashDateValidForToday = (row, todayYmd) => {
+  const startYmd = toYmdOnly(row?.start_date);
+  const endYmd = toYmdOnly(row?.end_date);
+  const startOk = !startYmd || startYmd <= todayYmd;
+  const endOk = !endYmd || endYmd >= todayYmd;
+  return startOk && endOk;
+};
+
+// Get sponsor information
+// view: "carousel" | "list"
+// Uses sponsor_flash as source of truth for active + valid sponsor rotation.
+export const getSponsors = async (
+  trustId = null,
+  trustName = null,
+  { page = 1, limit = null, offset = null, view = 'carousel' } = {}
+) => {
+  const shouldDebug = Boolean(import.meta.env.DEV) || String(import.meta.env.VITE_SPONSOR_DEBUG || '').toLowerCase() === 'true';
+  const shouldLogEmptyAsError = String(import.meta.env.VITE_SPONSOR_LOG_EMPTY || 'true').toLowerCase() !== 'false';
+  const diagnostics = {
+    trustId: trustId === null || trustId === undefined ? null : String(trustId).trim(),
+    trustName: trustName || null,
+    statusFilter: SPONSOR_FLASH_ACTIVE_STATUS,
+    today: getTodayLocalYmd(),
+    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'unknown',
+    counts: {
+      trustRows: 0,
+      activeRows: 0,
+      beforeDateFilterRows: 0,
+      afterDateFilterRows: 0,
+      joinedRows: 0,
+      finalRows: 0
+    },
+    range: { page: Number(page) || 1, limit: Number(limit) || 3, offset: Number(offset) || 0 },
+    sponsorFlashTrustIds: [],
+    sponsorFlashStatuses: [],
+    sponsorFlashSponsorIds: [],
+    joinedSponsorIds: [],
+    reason: ''
+  };
+
+  try {
     let resolvedTrustId = trustId || null;
     if (!resolvedTrustId && trustName) {
       const { data: trustData, error: trustError } = await supabase
@@ -587,192 +610,28 @@ export const getSponsors = async (trustId = null, trustName = null) => {
       }
     }
 
+    diagnostics.trustId = resolvedTrustId === null || resolvedTrustId === undefined ? null : String(resolvedTrustId).trim();
+
     if (!resolvedTrustId) {
-      return { success: true, data: [] };
+      diagnostics.reason = 'No trust_id resolved from app context.';
+      if (shouldLogEmptyAsError) {
+        console.error('[SponsorFlash][Empty]', diagnostics.reason, diagnostics);
+      }
+      if (shouldDebug) {
+        console.log('[SponsorFlash][Debug] reason=no-trust-id', diagnostics);
+      }
+      return { success: true, data: [], hasMore: false, debug: diagnostics };
     }
 
-    const normalizeSponsor = (row, extra = {}) => ({
-      id: row?.id,
-      name: row?.name,
-      position: row?.position,
-      about: row?.about,
-      photo_url: row?.photo_url,
-      company_name: row?.company_name,
-      ref_no: row?.ref_no,
-      created_at: row?.created_at,
-      updated_at: row?.updated_at,
-      phone: row?.phone || row?.ContactNumber1 || null,
-      badge_label: row?.badge_label,
-      email_id: row?.email_id || row?.email_id1 || null,
-      address: row?.address,
-      city: row?.city,
-      state: row?.state,
-      whatsapp_number: row?.whatsapp_number,
-      website_url: row?.website_url,
-      catalog_url: row?.catalog_url,
-      ...extra
-    });
+    const pageSize = Number(limit) > 0 ? Number(limit) : 3;
+    const pageNo = Number(page) > 0 ? Number(page) : 1;
+    const rangeFrom = Number.isFinite(Number(offset)) ? Number(offset) : (pageNo - 1) * pageSize;
+    const rangeTo = rangeFrom + pageSize - 1;
+    diagnostics.range = { page: pageNo, limit: pageSize, offset: rangeFrom };
 
-    const isMissingColumnError = (err, table, column) => {
-      const message = String(err?.message || '').toLowerCase();
-      return message.includes(`column ${table}.${column} does not exist`);
-    };
-
-    const sponsorFieldVariants = [
-      `
-        id,
-        name,
-        position,
-        about,
-        photo_url,
-        company_name,
-        ref_no,
-        created_at,
-        updated_at,
-        phone,
-        badge_label,
-        email_id,
-        address,
-        city,
-        state,
-        whatsapp_number,
-        website_url,
-        catalog_url
-      `,
-      `
-        id,
-        name,
-        position,
-        about,
-        photo_url,
-        company_name,
-        ref_no,
-        created_at,
-        updated_at,
-        "ContactNumber1",
-        badge_label,
-        email_id1,
-        address,
-        city,
-        state,
-        whatsapp_number,
-        website_url,
-        catalog_url
-      `,
-      `
-        id,
-        name,
-        position,
-        about,
-        photo_url,
-        company_name,
-        ref_no,
-        created_at,
-        updated_at,
-        badge_label,
-        address,
-        city,
-        state,
-        whatsapp_number,
-        website_url,
-        catalog_url
-      `
-    ];
-
-    const flashFieldVariants = [
-      `
-        id,
-        trust_id,
-        start_date,
-        end_date,
-        duration_seconds,
-        priority
-      `,
-      `
-        id,
-        trust_id,
-        start_date,
-        end_date,
-        priority
-      `
-    ];
-
-    const activeModes = ['is_active', 'status', 'none'];
-    const SCHEMA_CACHE_KEY = 'sponsor_schema_v1';
-    let cachedSchema = null;
-
-    try {
-      const stored =
-        (typeof window !== 'undefined' && localStorage.getItem(SCHEMA_CACHE_KEY)) ||
-        (typeof window !== 'undefined' && sessionStorage.getItem(SCHEMA_CACHE_KEY));
-      if (stored) cachedSchema = JSON.parse(stored);
-    } catch {
-      // ignore
-    }
-
-    const today = getTodayLocal();
-    const userMobileDigits = getUserMobileDigits();
-    let mapped = [];
-    let flashError = null;
-
-    // Fast path: try common schema first to avoid multiple sequential fallback queries.
-    // If this works, we return immediately for much faster first paint on Home.
-    const mapFlashRows = (rows) =>
-      (rows || [])
-        .filter((row) => {
-          const sponsor = Array.isArray(row?.sponsors) ? row.sponsors[0] : row?.sponsors || null;
-          if (!sponsor) return false;
-          const startDate = toDateOnly(row.start_date);
-          const endDate = toDateOnly(row.end_date);
-          if (row.start_date && !startDate) return false;
-          if (row.end_date && !endDate) return false;
-          const startOk = !startDate || startDate <= today;
-          const endOk = !endDate || endDate >= today;
-          return startOk && endOk;
-        })
-        .map((row) => ({
-          sponsor_ref: Array.isArray(row?.sponsors) ? row.sponsors[0] || null : row?.sponsors || null,
-          flash_id: row.id,
-          trust_id: row.trust_id,
-          start_date: row.start_date,
-          end_date: row.end_date,
-          duration_seconds: row.duration_seconds,
-          flash_priority: row.priority
-        }))
-        .filter((item) => item.sponsor_ref)
-        .map((item) =>
-          normalizeSponsor(item.sponsor_ref, {
-            is_user_match: isRefMatch(item.sponsor_ref.ref_no, userMobileDigits),
-            flash_id: item.flash_id,
-            trust_id: item.trust_id,
-            start_date: item.start_date,
-            end_date: item.end_date,
-            duration_seconds: item.duration_seconds,
-            flash_priority: item.flash_priority
-          })
-        );
-
-    const sortSponsors = (list) => {
-      list.sort((a, b) => {
-        const priorityDiff = (b.flash_priority || 0) - (a.flash_priority || 0);
-        if (priorityDiff !== 0) return priorityDiff;
-        if (a.is_user_match !== b.is_user_match) return a.is_user_match ? -1 : 1;
-        const refDiff = (b.ref_no || 0) - (a.ref_no || 0);
-        if (refDiff !== 0) return refDiff;
-        return String(a.company_name || '').localeCompare(String(b.company_name || ''));
-      });
-      return list;
-    };
-
-    if (cachedSchema?.mode !== 'direct') {
-      const fastFlashSelect = `
-        id,
-        trust_id,
-        start_date,
-        end_date,
-        duration_seconds,
-        priority,
-        sponsors (
+    const sponsorSelectForView = view === 'carousel'
+      ? 'id,name,photo_url,company_name,position'
+      : `
           id,
           name,
           position,
@@ -780,294 +639,223 @@ export const getSponsors = async (trustId = null, trustName = null) => {
           photo_url,
           company_name,
           ref_no,
-          created_at,
-          updated_at,
-          phone,
-          badge_label,
-          email_id,
-          address,
-          city,
-          state,
-          whatsapp_number,
-          website_url,
-          catalog_url
-        )
-      `;
-      const fastFlashResult = await supabase
-        .from('sponsor_flash')
-        .select(fastFlashSelect)
-        .eq('trust_id', resolvedTrustId)
-        .eq('is_active', true)
-        .order('priority', { ascending: false });
-
-      if (!fastFlashResult.error) {
-        const fastMapped = mapFlashRows(fastFlashResult.data || []);
-        if (fastMapped.length > 0) {
-          return { success: true, data: sortSponsors(fastMapped) };
-        }
-      }
-    }
-
-    const fastDirectSelect = `
-      id,
-      trust_id,
-      name,
-      position,
-      about,
-      photo_url,
-      company_name,
-      ref_no,
-      priority,
-      created_at,
-      updated_at,
-      phone,
-      badge_label,
-      email_id,
-      address,
-      city,
-      state,
-      whatsapp_number,
-      website_url,
-      catalog_url
-    `;
-    const fastDirectResult = await supabase
-      .from('sponsors')
-      .select(fastDirectSelect)
-      .eq('trust_id', resolvedTrustId)
-      .eq('is_active', true)
-      .order('priority', { ascending: false });
-
-    if (!fastDirectResult.error) {
-      const fastDirectMapped = (fastDirectResult.data || []).map((row) =>
-        normalizeSponsor(row, {
-          trust_id: row?.trust_id || resolvedTrustId || null,
-          is_user_match: isRefMatch(row?.ref_no, userMobileDigits),
-          flash_id: null,
-          start_date: null,
-          end_date: null,
-          duration_seconds: null,
-          flash_priority: row?.priority || 0
-        })
-      );
-      return { success: true, data: sortSponsors(fastDirectMapped) };
-    }
-
-    if (cachedSchema?.mode !== 'direct') {
-      let data = null;
-      let error = null;
-
-      const tryFlashQuery = async (sponsorFields, flashFields, activeMode) => {
-        let query = supabase
-          .from('sponsor_flash')
-          .select(`${flashFields}, sponsors (${sponsorFields})`)
-          .eq('trust_id', resolvedTrustId);
-        if (activeMode === 'is_active') query = query.eq('is_active', true);
-        else if (activeMode === 'status') query = query.eq('status', 'active');
-        return await query;
-      };
-
-      if (cachedSchema && cachedSchema.sf && cachedSchema.ff && cachedSchema.am) {
-        const result = await tryFlashQuery(cachedSchema.sf, cachedSchema.ff, cachedSchema.am);
-        if (!result.error) {
-          data = result.data;
-          error = null;
-        } else {
-          cachedSchema = null;
-          try {
-            if (typeof window !== 'undefined') {
-              sessionStorage.removeItem(SCHEMA_CACHE_KEY);
-              localStorage.removeItem(SCHEMA_CACHE_KEY);
-            }
-          } catch {
-            // ignore
-          }
-        }
-      }
-
-      if (!cachedSchema) {
-        outer:
-        for (const sponsorFields of sponsorFieldVariants) {
-          for (const flashFields of flashFieldVariants) {
-            for (const activeMode of activeModes) {
-              const result = await tryFlashQuery(sponsorFields, flashFields, activeMode);
-              data = result.data;
-              error = result.error;
-              if (!error) {
-                try {
-                  if (typeof window !== 'undefined') {
-                    const payload = JSON.stringify({ sf: sponsorFields, ff: flashFields, am: activeMode });
-                    sessionStorage.setItem(SCHEMA_CACHE_KEY, payload);
-                    localStorage.setItem(SCHEMA_CACHE_KEY, payload);
-                  }
-                } catch {
-                  // ignore
-                }
-                break outer;
-              }
-            }
-          }
-        }
-      }
-
-      if (error) {
-        flashError = error;
-        try {
-          if (typeof window !== 'undefined') {
-            const payload = JSON.stringify({ mode: 'direct' });
-            sessionStorage.setItem(SCHEMA_CACHE_KEY, payload);
-            localStorage.setItem(SCHEMA_CACHE_KEY, payload);
-          }
-        } catch {
-          // ignore
-        }
-      } else {
-        mapped = (data || [])
-          .filter((row) => {
-            const sponsor = Array.isArray(row?.sponsors) ? row.sponsors[0] : row?.sponsors || null;
-            if (!sponsor) return false;
-            const startDate = toDateOnly(row.start_date);
-            const endDate = toDateOnly(row.end_date);
-            if (row.start_date && !startDate) return false;
-            if (row.end_date && !endDate) return false;
-            const startOk = !startDate || startDate <= today;
-            const endOk = !endDate || endDate >= today;
-            return startOk && endOk;
-          })
-          .map((row) => ({
-            sponsor_ref: Array.isArray(row?.sponsors) ? row.sponsors[0] || null : row?.sponsors || null,
-            flash_id: row.id,
-            trust_id: row.trust_id,
-            start_date: row.start_date,
-            end_date: row.end_date,
-            duration_seconds: row.duration_seconds,
-            flash_priority: row.priority
-          }))
-          .filter((item) => item.sponsor_ref)
-          .map((item) =>
-            normalizeSponsor(item.sponsor_ref, {
-              is_user_match: isRefMatch(item.sponsor_ref.ref_no, userMobileDigits),
-              flash_id: item.flash_id,
-              trust_id: item.trust_id,
-              start_date: item.start_date,
-              end_date: item.end_date,
-              duration_seconds: item.duration_seconds,
-              flash_priority: item.flash_priority
-            })
-          );
-      }
-    }
-
-    if (!mapped.length) {
-      const directFieldVariants = [
-        `
-          id,
-          trust_id,
-          name,
-          position,
-          about,
-          photo_url,
-          company_name,
-          ref_no,
-          priority,
-          created_at,
-          updated_at,
-          phone,
-          badge_label,
-          email_id,
-          address,
-          city,
-          state,
-          whatsapp_number,
-          website_url,
-          catalog_url
-        `,
-        `
-          id,
-          trust_id,
-          name,
-          position,
-          about,
-          photo_url,
-          company_name,
-          ref_no,
-          priority,
-          created_at,
-          updated_at,
           "ContactNumber1",
-          badge_label,
           email_id1,
           address,
           city,
           state,
           whatsapp_number,
           website_url,
-          catalog_url
-        `,
-        `
-          id,
-          trust_id,
-          name,
-          position,
-          about,
-          photo_url,
-          company_name,
-          ref_no,
-          created_at,
-          updated_at
-        `
-      ];
-      const directActiveModes = ['is_active', 'status', 'none'];
+          catalog_url,
+          coPartner,
+          contactNumber2,
+          contactNumber3,
+          emailId2,
+          emailId3,
+          facebook,
+          instagram,
+          X,
+          linkedin,
+          address2,
+          address3,
+          position2
+        `;
 
-      let directRows = [];
-      let directError = null;
+    // Step A: sponsor_flash by trust_id only.
+    const { data: trustRows, error: trustRowsError } = await supabase
+      .from('sponsor_flash')
+      .select(`
+        id,
+        sponsor_id,
+        trust_id,
+        duration_seconds,
+        priority,
+        status,
+        start_date,
+        end_date,
+        created_at
+      `)
+      .eq('trust_id', resolvedTrustId)
+      .order('priority', { ascending: false })
+      .order('created_at', { ascending: true })
+      .order('id', { ascending: true });
 
-      outerDirect:
-      for (const fields of directFieldVariants) {
-        for (const activeMode of directActiveModes) {
-          let query = supabase.from('sponsors').select(fields);
-          if (resolvedTrustId) query = query.eq('trust_id', resolvedTrustId);
-          if (activeMode === 'is_active') query = query.eq('is_active', true);
-          else if (activeMode === 'status') query = query.eq('status', 'active');
+    if (trustRowsError) throw trustRowsError;
+    const trustOnlyRows = Array.isArray(trustRows) ? trustRows : [];
+    diagnostics.counts.trustRows = trustOnlyRows.length;
+    diagnostics.sponsorFlashTrustIds = [...new Set(trustOnlyRows.map((row) => row?.trust_id).filter(Boolean).map((id) => String(id)))];
+    diagnostics.sponsorFlashStatuses = [...new Set(trustOnlyRows.map((row) => row?.status).filter(Boolean).map((status) => String(status)))];
 
-          let result = await query;
+    // Step B: sponsor_flash by trust_id + status='active'.
+    const { data: activeRowsRaw, error: activeRowsError } = await supabase
+      .from('sponsor_flash')
+      .select(`
+        id,
+        sponsor_id,
+        trust_id,
+        duration_seconds,
+        priority,
+        status,
+        start_date,
+        end_date,
+        created_at
+      `)
+      .eq('trust_id', resolvedTrustId)
+      .eq('status', SPONSOR_FLASH_ACTIVE_STATUS)
+      .order('priority', { ascending: false })
+      .order('created_at', { ascending: true })
+      .order('id', { ascending: true });
 
-          if (result.error && resolvedTrustId && isMissingColumnError(result.error, 'sponsors', 'trust_id')) {
-            let trustlessQuery = supabase.from('sponsors').select(fields);
-            if (activeMode === 'is_active') trustlessQuery = trustlessQuery.eq('is_active', true);
-            else if (activeMode === 'status') trustlessQuery = trustlessQuery.eq('status', 'active');
-            result = await trustlessQuery;
-          }
+    if (activeRowsError) throw activeRowsError;
+    const activeRows = Array.isArray(activeRowsRaw) ? activeRowsRaw : [];
+    diagnostics.counts.activeRows = activeRows.length;
+    diagnostics.counts.beforeDateFilterRows = activeRows.length;
 
-          directRows = result.data || [];
-          directError = result.error || null;
+    // Step C: date filter in app (date only; timezone-safe against timestamp parts).
+    const dateFilteredRows = activeRows.filter((row) => isFlashDateValidForToday(row, diagnostics.today));
+    diagnostics.counts.afterDateFilterRows = dateFilteredRows.length;
 
-          if (!directError) break outerDirect;
-        }
-      }
+    const pagedRows = dateFilteredRows.slice(rangeFrom, rangeTo + 1);
+    const sponsorIdsForPage = [...new Set(pagedRows.map((row) => row?.sponsor_id).filter(Boolean).map((id) => String(id)))];
+    diagnostics.sponsorFlashSponsorIds = sponsorIdsForPage;
 
-      if (directError) {
-        if (flashError) {
-          console.warn('[Sponsors] sponsor_flash and direct sponsors lookup both failed:', flashError, directError);
-        }
-        throw directError;
-      }
-
-      mapped = (directRows || []).map((row) =>
-        normalizeSponsor(row, {
-          trust_id: row?.trust_id || resolvedTrustId || null,
-          is_user_match: isRefMatch(row?.ref_no, userMobileDigits),
-          flash_id: null,
-          start_date: null,
-          end_date: null,
-          duration_seconds: null,
-          flash_priority: row?.priority || 0
-        })
-      );
+    // Step D: join sponsor_flash rows with sponsors table by sponsor_id.
+    let sponsorsById = {};
+    if (sponsorIdsForPage.length > 0) {
+      const { data: sponsorRows, error: sponsorRowsError } = await supabase
+        .from('sponsors')
+        .select(sponsorSelectForView)
+        .in('id', sponsorIdsForPage);
+      if (sponsorRowsError) throw sponsorRowsError;
+      const rows = Array.isArray(sponsorRows) ? sponsorRows : [];
+      diagnostics.counts.joinedRows = rows.length;
+      diagnostics.joinedSponsorIds = rows.map((row) => row?.id).filter(Boolean).map((id) => String(id));
+      sponsorsById = rows.reduce((acc, sponsor) => {
+        const key = sponsor?.id === null || sponsor?.id === undefined ? '' : String(sponsor.id);
+        if (key) acc[key] = sponsor;
+        return acc;
+      }, {});
     }
 
-    return { success: true, data: sortSponsors(mapped) };
+    const mapped = pagedRows
+      .filter((row) => {
+        const key = row?.sponsor_id === null || row?.sponsor_id === undefined ? '' : String(row.sponsor_id);
+        return Boolean(key && sponsorsById[key]);
+      })
+      .map((row) => {
+        const sponsor = sponsorsById[String(row.sponsor_id)];
+        return {
+          id: sponsor.id,
+          name: sponsor.name || null,
+          photo_url: sponsor.photo_url || null,
+          company_name: sponsor.company_name || null,
+          position: sponsor.position || null,
+          about: sponsor.about || null,
+          ref_no: sponsor.ref_no || null,
+          ContactNumber1: sponsor.ContactNumber1 || null,
+          email_id1: sponsor.email_id1 || null,
+          address: sponsor.address || null,
+          city: sponsor.city || null,
+          state: sponsor.state || null,
+          whatsapp_number: sponsor.whatsapp_number || null,
+          website_url: sponsor.website_url || null,
+          catalog_url: sponsor.catalog_url || null,
+          coPartner: sponsor.coPartner || null,
+          contactNumber2: sponsor.contactNumber2 || null,
+          contactNumber3: sponsor.contactNumber3 || null,
+          emailId2: sponsor.emailId2 || null,
+          emailId3: sponsor.emailId3 || null,
+          facebook: sponsor.facebook || null,
+          instagram: sponsor.instagram || null,
+          X: sponsor.X || null,
+          linkedin: sponsor.linkedin || null,
+          address2: sponsor.address2 || null,
+          address3: sponsor.address3 || null,
+          position2: sponsor.position2 || null,
+          flash_id: row.id,
+          sponsor_id: row.sponsor_id,
+          trust_id: row.trust_id,
+          duration_seconds: row.duration_seconds,
+          priority: row.priority,
+          status: row.status,
+          start_date: row.start_date,
+          end_date: row.end_date,
+          flash_created_at: row.created_at
+        };
+      });
+
+    diagnostics.counts.finalRows = mapped.length;
+
+    if (!trustOnlyRows.length) {
+      diagnostics.reason = 'No sponsor_flash rows found for this trust_id.';
+    } else if (!activeRows.length) {
+      diagnostics.reason = 'No sponsor_flash rows with status=active for this trust_id.';
+    } else if (!dateFilteredRows.length) {
+      diagnostics.reason = 'All active sponsor_flash rows were excluded by date filter.';
+    } else if (sponsorIdsForPage.length > 0 && !diagnostics.counts.joinedRows) {
+      diagnostics.reason = 'Join with sponsors returned zero rows for sponsor_ids in sponsor_flash.';
+    } else if (!mapped.length) {
+      diagnostics.reason = 'Joined rows exist but final mapped sponsor batch is empty.';
+    } else {
+      diagnostics.reason = '';
+    }
+
+    if (diagnostics.reason && shouldLogEmptyAsError) {
+      console.error('[SponsorFlash][Empty]', diagnostics.reason, diagnostics);
+    }
+
+    if (shouldDebug) {
+      // Trust mismatch probe (only needed when trust_id yields no sponsor_flash rows).
+      if (!trustOnlyRows.length) {
+        const { data: trustIdProbeRows, error: trustIdProbeError } = await supabase
+          .from('sponsor_flash')
+          .select('trust_id')
+          .limit(200);
+        if (!trustIdProbeError && Array.isArray(trustIdProbeRows)) {
+          diagnostics.sponsorFlashTrustIds = [...new Set(trustIdProbeRows.map((row) => row?.trust_id).filter(Boolean).map((id) => String(id)))];
+        }
+      }
+
+      console.log('[SponsorFlash][Debug] current_trust_id=', diagnostics.trustId);
+      console.log('[SponsorFlash][Debug] trust_ids_in_db=', diagnostics.sponsorFlashTrustIds);
+      console.log('[SponsorFlash][Debug] distinct_status_values=', diagnostics.sponsorFlashStatuses);
+      console.log('[SponsorFlash][Debug] total_for_trust=', diagnostics.counts.trustRows);
+      console.log('[SponsorFlash][Debug] total_active_for_trust=', diagnostics.counts.activeRows);
+      console.log('[SponsorFlash][Debug] rows_before_date_filter=', diagnostics.counts.beforeDateFilterRows);
+      console.log('[SponsorFlash][Debug] rows_after_date_filter=', diagnostics.counts.afterDateFilterRows);
+      console.log('[SponsorFlash][Debug] sponsor_flash_sponsor_ids=', diagnostics.sponsorFlashSponsorIds);
+      console.log('[SponsorFlash][Debug] joined_sponsor_ids=', diagnostics.joinedSponsorIds);
+      console.log('[SponsorFlash][Debug] final_batch_count=', diagnostics.counts.finalRows);
+      if (diagnostics.reason) {
+        console.log('[SponsorFlash][Debug] empty_reason=', diagnostics.reason);
+      }
+    }
+
+    return {
+      success: true,
+      data: mapped,
+      hasMore: dateFilteredRows.length > rangeTo + 1,
+      debug: diagnostics
+    };
   } catch (error) {
-    console.error('Error fetching sponsors:', error);
+    const message = String(error?.message || '').toLowerCase();
+    if (
+      message.includes('permission') ||
+      message.includes('row level security') ||
+      message.includes('rls') ||
+      String(error?.code || '') === '42501'
+    ) {
+      diagnostics.reason = 'RLS/permissions blocked sponsor_flash or sponsors read access.';
+    }
+    if (shouldLogEmptyAsError) {
+      console.error('[SponsorFlash][Error]', diagnostics.reason || 'Query failed', diagnostics);
+    }
+    if (shouldDebug) {
+      console.error('Error fetching sponsors from sponsor_flash:', error);
+      console.log('[SponsorFlash][Debug] failure_state=', diagnostics);
+    } else {
+      console.error('Error fetching sponsors from sponsor_flash:', error);
+    }
     throw error;
   }
 };
@@ -1075,8 +863,9 @@ export const getSponsors = async (trustId = null, trustName = null) => {
 export const getSponsorById = async (id) => {
   try {
     const { supabase } = await import('./supabaseClient.js');
-    const sponsorFieldVariants = [
-      `
+    const { data, error } = await supabase
+      .from('sponsors')
+      .select(`
         id,
         name,
         position,
@@ -1084,78 +873,38 @@ export const getSponsorById = async (id) => {
         photo_url,
         company_name,
         ref_no,
-        created_at,
-        updated_at,
-        phone,
-        badge_label,
-        email_id,
-        address,
-        city,
-        state,
-        whatsapp_number,
-        website_url,
-        catalog_url
-      `,
-      `
-        id,
-        name,
-        position,
-        about,
-        photo_url,
-        company_name,
-        ref_no,
-        created_at,
-        updated_at,
         "ContactNumber1",
-        badge_label,
         email_id1,
         address,
         city,
         state,
         whatsapp_number,
         website_url,
-        catalog_url
-      `,
-      `
-        id,
-        name,
-        position,
-        about,
-        photo_url,
-        company_name,
-        ref_no,
-        created_at,
-        updated_at,
-        badge_label,
-        address,
-        city,
-        state,
-        whatsapp_number,
-        website_url,
-        catalog_url
-      `
-    ];
-
-    let data = null;
-    let error = null;
-    for (const fields of sponsorFieldVariants) {
-      const result = await supabase
-        .from('sponsors')
-        .select(fields)
-        .eq('id', id)
-        .limit(1);
-      data = result.data;
-      error = result.error;
-      if (!error) break;
-    }
+        catalog_url,
+        coPartner,
+        contactNumber2,
+        contactNumber3,
+        emailId2,
+        emailId3,
+        facebook,
+        instagram,
+        X,
+        linkedin,
+        address2,
+        address3,
+        position2
+      `)
+      .eq('id', id)
+      .limit(1);
 
     if (error) throw error;
     const rawSponsor = Array.isArray(data) ? data[0] : data;
     const sponsor = rawSponsor
       ? {
         ...rawSponsor,
-        phone: rawSponsor.phone || rawSponsor.ContactNumber1 || null,
-        email_id: rawSponsor.email_id || rawSponsor.email_id1 || null
+        ContactNumber1: rawSponsor.ContactNumber1 || null,
+        email_id1: rawSponsor.email_id1 || null,
+        X: rawSponsor.X || null
       }
       : null;
     return { success: true, data: sponsor ? [sponsor] : [] };

@@ -1,121 +1,134 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { ArrowLeft, Building2, Globe, Mail, MapPin, Phone, Star } from 'lucide-react';
-import { getSponsorById, getSponsors } from './services/api';
 import { useTheme } from './hooks';
+import { getCachedSponsorById, getCachedSponsorDetail, getSponsorDetail, readSelectedSponsorId } from './services/sponsorStore';
 
-const getCachedSponsorsForTrust = (trustId) => {
-  if (!trustId) return [];
-  try {
-    const raw = localStorage.getItem(`sponsors_cache_${trustId}`);
-    const parsed = raw ? JSON.parse(raw) : [];
-    if (Array.isArray(parsed)) return parsed;
-    if (Array.isArray(parsed?.data)) return parsed.data;
-    return [];
-  } catch {
-    return [];
+const ASSOCIATION_LABEL = 'In Association With';
+
+const toClean = (value) => {
+  const text = String(value ?? '').trim();
+  return text || '';
+};
+
+const buildHref = {
+  phone: (value) => `tel:${value.replace(/\s+/g, '')}`,
+  email: (value) => `mailto:${value}`,
+  whatsapp: (value) => {
+    const digits = value.replace(/\D/g, '');
+    return digits ? `https://wa.me/${digits}` : '';
+  },
+  url: (value) => {
+    const trimmed = toClean(value);
+    if (!trimmed) return '';
+    return /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
   }
 };
 
 const SponsorDetails = ({ onBack }) => {
   const selectedTrustId = localStorage.getItem('selected_trust_id') || '';
   const { theme } = useTheme(selectedTrustId);
+
+  const [sponsorId] = useState(() => readSelectedSponsorId());
+
   const [sponsor, setSponsor] = useState(() => {
-    try {
-      const raw = sessionStorage.getItem('selectedSponsor');
-      return raw ? JSON.parse(raw) : null;
-    } catch {
-      return null;
-    }
+    if (!sponsorId) return null;
+    const cachedMeta = getCachedSponsorById(sponsorId, selectedTrustId);
+    const cachedDetail = getCachedSponsorDetail(sponsorId).detail;
+    return cachedDetail || cachedMeta || null;
   });
   const [loading, setLoading] = useState(() => !sponsor);
 
   useEffect(() => {
-    const loadSponsorDetails = async () => {
-      try {
-        const trustId = localStorage.getItem('selected_trust_id') || null;
-        const trustName = localStorage.getItem('selected_trust_name') || null;
-
-        let selectedSponsor = null;
-        try {
-          const raw = sessionStorage.getItem('selectedSponsor');
-          selectedSponsor = raw ? JSON.parse(raw) : null;
-        } catch {
-          selectedSponsor = null;
-        }
-
-        let resolvedSponsor = null;
-        let trustSponsors = getCachedSponsorsForTrust(trustId);
-
-        if (selectedSponsor?.id) {
-          resolvedSponsor = trustSponsors.find((item) => item.id === selectedSponsor.id) || null;
-        }
-
-        if (!resolvedSponsor && selectedSponsor) {
-          resolvedSponsor = selectedSponsor;
-        }
-
-        if (!resolvedSponsor && trustSponsors.length > 0) {
-          resolvedSponsor = trustSponsors[0];
-        }
-
-        if (resolvedSponsor) {
-          setSponsor(resolvedSponsor);
-          setLoading(false);
-        } else {
-          setLoading(true);
-        }
-
-        const listRes = await getSponsors(trustId, trustName);
-        if (listRes?.success && Array.isArray(listRes.data)) {
-          trustSponsors = listRes.data;
-          if (trustId) {
-            try {
-              localStorage.setItem(
-                `sponsors_cache_${trustId}`,
-                JSON.stringify({ ts: Date.now(), data: trustSponsors })
-              );
-            } catch {
-              // ignore cache write errors
-            }
-          }
-        }
-
-        if (selectedSponsor?.id) {
-          resolvedSponsor = trustSponsors.find((item) => item.id === selectedSponsor.id) || null;
-          if (!resolvedSponsor) {
-            const singleRes = await getSponsorById(selectedSponsor.id);
-            if (singleRes?.success && Array.isArray(singleRes.data) && singleRes.data[0]) {
-              resolvedSponsor = singleRes.data[0];
-            }
-          }
-        }
-
-        if (!resolvedSponsor && selectedSponsor) {
-          resolvedSponsor = selectedSponsor;
-        }
-
-        if (!resolvedSponsor && trustSponsors.length > 0) {
-          resolvedSponsor = trustSponsors[0];
-        }
-
-        if (resolvedSponsor) {
-          try {
-            sessionStorage.setItem('selectedSponsor', JSON.stringify(resolvedSponsor));
-          } catch {
-            // ignore session storage errors
-          }
-        }
-
-        setSponsor(resolvedSponsor || null);
-      } catch (error) {
-        console.error('Error loading sponsor details:', error);
-      } finally {
+    let active = true;
+    const load = async () => {
+      if (!sponsorId) {
         setLoading(false);
+        return;
+      }
+      try {
+        console.log(`[Sponsor] detail page sponsor.id=${sponsorId}`);
+        const cachedMeta = getCachedSponsorById(sponsorId, selectedTrustId);
+        if (cachedMeta && active) {
+          setSponsor(cachedMeta);
+          setLoading(false);
+        }
+
+        const detail = await getSponsorDetail({ sponsorId, trustId: selectedTrustId });
+        if (!active) return;
+        if (detail) {
+          setSponsor(detail);
+        }
+      } catch (error) {
+        if (active) console.error('Error loading sponsor details:', error);
+      } finally {
+        if (active) setLoading(false);
       }
     };
 
-    loadSponsorDetails();
-  }, []);
+    load();
+    return () => { active = false; };
+  }, [sponsorId, selectedTrustId]);
+
+  const data = useMemo(() => {
+    if (!sponsor) return null;
+
+    const phone1 = toClean(sponsor.ContactNumber1 || sponsor.phone);
+    const phone2 = toClean(sponsor.contactNumber2);
+    const phone3 = toClean(sponsor.contactNumber3);
+
+    const email1 = toClean(sponsor.email_id1 || sponsor.email_id);
+    const email2 = toClean(sponsor.emailId2);
+    const email3 = toClean(sponsor.emailId3);
+
+    const whatsapp = toClean(sponsor.whatsapp_number);
+
+    const address1 = toClean(sponsor.address);
+    const address2 = toClean(sponsor.address2);
+    const address3 = toClean(sponsor.address3);
+    const city = toClean(sponsor.city);
+    const state = toClean(sponsor.state);
+
+    const website = toClean(sponsor.website_url);
+    const catalog = toClean(sponsor.catalog_url);
+    const facebook = toClean(sponsor.facebook);
+    const instagram = toClean(sponsor.instagram);
+    const xLink = toClean(sponsor.X);
+    const linkedin = toClean(sponsor.linkedin);
+
+    return {
+      photo: toClean(sponsor.photo_url),
+      name: toClean(sponsor.name),
+      position: toClean(sponsor.position),
+      position2: toClean(sponsor.position2),
+      company: toClean(sponsor.company_name),
+      about: toClean(sponsor.about),
+      coPartner: toClean(sponsor.coPartner),
+      contacts: [
+        { label: 'Mobile Number', value: phone1, type: 'phone' },
+        { label: 'Alternate Phone Number', value: phone2, type: 'phone' },
+        { label: 'Alternate Phone Number', value: phone3, type: 'phone' },
+        { label: 'Email ID', value: email1, type: 'email' },
+        { label: 'Alternate Email', value: email2, type: 'email' },
+        { label: 'Alternate Email', value: email3, type: 'email' },
+        { label: 'WhatsApp Number', value: whatsapp, type: 'whatsapp' }
+      ].filter((item) => item.value),
+      addresses: [
+        { label: 'Address', value: address1 },
+        { label: 'Alternate Address', value: address2 },
+        { label: 'Alternate Address', value: address3 },
+        { label: 'City', value: city },
+        { label: 'State', value: state }
+      ].filter((item) => item.value),
+      links: [
+        { label: 'Website', value: website },
+        { label: 'Catalog', value: catalog },
+        { label: 'Facebook', value: facebook },
+        { label: 'Instagram', value: instagram },
+        { label: 'X', value: xLink },
+        { label: 'LinkedIn', value: linkedin }
+      ].filter((item) => item.value)
+    };
+  }, [sponsor]);
 
   if (loading) {
     return (
@@ -128,7 +141,7 @@ const SponsorDetails = ({ onBack }) => {
     );
   }
 
-  if (!sponsor) {
+  if (!data) {
     return (
       <div className="min-h-screen flex items-center justify-center px-5" style={{ background: `linear-gradient(160deg, #ffffff 0%, ${theme.accentBg || '#f8fafc'} 52%, #ffffff 100%)` }}>
         <div className="rounded-3xl bg-white border border-slate-200 p-6 max-w-sm w-full text-center shadow-sm">
@@ -146,8 +159,11 @@ const SponsorDetails = ({ onBack }) => {
     );
   }
 
-  const fullAddress = [sponsor.address, sponsor.city, sponsor.state].filter(Boolean).join(', ');
-  const hasContact = sponsor.phone || sponsor.whatsapp_number || sponsor.email_id || sponsor.website_url || sponsor.catalog_url || fullAddress;
+  const iconByType = {
+    phone: <Phone className="h-4 w-4" style={{ color: theme.primary }} />,
+    email: <Mail className="h-4 w-4" style={{ color: theme.primary }} />,
+    whatsapp: <Phone className="h-4 w-4 text-emerald-500" />
+  };
 
   return (
     <div className="min-h-screen" style={{ background: `linear-gradient(160deg, #ffffff 0%, ${theme.accentBg || '#f8fafc'} 52%, #ffffff 100%)` }}>
@@ -173,89 +189,123 @@ const SponsorDetails = ({ onBack }) => {
             <div className="absolute -top-14 -right-10 h-28 w-28 rounded-full pointer-events-none" style={{ background: `radial-gradient(circle, ${theme.primary}4A 0%, transparent 70%)` }} />
             <div className="absolute -bottom-12 -left-10 h-24 w-24 rounded-full pointer-events-none" style={{ background: `radial-gradient(circle, ${theme.secondary}38 0%, transparent 72%)` }} />
 
-            <div className="relative px-4 pt-4 pb-3 border-b border-slate-100">
-              <div className="flex items-start gap-3">
-                <div className="w-20 h-20 rounded-2xl p-[2px] flex-shrink-0" style={{ background: `linear-gradient(145deg, ${theme.primary}55, ${theme.secondary}44)` }}>
-                  <div className="w-full h-full rounded-2xl overflow-hidden bg-white flex items-center justify-center">
-                    {sponsor.photo_url ? (
+            <div className="relative px-4 pt-5 pb-4 border-b border-slate-100">
+              <div className="flex flex-col items-center text-center">
+                <div
+                  className="w-32 h-32 rounded-[1.8rem] p-[3px] shadow-sm"
+                  style={{ background: `linear-gradient(145deg, ${theme.primary}66, ${theme.secondary}55)` }}
+                >
+                  <div className="w-full h-full rounded-[1.65rem] overflow-hidden bg-slate-50 flex items-center justify-center">
+                    {data.photo ? (
                       <img
-                        src={sponsor.photo_url}
-                        alt={sponsor.name || sponsor.company_name || 'Sponsor'}
-                        className="w-full h-full object-cover"
+                        src={data.photo}
+                        alt={data.name || data.company || 'Sponsor'}
+                        className="w-full h-full object-contain"
                       />
                     ) : (
-                      <Star className="h-7 w-7" style={{ color: theme.primary }} />
+                      <Star className="h-10 w-10" style={{ color: theme.primary }} />
                     )}
                   </div>
                 </div>
 
-                <div className="min-w-0 flex-1">
-                  <span className="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[9px] font-bold uppercase tracking-[0.18em]" style={{ color: theme.primary, background: '#fff6f6', border: `1px solid ${theme.primary}30` }}>
-                    <span className="w-1.5 h-1.5 rounded-full" style={{ background: theme.primary }} />
-                    {sponsor.badge_label || 'Official Sponsor'}
-                  </span>
-                  <h2 className="mt-2 text-[21px] leading-tight font-extrabold truncate" style={{ color: theme.secondary }}>
-                    {sponsor.name || sponsor.company_name || 'Sponsor'}
-                  </h2>
-                  <div className="mt-1 inline-flex items-center gap-1.5 min-w-0">
-                    <Building2 className="h-3 w-3 text-slate-400 flex-shrink-0" />
-                    <p className="text-xs font-semibold text-slate-500 truncate">
-                      {sponsor.company_name || sponsor.position || 'Community partner'}
-                    </p>
-                  </div>
+                <div className="mt-4 w-full">
+                  {data.name ? (
+                    <h2 className="text-[28px] leading-tight font-extrabold break-words" style={{ color: theme.secondary }}>
+                      {data.name}
+                    </h2>
+                  ) : null}
+                  {data.position ? (
+                    <p className="mt-1 text-base font-semibold text-slate-600 break-words">{data.position}</p>
+                  ) : null}
+                  {data.position2 ? (
+                    <p className="mt-1 text-sm font-medium text-slate-500 break-words">{data.position2}</p>
+                  ) : null}
+                  {data.company ? (
+                    <div className="mt-2 inline-flex max-w-full items-start justify-center gap-1.5">
+                      <Building2 className="h-4 w-4 text-slate-400 flex-shrink-0 mt-0.5" />
+                      <p className="text-sm font-semibold text-slate-500 break-words text-left">{data.company}</p>
+                    </div>
+                  ) : null}
                 </div>
               </div>
             </div>
 
             <div className="px-4 py-4 space-y-3">
-              <div className="rounded-2xl border border-slate-200 bg-white p-3.5">
-                <p className="text-[11px] uppercase tracking-[0.14em] font-bold mb-1" style={{ color: theme.primary }}>About</p>
-                <p className="text-sm leading-relaxed text-slate-700">
-                  {sponsor.about || 'Supporting our community with care, commitment, and trusted services.'}
-                </p>
-              </div>
+              {data.about ? (
+                <div className="rounded-2xl border border-slate-200 bg-white p-3.5">
+                  <p className="text-[11px] uppercase tracking-[0.14em] font-bold mb-1" style={{ color: theme.primary }}>About</p>
+                  <p className="text-sm leading-relaxed text-slate-700">{data.about}</p>
+                </div>
+              ) : null}
 
-              <div className="rounded-2xl border border-slate-200 bg-white p-3.5">
-                <p className="text-[11px] uppercase tracking-[0.14em] font-bold mb-2" style={{ color: theme.primary }}>Contact</p>
-                {hasContact ? (
+              {data.contacts.length > 0 ? (
+                <div className="rounded-2xl border border-slate-200 bg-white p-3.5">
+                  <p className="text-[11px] uppercase tracking-[0.14em] font-bold mb-2" style={{ color: theme.primary }}>Contact Details</p>
                   <div className="space-y-2 text-sm text-slate-700">
-                    {sponsor.phone && (
-                      <div className="flex items-center gap-2">
-                        <Phone className="h-4 w-4" style={{ color: theme.primary }} />
-                        <span>{sponsor.phone}</span>
-                      </div>
-                    )}
-                    {sponsor.whatsapp_number && (
-                      <div className="flex items-center gap-2">
-                        <Phone className="h-4 w-4 text-emerald-500" />
-                        <span>WhatsApp {sponsor.whatsapp_number}</span>
-                      </div>
-                    )}
-                    {sponsor.email_id && (
-                      <div className="flex items-center gap-2">
-                        <Mail className="h-4 w-4" style={{ color: theme.primary }} />
-                        <span>{sponsor.email_id}</span>
-                      </div>
-                    )}
-                    {fullAddress && (
-                      <div className="flex items-start gap-2">
-                        <MapPin className="h-4 w-4 mt-0.5" style={{ color: theme.primary }} />
-                        <span>{fullAddress}</span>
-                      </div>
-                    )}
-                    {sponsor.website_url && (
-                      <div className="flex items-center gap-2">
-                        <Globe className="h-4 w-4" style={{ color: theme.primary }} />
-                        <a href={sponsor.website_url} target="_blank" rel="noreferrer" className="underline underline-offset-2 break-all">
-                          {sponsor.website_url}
-                        </a>
-                      </div>
-                    )}
+                    {data.contacts.map((item, idx) => {
+                      const href = buildHref[item.type](item.value);
+                      if (!href) return null;
+                      return (
+                        <div key={`${item.label}-${idx}`} className="flex items-start gap-2">
+                          <span className="mt-0.5">{iconByType[item.type]}</span>
+                          <div className="min-w-0">
+                            <p className="text-[11px] text-slate-400 font-semibold">{item.label}</p>
+                            <a href={href} target={item.type === 'whatsapp' ? '_blank' : undefined} rel={item.type === 'whatsapp' ? 'noreferrer' : undefined} className="break-all underline underline-offset-2">
+                              {item.value}
+                            </a>
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
-                ) : (
-                  <p className="text-sm text-slate-500">Contact details will appear here once added.</p>
-                )}
-              </div>
+                </div>
+              ) : null}
+
+              {data.addresses.length > 0 ? (
+                <div className="rounded-2xl border border-slate-200 bg-white p-3.5">
+                  <p className="text-[11px] uppercase tracking-[0.14em] font-bold mb-2" style={{ color: theme.primary }}>Address</p>
+                  <div className="space-y-1.5 text-sm text-slate-700">
+                    {data.addresses.map((item, idx) => (
+                      <div key={`${item.label}-${idx}`} className="flex items-start gap-2">
+                        <MapPin className="h-4 w-4 mt-0.5" style={{ color: theme.primary }} />
+                        <div className="min-w-0">
+                          <p className="text-[11px] text-slate-400 font-semibold">{item.label}</p>
+                          <p>{item.value}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+
+              {data.links.length > 0 ? (
+                <div className="rounded-2xl border border-slate-200 bg-white p-3.5">
+                  <p className="text-[11px] uppercase tracking-[0.14em] font-bold mb-2" style={{ color: theme.primary }}>Online Links</p>
+                  <div className="space-y-2 text-sm text-slate-700">
+                    {data.links.map((item) => {
+                      const href = buildHref.url(item.value);
+                      if (!href) return null;
+                      return (
+                        <div key={item.label} className="flex items-start gap-2">
+                          <Globe className="h-4 w-4 mt-0.5" style={{ color: theme.primary }} />
+                          <div className="min-w-0">
+                            <p className="text-[11px] text-slate-400 font-semibold">{item.label}</p>
+                            <a href={href} target="_blank" rel="noreferrer" className="break-all underline underline-offset-2">
+                              {item.value}
+                            </a>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : null}
+
+              {data.coPartner ? (
+                <div className="rounded-2xl border border-slate-200 bg-white p-3.5">
+                  <p className="text-sm text-slate-700 font-medium">{ASSOCIATION_LABEL}: {data.coPartner}</p>
+                </div>
+              ) : null}
             </div>
           </div>
         </div>
@@ -265,4 +315,3 @@ const SponsorDetails = ({ onBack }) => {
 };
 
 export default SponsorDetails;
-

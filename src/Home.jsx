@@ -1,21 +1,33 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { User, Users, Clock, FileText, UserPlus, Bell, ChevronLeft, ChevronRight, Heart, Shield, Plus, ArrowRight, Pill, ShoppingCart, Calendar, Stethoscope, Building2, Phone, QrCode, Monitor, Brain, Package, FileCheck, Search, Filter, MapPin, Star, HelpCircle, BookOpen, Video, Headphones, Menu, X, Home as HomeIcon, Settings, UserCircle, Image, Trash2, Code, FolderOpen, Crown } from 'lucide-react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { User, Users, Clock, FileText, UserPlus, Bell, ChevronRight, Heart, Shield, Plus, ArrowRight, Pill, ShoppingCart, Calendar, Stethoscope, Building2, QrCode, Monitor, Brain, Package, FileCheck, Search, Filter, Star, HelpCircle, BookOpen, Video, Headphones, Menu, X, Home as HomeIcon, Settings, UserCircle, Image, Trash2, Code, FolderOpen, Crown } from 'lucide-react';
 import Sidebar from './components/Sidebar';
 import TermsModal from './components/TermsModal';
 import ImageSlider from './components/ImageSlider';
-import { getProfile, getMarqueeUpdates, getSponsors, getUserNotifications, markNotificationAsRead, markAllNotificationsAsRead, deleteNotification, getMemberTrustLinks } from './services/api';
-import { fetchLatestGalleryImages, getCachedLatestGalleryImages } from './services/galleryService';
+import { getProfile, getMarqueeUpdates, getUserNotifications, markNotificationAsRead, markAllNotificationsAsRead, deleteNotification, getMemberTrustLinks } from './services/api';
+import { useGalleryContext } from './context/GalleryContext';
 import { registerSidebarState, useTheme } from './hooks';
 import { supabase } from './services/supabaseClient';
 import { getCurrentNotificationContext, matchesNotificationForContext } from './services/notificationAudience';
 import { fetchFeatureFlags, subscribeFeatureFlags, isFeatureEnabled } from './services/featureFlags';
 import { fetchMemberTrusts, fetchTrustByName, fetchTrustById, fetchDefaultTrust } from './services/trustService';
 import { DEFAULT_THEME, buildThemeFromTemplate } from './utils/themeUtils';
+import {
+  getCachedCarouselBatch,
+  getSponsorDebugInfo,
+  preloadCarouselBatchImages,
+  prefetchCarouselBatch,
+  preloadSponsorListFirstPage,
+  readCarouselProgress,
+  readSponsorOrder,
+  readSponsorsById,
+  setPinnedSponsor,
+  setSelectedSponsorId,
+  sponsorConfig
+} from './services/sponsorStore';
 
 const DEFAULT_TRUST_NAME = import.meta.env.VITE_DEFAULT_TRUST_NAME || 'Ek Udaan';
 const DEFAULT_TRUST_LOGO = '/new_logo.png';
-const SPONSOR_CACHE_TTL_MS = 5 * 60 * 1000;
-const SPONSOR_CHUNK_SIZE = 5;
+const SPONSOR_CHUNK_SIZE = sponsorConfig.CAROUSEL_BATCH_SIZE;
 
 const buildNotificationContentKey = (notification) => {
   const title = String(notification?.title || '').trim().toLowerCase();
@@ -67,65 +79,6 @@ const ensureDefaultTrustIncluded = (trustList, defaultTrust, baseAppId = 'b353d2
   return trustList;
 };
 
-const getCachedSponsorsForTrust = (trustId) => {
-  if (!trustId) return [];
-  try {
-    const direct = localStorage.getItem(`sponsors_cache_${trustId}`);
-    if (direct) {
-      const parsed = JSON.parse(direct);
-      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-    }
-  } catch {
-    // ignore malformed direct cache
-  }
-
-  // Fallback to sponsors list cache created by SponsorsList screen.
-  try {
-    const listCache = localStorage.getItem(`sponsors_list_cache_v1_${trustId}`);
-    if (listCache) {
-      const parsed = JSON.parse(listCache);
-      const byTrust = parsed?.sponsorsByTrust?.[trustId];
-      if (Array.isArray(byTrust) && byTrust.length > 0) return byTrust;
-    }
-  } catch {
-    // ignore malformed list cache
-  }
-
-  return [];
-};
-
-const readSponsorCache = (trustId) => {
-  if (!trustId) return { list: [], isFresh: false };
-  try {
-    const raw = localStorage.getItem(`sponsors_cache_${trustId}`);
-    if (!raw) return { list: [], isFresh: false };
-    const parsed = JSON.parse(raw);
-
-    // Backward-compatible: old cache format was plain array.
-    if (Array.isArray(parsed)) {
-      return { list: parsed, isFresh: parsed.length > 0 };
-    }
-
-    const list = Array.isArray(parsed?.data) ? parsed.data : [];
-    const ts = Number(parsed?.ts || 0);
-    const isFresh = ts > 0 && (Date.now() - ts) < SPONSOR_CACHE_TTL_MS;
-    return { list, isFresh };
-  } catch {
-    return { list: [], isFresh: false };
-  }
-};
-
-const writeSponsorCache = (trustId, list) => {
-  if (!trustId || !Array.isArray(list)) return;
-  try {
-    localStorage.setItem(
-      `sponsors_cache_${trustId}`,
-      JSON.stringify({ ts: Date.now(), data: list })
-    );
-  } catch {
-    // ignore
-  }
-};
 
 const normalizeMemberName = (value) => {
   const raw = String(value || '').trim();
@@ -234,34 +187,62 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
     return [];
   });
 
-  // Sponsors: load from localStorage cache instantly to avoid loading delay
-  const [sponsors, setSponsors] = useState(() => {
-    try {
-      const trustId = localStorage.getItem('selected_trust_id') || import.meta.env.VITE_DEFAULT_TRUST_ID || '';
-      if (!trustId) return [];
-      const primary = readSponsorCache(trustId).list;
-      if (Array.isArray(primary) && primary.length > 0) return primary;
-      return getCachedSponsorsForTrust(trustId);
-    } catch { /* ignore */ }
-    return [];
+  // Sponsors: normalized cache-first state (order + byId, no index-based mapping to data)
+  const [sponsorsById, setSponsorsById] = useState(() => {
+    const trustId = localStorage.getItem('selected_trust_id') || import.meta.env.VITE_DEFAULT_TRUST_ID || '';
+    return trustId ? readSponsorsById(trustId) : {};
   });
-  const [isSponsorsLoading, setIsSponsorsLoading] = useState(sponsors.length === 0);
-  const hasLoadedSponsorsOnce = useRef(sponsors.length > 0);
-  const [sponsorFetchSettledTrustId, setSponsorFetchSettledTrustId] = useState(
-    sponsors.length > 0
-      ? (normalizeTrustId(localStorage.getItem('selected_trust_id')) || normalizeTrustId(import.meta.env.VITE_DEFAULT_TRUST_ID) || '')
-      : ''
-  );
+  const [sponsorOrder, setSponsorOrder] = useState(() => {
+    const trustId = localStorage.getItem('selected_trust_id') || import.meta.env.VITE_DEFAULT_TRUST_ID || '';
+    return trustId ? readSponsorOrder(trustId) : [];
+  });
+  const [isSponsorsLoading, setIsSponsorsLoading] = useState(sponsorOrder.length === 0);
+  const [isCarouselBatchLoading, setIsCarouselBatchLoading] = useState(false);
+  const [sponsorFetchSettledTrustId, setSponsorFetchSettledTrustId] = useState('');
+  const [loadedBatchCount, setLoadedBatchCount] = useState(0);
+  const [hasMoreSponsorBatches, setHasMoreSponsorBatches] = useState(true);
+  const [isCarouselReady, setIsCarouselReady] = useState(sponsorOrder.length > 0);
   const [sponsorIndex, setSponsorIndex] = useState(0);
-  const [galleryImages, setGalleryImages] = useState([]);
-  const [isGalleryLoading, setIsGalleryLoading] = useState(true);
-  const [galleryError, setGalleryError] = useState(null);
+  const sponsorTouchStartRef = useRef(null);
+  const sponsorTouchEndRef = useRef(null);
+  const sponsorListPreloadRef = useRef({});
+  const sponsors = useMemo(
+    () => sponsorOrder.map((id) => sponsorsById[id]).filter(Boolean),
+    [sponsorOrder, sponsorsById]
+  );
   const [featureFlags, setFeatureFlags] = useState({});
   const [flagsData, setFlagsData] = useState({}); // full metadata: { feature_key: { display_name, tagline, icon_url } }
   const hasLoadedMemberTrusts = useRef(false);
+  const {
+    carouselImages,
+    ensureAlbumsLoaded,
+    isLoading: isGalleryMetaLoading,
+    error: galleryError,
+  } = useGalleryContext();
 
   // Theme for currently selected trust
   const { theme, isThemeLoading } = useTheme(selectedTrustId);
+
+  const syncSponsorStoreSnapshot = (trustId) => {
+    if (!trustId) {
+      setSponsorsById({});
+      setSponsorOrder([]);
+      setLoadedBatchCount(0);
+      setHasMoreSponsorBatches(false);
+      setIsCarouselReady(false);
+      return;
+    }
+
+    const byId = readSponsorsById(trustId);
+    const order = readSponsorOrder(trustId);
+    const progress = readCarouselProgress(trustId);
+
+    setSponsorsById(byId || {});
+    setSponsorOrder(Array.isArray(order) ? order : []);
+    setLoadedBatchCount(Array.isArray(progress.sponsorBatchesLoaded) ? progress.sponsorBatchesLoaded.length : 0);
+    setHasMoreSponsorBatches(Boolean(progress.hasMoreSponsors));
+    setIsCarouselReady(Array.isArray(order) && order.length > 0);
+  };
 
   // Register sidebar state with Android back handler
   useEffect(() => {
@@ -719,9 +700,9 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
     
     // Force reload by resetting all cached data states
     setMarqueeUpdates([]);
-    setSponsors([]);
+    setSponsorsById({});
+    setSponsorOrder([]);
     setSponsorIndex(0);
-    setGalleryImages([]);
     setNotifications([]);
     setUnreadCount(0);
     setSponsorFetchSettledTrustId(''); // Force sponsor refetch
@@ -815,20 +796,9 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
     return () => { active = false; };
   }, [selectedTrustId, trustInfo]);
 
-  // Ref to track which trustId has already been fetched — avoids repeated/cancelled calls
-  const lastFetchedSponsorTrustId = useRef('');
-  
-  // Reset sponsor tracking ref when trust changes to force fresh load
-  useEffect(() => {
-    console.log(`🔄 Trust changed, resetting sponsor fetch tracking`);
-    lastFetchedSponsorTrustId.current = ''; // Reset so next fetch will be fresh
-  }, [selectedTrustId]);
-
-  // Sponsor: ref-based fetch that cannot be cancelled by re-renders
+  // Sponsor: initial 3 cards, then progressive background batches.
   useEffect(() => {
     let isActive = true;
-    const progressiveTimers = [];
-    let loadingSafetyTimer = null;
 
     const trustId =
       normalizeTrustId(selectedTrustId) ||
@@ -838,138 +808,81 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
       '';
     if (!trustId) {
       setIsSponsorsLoading(false);
-      hasLoadedSponsorsOnce.current = true;
       setSponsorFetchSettledTrustId('');
+      syncSponsorStoreSnapshot('');
       return;
     }
-    const isSameTrustAsLastFetch = trustId === lastFetchedSponsorTrustId.current;
 
-    const trustName = localStorage.getItem('selected_trust_name') || null;
-    const { list: cachedList, isFresh } = readSponsorCache(trustId);
-    const hasCachedList = Array.isArray(cachedList) && cachedList.length > 0;
-    let hasImmediateSponsors = false;
-
-    // Step 1: Show cache immediately (synchronous, zero delay)
-    if (hasCachedList) {
-      setSponsors(cachedList);
-      hasLoadedSponsorsOnce.current = true;
-      setIsSponsorsLoading(false);
-      hasImmediateSponsors = true;
-    } else {
-      // Legacy/fallback cache path (from SponsorsList screen cache).
-      try {
-        const fallbackList = getCachedSponsorsForTrust(trustId);
-        if (Array.isArray(fallbackList) && fallbackList.length > 0) {
-          setSponsors(fallbackList);
-          hasLoadedSponsorsOnce.current = true;
-          setIsSponsorsLoading(false);
-          hasImmediateSponsors = true;
-        } else {
-          setIsSponsorsLoading(true);
-        }
-      } catch {
-        setIsSponsorsLoading(true);
-      }
-    }
-
-    // Fresh cache hit: skip network call fully so second load stays instant.
-    if (isFresh && hasCachedList) {
-      lastFetchedSponsorTrustId.current = trustId;
-      hasLoadedSponsorsOnce.current = true;
+    const cachedFirstBatch = getCachedCarouselBatch(trustId, 0);
+    if (cachedFirstBatch.sponsors.length > 0) {
+      syncSponsorStoreSnapshot(trustId);
       setIsSponsorsLoading(false);
       setSponsorFetchSettledTrustId(trustId);
-      return () => {
-        isActive = false;
-        progressiveTimers.forEach((id) => clearTimeout(id));
-      };
+    } else {
+      setIsSponsorsLoading(true);
+      setIsCarouselReady(false);
     }
 
-    // Same trust pe rerender hua ho to loader me atakne se bachane ke liye:
-    // only skip fetch when we already have something visible.
-    if (isSameTrustAsLastFetch && (hasImmediateSponsors || hasLoadedSponsorsOnce.current)) {
-      setIsSponsorsLoading(false);
-      if (hasImmediateSponsors) setSponsorFetchSettledTrustId(trustId);
-      return () => {
-        isActive = false;
-        if (loadingSafetyTimer) clearTimeout(loadingSafetyTimer);
-        progressiveTimers.forEach((id) => clearTimeout(id));
-      };
-    }
-
-    lastFetchedSponsorTrustId.current = trustId;
-    if (!hasImmediateSponsors) {
-      // Safety: avoid infinite "Loading sponsors..." if network hangs.
-      loadingSafetyTimer = setTimeout(() => {
+    preloadCarouselBatchImages({ trustId, batchIndex: 0 })
+      .then((firstBatch) => {
         if (!isActive) return;
-        setIsSponsorsLoading(false);
-      }, 6000);
-    }
-
-    // Step 2: Fetch fresh data in background — promise-based, cannot be cancelled
-    getSponsors(trustId, trustName)
-      .then((response) => {
-        if (!isActive) return;
-        if (loadingSafetyTimer) clearTimeout(loadingSafetyTimer);
-        if (response.success && Array.isArray(response.data) && response.data.length > 0) {
-          const list = response.data;
-          writeSponsorCache(trustId, list);
-
-          const matchIndex = list.findIndex((item) => item.is_user_match);
-          const trustKey = `sponsor_carousel_index_${trustId}`;
-          let restoredIndex = 0;
-          try {
-            const storedIndex = localStorage.getItem(trustKey);
-            const parsedIndex = Number(storedIndex);
-            if (Number.isFinite(parsedIndex) && parsedIndex >= 0) restoredIndex = parsedIndex;
-          } catch { /* ignore */ }
-          if (restoredIndex >= list.length) restoredIndex = 0;
-          const finalIndex = matchIndex >= 0 ? matchIndex : restoredIndex;
-
-          if (hasImmediateSponsors) {
-            // We already have visible data from cache, so refresh instantly.
-            setSponsors(list);
-            setSponsorIndex(finalIndex);
-          } else {
-            // No immediate cache: progressively reveal sponsors in small chunks.
-            setSponsors([]);
-            setIsSponsorsLoading(true);
-            for (let start = 0; start < list.length; start += SPONSOR_CHUNK_SIZE) {
-              const chunk = list.slice(start, start + SPONSOR_CHUNK_SIZE);
-              const chunkIndex = Math.floor(start / SPONSOR_CHUNK_SIZE);
-              const timerId = setTimeout(() => {
-                if (!isActive) return;
-                setSponsors((prev) => {
-                  const existingIds = new Set(prev.map((p) => p.id));
-                  const nextItems = chunk.filter((item) => !existingIds.has(item.id));
-                  return nextItems.length > 0 ? [...prev, ...nextItems] : prev;
-                });
-                if (chunkIndex === 0) setIsSponsorsLoading(false);
-                if (start + chunk.length >= list.length) {
-                  setSponsorIndex(finalIndex);
-                }
-              }, chunkIndex * 180);
-              progressiveTimers.push(timerId);
-            }
+        syncSponsorStoreSnapshot(trustId);
+        const incomingSponsors = Array.isArray(firstBatch?.sponsors) ? firstBatch.sponsors : [];
+        const currentOrder = readSponsorOrder(trustId);
+        if (incomingSponsors.length > 0 && (!Array.isArray(currentOrder) || currentOrder.length === 0)) {
+          const byId = {};
+          const order = [];
+          for (const sponsor of incomingSponsors) {
+            const id = sponsor?.id ? String(sponsor.id).trim() : '';
+            if (!id) continue;
+            byId[id] = sponsor;
+            order.push(id);
           }
-        } else if (response.success && Array.isArray(response.data) && response.data.length === 0) {
-          setSponsors([]);
+          if (order.length > 0) {
+            console.error('[SponsorFlash][HomeMismatch] API returned sponsors but store snapshot was empty. Hydrating UI from incoming batch.', {
+              trustId,
+              incomingCount: incomingSponsors.length,
+              incomingIds: order
+            });
+            setSponsorsById(byId);
+            setSponsorOrder(order);
+            setIsCarouselReady(true);
+          }
         }
-        hasLoadedSponsorsOnce.current = true;
-        setSponsorFetchSettledTrustId(trustId);
+        const currentById = readSponsorsById(trustId);
+        const currentByIdCount = currentById && typeof currentById === 'object' ? Object.keys(currentById).length : 0;
+        if (incomingSponsors.length > 0 && currentByIdCount === 0) {
+          const byId = {};
+          const order = Array.isArray(currentOrder) ? [...currentOrder] : [];
+          for (const sponsor of incomingSponsors) {
+            const id = sponsor?.id ? String(sponsor.id).trim() : '';
+            if (!id) continue;
+            byId[id] = sponsor;
+            if (!order.includes(id)) order.push(id);
+          }
+          if (Object.keys(byId).length > 0) {
+            setSponsorsById(byId);
+            setSponsorOrder(order);
+            setIsCarouselReady(true);
+          }
+        }
+        setSponsorIndex(0);
         setIsSponsorsLoading(false);
+        setSponsorFetchSettledTrustId(trustId);
+
+        // Next batches are fetched by the progressive loader effect.
       })
       .catch((err) => {
         console.error('Error loading sponsors:', err);
-        if (loadingSafetyTimer) clearTimeout(loadingSafetyTimer);
-        hasLoadedSponsorsOnce.current = true;
-        setSponsorFetchSettledTrustId(trustId);
+        if (!cachedFirstBatch.sponsors.length) {
+          syncSponsorStoreSnapshot(trustId);
+        }
         setIsSponsorsLoading(false);
+        setSponsorFetchSettledTrustId(trustId);
       });
 
     return () => {
       isActive = false;
-      if (loadingSafetyTimer) clearTimeout(loadingSafetyTimer);
-      progressiveTimers.forEach((id) => clearTimeout(id));
     };
   }, [selectedTrustId, trustInfo?.id]);
 
@@ -992,18 +905,57 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
   }, [sponsorIndex, sponsors, selectedTrustId, trustInfo?.id]);
 
   useEffect(() => {
+    if (!isCarouselReady) return;
     if (!sponsors.length) return;
     if (sponsorIndex >= sponsors.length) {
       setSponsorIndex(0);
       return;
     }
     const current = sponsors[sponsorIndex];
-    const durationSeconds = Math.max(3, Number(current?.duration_seconds) || 5);
+    const durationSeconds = Math.max(1, Number(current?.duration_seconds) || 5);
     const timer = setTimeout(() => {
       setSponsorIndex((prev) => (prev + 1) % sponsors.length);
     }, durationSeconds * 1000);
     return () => clearTimeout(timer);
-  }, [sponsors, sponsorIndex]);
+  }, [isCarouselReady, sponsors, sponsorIndex]);
+
+  useEffect(() => {
+    let active = true;
+    if (!isCarouselReady) return;
+    if (!hasMoreSponsorBatches) return;
+    if (isCarouselBatchLoading) return;
+
+    const trustId =
+      normalizeTrustId(selectedTrustId) ||
+      normalizeTrustId(trustInfo?.id) ||
+      normalizeTrustId(localStorage.getItem('selected_trust_id')) ||
+      normalizeTrustId(import.meta.env.VITE_DEFAULT_TRUST_ID) ||
+      '';
+    if (!trustId) return;
+
+    const nextBatchIndex = loadedBatchCount;
+    setIsCarouselBatchLoading(true);
+    prefetchCarouselBatch({ trustId, batchIndex: nextBatchIndex })
+      .then((nextBatch) => {
+        if (!active) return;
+        const incoming = Array.isArray(nextBatch?.sponsors) ? nextBatch.sponsors : [];
+        if (!incoming.length) {
+          setHasMoreSponsorBatches(false);
+          return;
+        }
+        syncSponsorStoreSnapshot(trustId);
+        setLoadedBatchCount((count) => Math.max(count, nextBatchIndex + 1));
+        setHasMoreSponsorBatches(Boolean(nextBatch?.hasMore));
+      })
+      .finally(() => {
+        if (!active) return;
+        setIsCarouselBatchLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [isCarouselReady, loadedBatchCount, hasMoreSponsorBatches, isCarouselBatchLoading, selectedTrustId, trustInfo?.id]);
 
   const currentSponsorTrustId =
     normalizeTrustId(selectedTrustId) ||
@@ -1015,60 +967,58 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
     Boolean(currentSponsorTrustId) &&
     sponsorFetchSettledTrustId === currentSponsorTrustId;
   const isSponsorSectionLoading = !hasSettledSponsorsForCurrentTrust || isSponsorsLoading;
+  const sponsorDebugInfo = currentSponsorTrustId ? getSponsorDebugInfo(currentSponsorTrustId) : null;
+  const sponsorEmptyDebugReason = !isSponsorSectionLoading && sponsors.length === 0
+    ? sponsorDebugInfo?.reason || ''
+    : '';
   const sponsorChunkStart = sponsors.length > 0
     ? Math.floor(sponsorIndex / SPONSOR_CHUNK_SIZE) * SPONSOR_CHUNK_SIZE
     : 0;
   const visibleSponsors = sponsors.slice(sponsorChunkStart, sponsorChunkStart + SPONSOR_CHUNK_SIZE);
   const activeVisibleSponsorIndex = sponsorIndex - sponsorChunkStart;
 
+  useEffect(() => {
+    if (isSponsorSectionLoading) return;
+    if (sponsors.length > 0) return;
+    console.error('[SponsorFlash][HomeEmptyRender]', {
+      trustId: currentSponsorTrustId,
+      sponsorFetchSettledTrustId,
+      sponsorOrderLength: sponsorOrder.length,
+      sponsorsByIdCount: Object.keys(sponsorsById || {}).length,
+      debugReason: sponsorDebugInfo?.reason || null,
+      debugCounts: sponsorDebugInfo?.counts || null,
+      debugSponsorIds: sponsorDebugInfo?.joinedSponsorIds || []
+    });
+  }, [
+    isSponsorSectionLoading,
+    sponsors.length,
+    currentSponsorTrustId,
+    sponsorFetchSettledTrustId,
+    sponsorOrder.length,
+    sponsorsById,
+    sponsorDebugInfo
+  ]);
+
+  useEffect(() => {
+    const trustId = currentSponsorTrustId;
+    if (!trustId) return;
+    if (sponsorListPreloadRef.current[trustId]) return;
+    if (isSponsorsLoading) return;
+    if (!isCarouselReady) return;
+    if (sponsors.length < SPONSOR_CHUNK_SIZE) return;
+
+    const timer = setTimeout(() => {
+      preloadSponsorListFirstPage(trustId);
+      sponsorListPreloadRef.current[trustId] = true;
+    }, 1800);
+    return () => clearTimeout(timer);
+  }, [currentSponsorTrustId, isSponsorsLoading, isCarouselReady, sponsors.length]);
+
   // Gallery
   useEffect(() => {
     if (import.meta.env.VITE_DISABLE_GALLERY === 'true') return;
-    let active = true;
-    const loadGallery = async () => {
-      try {
-        const trustId =
-          normalizeTrustId(selectedTrustId) ||
-          normalizeTrustId(trustInfo?.id) ||
-          normalizeTrustId(localStorage.getItem('selected_trust_id')) ||
-          null;
-        if (!trustId) {
-          if (active) {
-            setGalleryImages([]);
-            setIsGalleryLoading(false);
-          }
-          return;
-        }
-
-        // Show cached gallery instantly (if available), then refresh in background.
-        const cachedImages = getCachedLatestGalleryImages(trustId, 6);
-        if (active) {
-          if (cachedImages.length > 0) {
-            setGalleryImages(cachedImages);
-            setIsGalleryLoading(false);
-          } else {
-            setIsGalleryLoading(true);
-          }
-          setGalleryError(null);
-        }
-
-        const images = await fetchLatestGalleryImages(6, trustId, { preferCache: false });
-        if (active) setGalleryImages(images);
-      } catch (err) {
-        console.error('Error loading gallery images:', err);
-        if (active) {
-          setGalleryError('Could not load gallery photos');
-          setGalleryImages([]);
-        }
-      } finally {
-        if (active) setIsGalleryLoading(false);
-      }
-    };
-    loadGallery();
-    return () => {
-      active = false;
-    };
-  }, [selectedTrustId, trustInfo?.id]);
+    void ensureAlbumsLoaded({ background: true });
+  }, [ensureAlbumsLoaded, selectedTrustId, trustInfo?.id]);
 
   // Notifications
   useEffect(() => {
@@ -1217,6 +1167,38 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
       const date = new Date(dateStr);
       return date.toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
     } catch { return dateStr; }
+  };
+
+  const handleSponsorTouchStart = (event) => {
+    const touch = event.touches?.[0];
+    if (!touch) return;
+    sponsorTouchStartRef.current = { x: touch.clientX, y: touch.clientY };
+    sponsorTouchEndRef.current = null;
+  };
+
+  const handleSponsorTouchMove = (event) => {
+    const touch = event.touches?.[0];
+    if (!touch) return;
+    sponsorTouchEndRef.current = { x: touch.clientX, y: touch.clientY };
+  };
+
+  const handleSponsorTouchEnd = () => {
+    if (sponsors.length <= 1) return;
+    const start = sponsorTouchStartRef.current;
+    const end = sponsorTouchEndRef.current;
+    if (!start || !end) return;
+
+    const dx = end.x - start.x;
+    const dy = end.y - start.y;
+    const absX = Math.abs(dx);
+    const absY = Math.abs(dy);
+    if (absX < 42 || absX <= absY) return;
+
+    if (dx < 0) {
+      setSponsorIndex((prev) => (prev + 1) % sponsors.length);
+    } else {
+      setSponsorIndex((prev) => (prev - 1 + sponsors.length) % sponsors.length);
+    }
   };
 
   const ff = (key) => isFeatureEnabled(featureFlags, key);
@@ -1635,15 +1617,15 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
                 }}
               >
                 <div className="h-[3px]" style={{ background: `linear-gradient(90deg, ${theme.primary}, ${theme.secondary})` }} />
-                {isGalleryLoading ? (
+                {(isGalleryMetaLoading && carouselImages.length === 0) ? (
                   <div className="w-full h-[200px] flex items-center justify-center" style={{ background: theme.accentBg }}>
                     <div className="flex flex-col items-center gap-2">
                       <div className="w-8 h-8 rounded-full border-2 border-t-transparent animate-spin" style={{ borderColor: theme.primary, borderTopColor: 'transparent' }} />
                       <p className="text-xs font-medium" style={{ color: theme.secondary }}>Loading gallery...</p>
                     </div>
                   </div>
-                ) : galleryImages.length > 0 ? (
-                  <ImageSlider images={galleryImages} onNavigate={onNavigate} />
+                ) : carouselImages.length > 0 ? (
+                  <ImageSlider images={carouselImages} onNavigate={onNavigate} />
                 ) : (
                   <button
                     onClick={() => onNavigate('gallery')}
@@ -1724,7 +1706,12 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
             <div className="px-4 mt-5 mb-4" key="sponsors">
               {sponsors.length > 0 ? (
               <div className="relative">
-                <div className="relative overflow-hidden rounded-3xl">
+                <div
+                  className="relative overflow-hidden rounded-3xl"
+                  onTouchStart={handleSponsorTouchStart}
+                  onTouchMove={handleSponsorTouchMove}
+                  onTouchEnd={handleSponsorTouchEnd}
+                >
                   <div
                     className="absolute inset-0 pointer-events-none"
                     style={{
@@ -1733,15 +1720,15 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
                   />
                   <div className="relative min-h-[168px]">
                   {visibleSponsors.map((sponsor, idx) => {
-                    const globalIndex = sponsorChunkStart + idx;
+                    if (!sponsor?.id) return null;
                     const isActive = idx === activeVisibleSponsorIndex;
-                    const hasContact = sponsor.phone || sponsor.whatsapp_number || sponsor.website_url || sponsor.city || sponsor.state;
-                    const locationLabel = [sponsor.city, sponsor.state].filter(Boolean).join(', ');
                     return (
                       <button
-                        key={sponsor.id || `sponsor-${globalIndex}`}
+                        key={sponsor.id}
                         onClick={() => {
-                          try { sessionStorage.setItem('selectedSponsor', JSON.stringify(sponsor)); } catch { }
+                          console.log(`[Sponsor] clicked sponsor.id=${sponsor.id}`);
+                          setSelectedSponsorId(sponsor.id);
+                          setPinnedSponsor(currentSponsorTrustId, sponsor.id);
                           onNavigate('sponsors');
                         }}
                         className={`absolute inset-0 w-full text-left transition-all duration-700 ease-out ${isActive ? 'opacity-100 translate-y-0 scale-100 pointer-events-auto' : 'opacity-0 translate-y-1 scale-[0.99] pointer-events-none'}`}
@@ -1785,8 +1772,8 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
                                   boxShadow: `0 6px 16px ${theme.primary}1A`,
                                 }}
                               >
-                                {sponsor.photo_url
-                                  ? <img src={sponsor.photo_url} alt={sponsor.name || sponsor.company_name} className="w-full h-full object-cover" />
+                                {(sponsor.photo_thumb_url || sponsor.photo_url)
+                                  ? <img src={sponsor.photo_thumb_url || sponsor.photo_url} alt={sponsor.name || sponsor.company_name} className="w-full h-full object-cover" loading="lazy" decoding="async" />
                                   : <Star className="h-6 w-6" style={{ color: theme.primary }} />}
                               </div>
                             </div>
@@ -1815,35 +1802,8 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
                               </div>
 
                               <p className="text-[10px] font-medium mt-1.5 line-clamp-2" style={{ color: '#6f7f92' }}>
-                                {sponsor.about || 'Supporting our community with care and commitment.'}
+                                {sponsor.shortText || 'Supporting our community with care and commitment.'}
                               </p>
-
-                              {hasContact && (
-                                <div className="mt-2.5 flex flex-wrap gap-1.5">
-                                  {sponsor.phone && (
-                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-semibold" style={{ background: `${theme.accentBg}`, color: theme.secondary, border: `1px solid ${theme.primary}22` }}>
-                                      <Phone className="h-2.5 w-2.5" />
-                                      {sponsor.phone}
-                                    </span>
-                                  )}
-                                  {sponsor.whatsapp_number && (
-                                    <span className="px-2 py-0.5 rounded-full text-[9px] font-semibold" style={{ background: `${theme.accentBg}`, color: theme.secondary, border: `1px solid ${theme.primary}22` }}>
-                                      WhatsApp {sponsor.whatsapp_number}
-                                    </span>
-                                  )}
-                                  {locationLabel && (
-                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-semibold" style={{ background: `${theme.accentBg}`, color: theme.secondary, border: `1px solid ${theme.primary}22` }}>
-                                      <MapPin className="h-2.5 w-2.5" />
-                                      {locationLabel}
-                                    </span>
-                                  )}
-                                  {sponsor.website_url && (
-                                    <span className="px-2 py-0.5 rounded-full text-[9px] font-semibold" style={{ background: `${theme.accentBg}`, color: theme.secondary, border: `1px solid ${theme.primary}22` }}>
-                                      Website
-                                    </span>
-                                  )}
-                                </div>
-                              )}
                             </div>
 
                           </div>
@@ -1854,49 +1814,23 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
                   </div>
                 </div>
                 {sponsors.length > 1 && (
-                  <>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setSponsorIndex((prev) => (prev - 1 + sponsors.length) % sponsors.length);
-                      }}
-                      className="absolute left-0 top-1/2 -translate-y-1/2 -translate-x-1/2 z-20 h-9 w-9 rounded-full inline-flex items-center justify-center transition-all duration-200 active:scale-95"
-                      style={{ background: 'rgba(255,255,255,0.97)', color: theme.secondary, border: `1px solid ${theme.primary}2B`, boxShadow: `0 8px 20px ${theme.primary}24`, backdropFilter: 'blur(6px)' }}
-                      aria-label="Previous sponsor"
-                    >
-                      <ChevronLeft className="h-4 w-4" />
-                    </button>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setSponsorIndex((prev) => (prev + 1) % sponsors.length);
-                      }}
-                      className="absolute right-0 top-1/2 -translate-y-1/2 translate-x-1/2 z-20 h-9 w-9 rounded-full inline-flex items-center justify-center transition-all duration-200 active:scale-95"
-                      style={{ background: `linear-gradient(145deg, ${theme.primary} 0%, ${theme.secondary} 100%)`, color: '#fff', border: `1px solid ${theme.primary}35`, boxShadow: `0 10px 22px ${theme.primary}33` }}
-                      aria-label="Next sponsor"
-                    >
-                      <ChevronRight className="h-4 w-4" />
-                    </button>
-                    <div className="flex justify-center items-center gap-1.5 mt-2">
-                      {visibleSponsors.map((_, idx) => {
-                        const globalIndex = sponsorChunkStart + idx;
-                        const isActive = globalIndex === sponsorIndex;
-                        return (
-                        <button
+                  <div className="flex justify-center items-center gap-1.5 mt-2">
+                    {visibleSponsors.map((_, idx) => {
+                      const globalIndex = sponsorChunkStart + idx;
+                      const isActive = globalIndex === sponsorIndex;
+                      return (
+                        <span
                           key={`sponsor-indicator-${globalIndex}`}
-                          onClick={() => setSponsorIndex(globalIndex)}
                           className="h-1.5 rounded-full transition-all duration-300"
                           style={{
                             width: isActive ? 16 : 6,
                             background: isActive ? `linear-gradient(90deg, ${theme.primary}, ${theme.secondary})` : `${theme.primary}35`,
                             boxShadow: isActive ? `0 1px 5px ${theme.primary}38` : 'none',
                           }}
-                          aria-label={`Go to sponsor ${globalIndex + 1}`}
                         />
                       );
-                      })}
-                    </div>
-                  </>
+                    })}
+                  </div>
                 )}
               </div>
               ) : (
@@ -1942,6 +1876,11 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
                               ? 'Loading sponsors...'
                               : 'No active sponsors available right now.'}
                           </p>
+                          {!isSponsorSectionLoading && !sponsors.length && import.meta.env.DEV && sponsorEmptyDebugReason && (
+                            <p className="text-[11px] mt-1 font-medium break-words" style={{ color: '#b91c1c' }}>
+                              Debug: {sponsorEmptyDebugReason}
+                            </p>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -2021,6 +1960,7 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
 };
 
 export default Home;
+
 
 
 

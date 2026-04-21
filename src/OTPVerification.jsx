@@ -5,22 +5,29 @@ import { verifyOTP } from './services/authService';
 import { fetchDirectoryData } from './services/directoryService';
 import { fetchTrustById } from './services/trustService';
 import { getMemberTrustLinks } from './services/api';
+import { persistUserSession } from './utils/storageUtils';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const TRUST_ID = import.meta.env.VITE_DEFAULT_TRUST_ID || 'b353d2ff-ec3b-4b90-a896-69f40662084e';
-const TRUST_CACHE_KEY = 'cached_trust_info';
+// Separate cache key for Login/OTP screens — never polluted by Home page trust switching
+const LOGIN_TRUST_CACHE_KEY = 'cached_base_trust_info';
 const TRUST_CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
-const STATIC_LOGO_URL = '/app-logo.png';
+// No static fallback image — show monogram placeholder instead of Mah-Setu logo
 const OTP_FLOW_KEY = 'otp_flow_allowed';
 
 // ─── Cache helpers ─────────────────────────────────────────────────────────────
-const getCachedTrust = () => {
+const getCachedBaseTrust = () => {
   try {
-    const raw = localStorage.getItem(TRUST_CACHE_KEY);
+    const raw = localStorage.getItem(LOGIN_TRUST_CACHE_KEY);
     if (!raw) return null;
-    const { data, ts } = JSON.parse(raw);
+    const { data, ts, trustId } = JSON.parse(raw);
+    // Reject stale or wrong-trust cache
+    if (trustId && trustId !== TRUST_ID) {
+      localStorage.removeItem(LOGIN_TRUST_CACHE_KEY);
+      return null;
+    }
     if (Date.now() - ts > TRUST_CACHE_TTL_MS) {
-      localStorage.removeItem(TRUST_CACHE_KEY);
+      localStorage.removeItem(LOGIN_TRUST_CACHE_KEY);
       return null;
     }
     return data;
@@ -29,9 +36,12 @@ const getCachedTrust = () => {
   }
 };
 
-const setCachedTrust = (trust) => {
+const setCachedBaseTrust = (trust) => {
   try {
-    localStorage.setItem(TRUST_CACHE_KEY, JSON.stringify({ data: trust, ts: Date.now() }));
+    localStorage.setItem(
+      LOGIN_TRUST_CACHE_KEY,
+      JSON.stringify({ data: trust, ts: Date.now(), trustId: TRUST_ID })
+    );
   } catch { /* ignore */ }
 };
 
@@ -46,8 +56,8 @@ function OTPVerification() {
   const [error, setError] = useState('');
   const [focused, setFocused] = useState(false);
 
-  // Serve from cache instantly — no flash
-  const [trustInfo, setTrustInfo] = useState(() => getCachedTrust() || null);
+  // Serve from BASE-trust-specific cache instantly — no wrong logo flash
+  const [trustInfo, setTrustInfo] = useState(() => getCachedBaseTrust() || null);
 
   const user = location.state?.user || null;
   const phoneNumber = location.state?.phoneNumber || '';
@@ -65,7 +75,12 @@ function OTPVerification() {
     }
   }, [canRenderOtpPage, navigate]);
 
-  // Keep trust info fresh (background refresh, no blocking)
+  // Clear old shared cache key that may have another trust's logo data
+  useEffect(() => {
+    try { localStorage.removeItem('cached_trust_info'); } catch { /* ignore */ }
+  }, []);
+
+  // Always refresh from BASE trust ID — not from whatever selected_trust_id says
   useEffect(() => {
     let active = true;
 
@@ -74,9 +89,7 @@ function OTPVerification() {
         const trust = await fetchTrustById(TRUST_ID);
         if (!active || !trust) return;
         setTrustInfo(trust);
-        setCachedTrust(trust);
-        localStorage.setItem('selected_trust_id', trust.id);
-        localStorage.setItem('selected_trust_name', trust.name || '');
+        setCachedBaseTrust(trust);
       } catch (err) {
         console.warn('[OTP] Trust refresh failed:', err?.message || err);
       }
@@ -106,9 +119,13 @@ function OTPVerification() {
         return;
       }
 
-      // Persist session
-      localStorage.setItem('user', JSON.stringify(user));
-      localStorage.setItem('isLoggedIn', 'true');
+      // Persist session safely (with compaction + quota recovery)
+      const persisted = persistUserSession(user);
+      if (!persisted.success) {
+        setError(persisted.message || 'Unable to save session on this device. Please try again.');
+        setLoading(false);
+        return;
+      }
 
       // Keep app context pinned to base trust on login (Ek Udaan).
       const selectedTrustId = TRUST_ID;
@@ -150,9 +167,10 @@ function OTPVerification() {
     navigate('/login', { replace: true });
   };
 
-  // ─── Derived values ──────────────────────────────────────────────────────────
-  const displayLogo = trustInfo?.icon_url || STATIC_LOGO_URL;
-  const displayName = trustInfo?.name || '';
+  // ─── Derived values ─────────────────────────────────────────────────────────────────────
+  // Only show logo when Supabase returns a real icon_url — no fallback to Mah-Setu image
+  const displayLogo = trustInfo?.icon_url || null;
+  const displayName = trustInfo?.name || 'Ek Udaan';
 
   if (!canRenderOtpPage) return null;
 
@@ -169,19 +187,25 @@ function OTPVerification() {
           {/* Top accent bar */}
           <div style={styles.topBar} />
 
-          {/* Logo */}
+          {/* Logo — shows Supabase icon_url; monogram placeholder while loading */}
           <div style={styles.logoWrap}>
             <div style={styles.logoRing}>
-              <img
-                src={displayLogo}
-                alt={displayName || 'Trust Logo'}
-                style={styles.logoImg}
-                loading="eager"
-                onError={(e) => {
-                  e.currentTarget.onerror = null;
-                  e.currentTarget.src = STATIC_LOGO_URL;
-                }}
-              />
+              {displayLogo ? (
+                <img
+                  src={displayLogo}
+                  alt={displayName || 'Trust Logo'}
+                  style={styles.logoImg}
+                  loading="eager"
+                  onError={(e) => {
+                    // Hide broken image; do not fall back to Mah-Setu logo
+                    e.currentTarget.style.display = 'none';
+                  }}
+                />
+              ) : (
+                <div style={styles.logoMonogram}>
+                  {(displayName || 'EU').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()}
+                </div>
+              )}
             </div>
           </div>
 
