@@ -263,17 +263,17 @@ const Notifications = ({ onNavigate }) => {
   return (
     <div className={`bg-gray-50 min-h-screen pb-10 relative${isMenuOpen ? ' overflow-hidden max-h-screen' : ''}`}>
       {/* Navbar */}
-      <div className="bg-white border-gray-200 shadow-sm border-b px-4 sm:px-6 py-5 flex items-center justify-between sticky top-0 z-50 transition-all duration-300 pointer-events-auto" style={{ paddingTop: 'max(env(safe-area-inset-top, 0px), 20px)' }}>
+      <div className="theme-navbar border-b px-4 sm:px-6 py-5 flex items-center justify-between sticky top-0 z-50 transition-all duration-300 pointer-events-auto" style={{ paddingTop: 'max(env(safe-area-inset-top, 0px), 20px)' }}>
         <button
           onClick={() => setIsMenuOpen(!isMenuOpen)}
           className="p-2 rounded-xl hover:bg-gray-100 transition-colors pointer-events-auto"
         >
-          {isMenuOpen ? <X className="h-6 w-6" style={{ color: theme.secondary }} /> : <Menu className="h-6 w-6" style={{ color: theme.secondary }} />}
+          {isMenuOpen ? <X className="h-6 w-6" style={{ color: 'var(--navbar-text)' }} /> : <Menu className="h-6 w-6" style={{ color: 'var(--navbar-text)' }} />}
         </button>
-        <h1 className="text-lg font-bold transition-colors" style={{ color: theme.secondary }}>Notifications</h1>
+        <h1 className="text-lg font-bold transition-colors" style={{ color: 'var(--navbar-text)' }}>Notifications</h1>
         <button
           onClick={() => onNavigate('home')}
-          className="p-2 rounded-xl transition-colors flex items-center justify-center hover:bg-gray-100" style={{ color: theme.primary }}
+          className="p-2 rounded-xl transition-colors flex items-center justify-center hover:bg-gray-100" style={{ color: 'var(--navbar-text)' }}
         >
           <HomeIcon className="h-5 w-5" />
         </button>

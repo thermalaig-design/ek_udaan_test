@@ -1,4 +1,3 @@
-﻿import { useAppTheme } from './context/ThemeContext';
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { User, Users, Clock, FileText, UserPlus, Bell, ChevronRight, LogOut, Heart, Shield, Plus, ArrowRight, Pill, ShoppingCart, Calendar, Stethoscope, Building2, Phone, QrCode, Monitor, Brain, Package, FileCheck, Search, Filter, MapPin, Star, HelpCircle, BookOpen, Video, Headphones, Menu, X, Home as HomeIcon, Settings, Eye, Edit2, Info, CheckCircle2, ArrowLeft } from 'lucide-react';
 import { createReferral, getUserReferrals, getReferralCounts, updateReferral, deleteReferral } from './services/api';
@@ -413,20 +412,26 @@ const Referral = ({ onNavigate, referenceView, setReferenceView, newReference, s
           onClick={() => setIsMenuOpen(!isMenuOpen)}
           className="p-2 rounded-xl hover:bg-gray-100 transition-colors pointer-events-auto"
         >
-          {isMenuOpen ? <X className="h-6 w-6 text-gray-700" /> : <Menu className="h-6 w-6 text-gray-700" />}
+          {isMenuOpen ? <X className="h-6 w-6" style={{ color: 'var(--navbar-text)' }} /> : <Menu className="h-6 w-6" style={{ color: 'var(--navbar-text)' }} />}
         </button>
-        <h1 className="text-lg font-bold text-gray-800 transition-colors">Patient Referral</h1>
+        <h1 className="text-lg font-bold transition-colors" style={{ color: 'var(--navbar-text)' }}>Patient Referral</h1>
         <div className="flex items-center gap-2">
           <button
             onClick={() => onNavigate('home')}
-            className="p-2.5 rounded-xl transition-colors text-indigo-600 hover:bg-gray-100"
+            className="p-2.5 rounded-xl transition-colors hover:bg-gray-100"
+            style={{ color: 'var(--navbar-text)' }}
             title="Back"
           >
             <ArrowLeft className="h-5 w-5" />
           </button>
           <button
             onClick={() => onNavigate('home')}
-            className="p-2.5 rounded-xl transition-colors border border-indigo-200 text-indigo-600 bg-indigo-50 hover:bg-indigo-100"
+            className="p-2.5 rounded-xl transition-colors hover:bg-indigo-100"
+            style={{
+              border: '1px solid color-mix(in srgb, var(--navbar-text) 26%, transparent)',
+              color: 'var(--navbar-text)',
+              background: 'color-mix(in srgb, var(--navbar-bg) 76%, #ffffff)'
+            }}
           >
             <HomeIcon className="h-5 w-5" />
           </button>
@@ -442,7 +447,7 @@ const Referral = ({ onNavigate, referenceView, setReferenceView, newReference, s
 
       {referenceView === 'menu' && (
         <>
-          {/* â”€â”€ Top indigo hero header â”€â”€ */}
+          {/* ── Top indigo hero header ── */}
           <div className="bg-gradient-to-br from-indigo-600 to-indigo-800 px-5 pt-5 pb-10">
             <div className="flex items-center gap-3 mb-5">
               <div className="w-11 h-11 bg-white/20 rounded-2xl flex items-center justify-center flex-shrink-0">
@@ -454,7 +459,7 @@ const Referral = ({ onNavigate, referenceView, setReferenceView, newReference, s
               </div>
             </div>
 
-            {/* â”€â”€ Compact quota bar â”€â”€ */}
+            {/* ── Compact quota bar ── */}
             <div className="bg-white/15 backdrop-blur-sm rounded-2xl px-4 py-3">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-white text-xs font-semibold">Your Referral Quota</span>
@@ -484,10 +489,10 @@ const Referral = ({ onNavigate, referenceView, setReferenceView, newReference, s
             </div>
           </div>
 
-          {/* â”€â”€ White card pulled up over header â”€â”€ */}
+          {/* ── White card pulled up over header ── */}
           <div className="bg-gray-50 rounded-t-3xl -mt-5 pt-5 px-4 min-h-screen">
 
-            {/* â”€â”€ PRIMARY CTA â€” New Reference â”€â”€ */}
+            {/* ── PRIMARY CTA — New Reference ── */}
             <button
               onClick={() => setReferenceView('addNew')}
               disabled={total >= 4}
@@ -512,7 +517,7 @@ const Referral = ({ onNavigate, referenceView, setReferenceView, newReference, s
                     {total >= 4 ? 'Quota Full' : 'New Reference'}
                   </p>
                   <p className={`text-xs font-medium mt-0.5 ${total >= 4 ? 'text-gray-400' : 'text-indigo-100'}`}>
-                    {total >= 4 ? 'You have used all 4 referral slots' : 'Tap here to refer a patient â†’'}
+                    {total >= 4 ? 'You have used all 4 referral slots' : 'Tap here to refer a patient →'}
                   </p>
                 </div>
                 <ChevronRight className={`h-6 w-6 flex-shrink-0 transition-transform group-hover:translate-x-1 ${total >= 4 ? 'text-gray-400' : 'text-white/70 group-hover:text-white'
@@ -520,7 +525,7 @@ const Referral = ({ onNavigate, referenceView, setReferenceView, newReference, s
               </div>
             </button>
 
-            {/* â”€â”€ Reference History â”€â”€ */}
+            {/* ── Reference History ── */}
             <div>
               <div className="flex items-center justify-between mb-3">
                 <h3 className="text-base font-bold text-gray-800">Reference History</h3>

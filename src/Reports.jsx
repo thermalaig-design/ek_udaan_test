@@ -1,11 +1,9 @@
-import { useAppTheme } from './context/ThemeContext';
 import React, { useState, useEffect, useRef } from 'react';
 import { FileText, Plus, Calendar, Download, X, Home as HomeIcon, ChevronLeft, Upload, CheckCircle, AlertCircle, Image as ImageIcon, File, Menu } from 'lucide-react';
 import Sidebar from './components/Sidebar';
 import { getUserReports, uploadUserReport } from './services/api';
 
 const Reports = ({ onNavigate }) => {
-  const theme = useAppTheme();
   const [reports, setReports] = useState([]);
   const [loading, setLoading] = useState(false);
   const [showUploadForm, setShowUploadForm] = useState(false);
@@ -220,12 +218,12 @@ const Reports = ({ onNavigate }) => {
           onClick={() => setIsMenuOpen(!isMenuOpen)}
           className="p-2 rounded-xl hover:bg-gray-100 transition-colors pointer-events-auto"
         >
-          {isMenuOpen ? <X className="h-6 w-6 text-gray-700" /> : <Menu className="h-6 w-6 text-gray-700" />}
+          {isMenuOpen ? <X className="h-6 w-6" style={{ color: 'var(--navbar-text)' }} /> : <Menu className="h-6 w-6" style={{ color: 'var(--navbar-text)' }} />}
         </button>
-        <h1 className="text-lg font-bold text-gray-800 transition-colors">My Reports</h1>
+        <h1 className="text-lg font-bold transition-colors" style={{ color: 'var(--navbar-text)' }}>My Reports</h1>
         <button
           onClick={() => onNavigate('home')}
-          className="p-2 rounded-xl transition-colors flex items-center justify-center hover:bg-gray-100" style={{ color: theme.primary }}
+          className="p-2 rounded-xl transition-colors flex items-center justify-center hover:bg-gray-100" style={{ color: 'var(--navbar-text)' }}
         >
           <HomeIcon className="h-5 w-5" />
         </button>

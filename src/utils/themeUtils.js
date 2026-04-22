@@ -21,7 +21,11 @@ const readPath = (source, path) => {
   return current;
 };
 
-const hasTokenValue = (value) => value !== undefined && value !== null && value !== '';
+const hasTokenValue = (value) => {
+  if (value === undefined || value === null) return false;
+  if (typeof value === 'string') return value.trim() !== '';
+  return true;
+};
 
 const readConfigToken = (config, path) => {
   const value = readPath(config, path);
@@ -341,8 +345,6 @@ export const getThemeToken = (theme, path, fallback, baseTheme = DEFAULT_THEME) 
 };
 
 export const getFooterThemeStyles = (theme, baseTheme = DEFAULT_THEME) => {
-  const selectedConfig = theme?.selectedThemeConfigRaw || null;
-  const baseConfig = theme?.baseThemeConfigRaw || null;
   const bgColor1 = getThemeToken(
     theme,
     'footer.bg_color_1',
@@ -356,24 +358,7 @@ export const getFooterThemeStyles = (theme, baseTheme = DEFAULT_THEME) => {
     DEFAULT_THEME_CONFIG.footer.gradient_type,
     baseTheme
   );
-  const selectedFooterTextOverride = readConfigToken(selectedConfig, 'typography.component_overrides.footer_text');
-  const selectedFooterText = readConfigToken(selectedConfig, 'footer.text_color');
-  const baseFooterTextOverride = readConfigToken(baseConfig, 'typography.component_overrides.footer_text');
-  const baseFooterText = readConfigToken(baseConfig, 'footer.text_color');
-
-  const fallbackFooterText = getThemeToken(
-    theme,
-    'footer.text_color',
-    DEFAULT_THEME_CONFIG.footer.text_color,
-    baseTheme
-  );
-  const footerTextColor = selectedFooterTextOverride
-    || selectedFooterText
-    || baseFooterTextOverride
-    || baseFooterText
-    || fallbackFooterText
-    || '#ffffff';
-  const footerTextOverride = selectedFooterTextOverride || baseFooterTextOverride || null;
+  const resolvedFooterText = resolveFooterTextColor(theme, baseTheme);
 
   const footerConfig = {
     bg_color_1: bgColor1,
@@ -385,30 +370,224 @@ export const getFooterThemeStyles = (theme, baseTheme = DEFAULT_THEME) => {
   return {
     footerConfig,
     backgroundStyle: buildGradient(footerConfig),
-    textColor: footerTextColor,
-    usingTypographyOverride: Boolean(footerTextOverride)
+    textColor: resolvedFooterText.color,
+    textColorSource: resolvedFooterText.source,
+    usingTypographyOverride: String(resolvedFooterText.source || '').includes('typography.component_overrides.footer_text')
+  };
+};
+
+export const resolveFooterTextColor = (theme, baseTheme = DEFAULT_THEME) => {
+  const selectedConfig = theme?.selectedThemeConfigRaw || null;
+  const baseConfig = theme?.baseThemeConfigRaw || null;
+
+  const selectedFooterTextOverride = readConfigToken(selectedConfig, 'typography.component_overrides.footer_text');
+  if (hasTokenValue(selectedFooterTextOverride)) {
+    return {
+      color: selectedFooterTextOverride,
+      source: 'selected.typography.component_overrides.footer_text'
+    };
+  }
+
+  const selectedFooterTextColor = readConfigToken(selectedConfig, 'footer.text_color');
+  if (hasTokenValue(selectedFooterTextColor)) {
+    return {
+      color: selectedFooterTextColor,
+      source: 'selected.footer.text_color'
+    };
+  }
+
+  const baseFooterTextOverride = readConfigToken(baseConfig, 'typography.component_overrides.footer_text');
+  if (hasTokenValue(baseFooterTextOverride)) {
+    return {
+      color: baseFooterTextOverride,
+      source: 'base.typography.component_overrides.footer_text'
+    };
+  }
+
+  const baseFooterTextColor = readConfigToken(baseConfig, 'footer.text_color');
+  if (hasTokenValue(baseFooterTextColor)) {
+    return {
+      color: baseFooterTextColor,
+      source: 'base.footer.text_color'
+    };
+  }
+
+  return {
+    color: getThemeToken(theme, 'footer.text_color', DEFAULT_THEME_CONFIG.footer.text_color || '#ffffff', baseTheme),
+    source: 'fallback'
+  };
+};
+
+export const getNavbarThemeStyles = (theme, baseTheme = DEFAULT_THEME) => {
+  const effects = resolveNavbarEffects(theme, baseTheme);
+  const background = resolveNavbarBackground(theme, baseTheme, effects.opacityValue);
+  const text = resolveNavbarTextColor(theme, baseTheme);
+  return {
+    navbarConfig: background.navbarConfig,
+    backgroundStyle: background.backgroundStyle,
+    backgroundSource: background.source,
+    textColor: text.color,
+    textColorSource: text.source,
+    blurPx: effects.blurPx,
+    blurSource: effects.blurSource,
+    opacity: effects.opacity,
+    opacitySource: effects.opacitySource,
+    opacityValue: effects.opacityValue
+  };
+};
+
+export const resolveNavbarTextColor = (theme, baseTheme = DEFAULT_THEME) => {
+  const navbarTextOverride = getThemeToken(
+    theme,
+    'typography.component_overrides.navbar_text',
+    null,
+    baseTheme
+  );
+  if (hasTokenValue(navbarTextOverride)) {
+    return {
+      color: navbarTextOverride,
+      source: 'typography.component_overrides.navbar_text'
+    };
+  }
+
+  const navbarTextColor = getThemeToken(
+    theme,
+    'navbar.text_color',
+    null,
+    baseTheme
+  );
+  if (hasTokenValue(navbarTextColor)) {
+    return {
+      color: navbarTextColor,
+      source: 'navbar.text_color'
+    };
+  }
+
+  return {
+    color: '#111827',
+    source: 'fallback'
+  };
+};
+
+export const resolveNavbarEffects = (theme, baseTheme = DEFAULT_THEME) => {
+  const blurToken = getThemeToken(theme, 'navbar.blur', null, baseTheme);
+  const opacityToken = getThemeToken(theme, 'navbar.opacity', null, baseTheme);
+
+  const blurValue = Number(blurToken);
+  const opacityValue = Number(opacityToken);
+  const safeBlur = Number.isFinite(blurValue) ? blurValue : DEFAULT_THEME_CONFIG.navbar.blur;
+  const safeOpacity = clamp(Number.isFinite(opacityValue) ? opacityValue : DEFAULT_THEME_CONFIG.navbar.opacity, 0, 1);
+
+  return {
+    blurPx: `${safeBlur}px`,
+    blurSource: hasTokenValue(blurToken) ? 'navbar.blur' : 'fallback',
+    opacity: `${safeOpacity}`,
+    opacitySource: hasTokenValue(opacityToken) ? 'navbar.opacity' : 'fallback',
+    opacityValue: safeOpacity
+  };
+};
+
+export const resolveNavbarBackground = (theme, baseTheme = DEFAULT_THEME, opacityValue = 1) => {
+  const selectedConfig = theme?.selectedThemeConfigRaw || null;
+  const baseConfig = theme?.baseThemeConfigRaw || null;
+  const currentConfig = theme?.themeConfig || null;
+
+  const readNavbarToken = (path) => {
+    const selectedValue = readConfigToken(selectedConfig, path);
+    if (selectedValue !== undefined) return { value: selectedValue, source: `selected.${path}` };
+    const baseValue = readConfigToken(baseConfig, path);
+    if (baseValue !== undefined) return { value: baseValue, source: `base.${path}` };
+    const currentValue = readConfigToken(currentConfig, path);
+    if (currentValue !== undefined) return { value: currentValue, source: `merged.${path}` };
+    return { value: undefined, source: null };
+  };
+
+  const bg1Token = readNavbarToken('navbar.bg_color_1');
+  const bg2Token = readNavbarToken('navbar.bg_color_2');
+  const gradientTypeToken = readNavbarToken('navbar.gradient_type');
+  const gradientAngleToken = readNavbarToken('navbar.gradient_angle');
+  const hasCompleteNavbarConfig = hasTokenValue(bg1Token.value) && hasTokenValue(gradientTypeToken.value);
+
+  if (hasCompleteNavbarConfig) {
+    const navbarConfig = {
+      bg_color_1: withOpacity(bg1Token.value, opacityValue),
+      bg_color_2: hasTokenValue(bg2Token.value) ? withOpacity(bg2Token.value, opacityValue) : withOpacity(bg1Token.value, opacityValue),
+      gradient_type: gradientTypeToken.value,
+      gradient_angle: Number.isFinite(Number(gradientAngleToken.value)) ? Number(gradientAngleToken.value) : undefined
+    };
+    return {
+      navbarConfig,
+      backgroundStyle: buildGradient(navbarConfig),
+      source: 'navbar.config'
+    };
+  }
+
+  const navbarBgToken = getThemeToken(theme, 'navbar_bg', null, baseTheme);
+  if (hasTokenValue(navbarBgToken)) {
+    const navbarBgWithOpacity = withOpacity(navbarBgToken, opacityValue);
+    return {
+      navbarConfig: null,
+      backgroundStyle: navbarBgWithOpacity,
+      source: 'navbar_bg'
+    };
+  }
+
+  return {
+    navbarConfig: null,
+    backgroundStyle: DEFAULT_THEME.navbarBg,
+    source: 'fallback'
+  };
+};
+
+export const getQuickActionsThemeStyles = (theme, baseTheme = DEFAULT_THEME) => {
+  const quickActionsConfig = {
+    bg_color_1: getThemeToken(theme, 'quick_actions.bg_color_1', DEFAULT_THEME_CONFIG.quick_actions.bg_color_1, baseTheme),
+    bg_color_2: getThemeToken(theme, 'quick_actions.bg_color_2', DEFAULT_THEME_CONFIG.quick_actions.bg_color_2, baseTheme),
+    gradient_type: getThemeToken(theme, 'quick_actions.gradient_type', DEFAULT_THEME_CONFIG.quick_actions.gradient_type, baseTheme)
+  };
+  const textColor = getThemeToken(theme, 'quick_actions.text_color', DEFAULT_THEME_CONFIG.quick_actions.text_color, baseTheme);
+  const iconBgColor = getThemeToken(theme, 'quick_actions.icon_bg_color', DEFAULT_THEME_CONFIG.quick_actions.icon_bg_color, baseTheme);
+  return {
+    quickActionsConfig,
+    backgroundStyle: buildGradient(quickActionsConfig),
+    textColor,
+    iconBgColor
+  };
+};
+
+export const getAppButtonsThemeStyles = (theme, baseTheme = DEFAULT_THEME) => {
+  const appButtonsConfig = {
+    bg_color_1: getThemeToken(theme, 'app_buttons.bg_color_1', DEFAULT_THEME_CONFIG.app_buttons.bg_color_1, baseTheme),
+    bg_color_2: getThemeToken(theme, 'app_buttons.bg_color_2', DEFAULT_THEME_CONFIG.app_buttons.bg_color_2, baseTheme),
+    gradient_type: getThemeToken(theme, 'app_buttons.gradient_type', DEFAULT_THEME_CONFIG.app_buttons.gradient_type, baseTheme)
+  };
+  return {
+    appButtonsConfig,
+    backgroundStyle: buildGradient(appButtonsConfig),
+    textColor: getThemeToken(theme, 'app_buttons.text_color', DEFAULT_THEME_CONFIG.app_buttons.text_color, baseTheme),
+    iconColor: getThemeToken(theme, 'app_buttons.icon_color', DEFAULT_THEME_CONFIG.app_buttons.icon_color, baseTheme)
   };
 };
 
 export const applyThemeCssVariables = (theme, root = document.documentElement) => {
   const safeTheme = theme || DEFAULT_THEME;
   const config = safeTheme.themeConfig || DEFAULT_THEME_CONFIG;
-  const navbar = config.navbar || {};
   const pageBg = config.page_bg || {};
   const sidebar = config.sidebar || {};
   const marquee = config.marquee || {};
   const typography = config.typography || {};
-  const appButtons = config.app_buttons || {};
   const advertisement = config.advertisement || {};
-  const quickActions = config.quick_actions || {};
   const typographyOverrides = typography.component_overrides || {};
+  const navbarTheme = getNavbarThemeStyles(safeTheme, DEFAULT_THEME);
   const footerTheme = getFooterThemeStyles(safeTheme, DEFAULT_THEME);
+  const quickActionsTheme = getQuickActionsThemeStyles(safeTheme, DEFAULT_THEME);
+  const appButtonsTheme = getAppButtonsThemeStyles(safeTheme, DEFAULT_THEME);
 
   const primary = safeTheme.primary || DEFAULT_THEME.primary;
   const secondary = safeTheme.secondary || DEFAULT_THEME.secondary;
   const accent = safeTheme.accent || DEFAULT_THEME.accent;
   const accentBg = safeTheme.accentBg || DEFAULT_THEME.accentBg;
-  const navbarBg = safeTheme.navbarBg || buildSurfaceBackground(navbar, DEFAULT_THEME.navbarBg);
+  const navbarBg = navbarTheme.backgroundStyle || safeTheme.navbarBg || DEFAULT_THEME.navbarBg;
   const pageBackground = safeTheme.pageBg || buildGradient(pageBg);
   const sidebarBg = safeTheme.sidebarBg || buildSurfaceBackground(sidebar, DEFAULT_THEME.sidebarBg);
   const marqueeBg = safeTheme.marqueeBg || buildGradient(marquee);
@@ -427,9 +606,9 @@ export const applyThemeCssVariables = (theme, root = document.documentElement) =
 
   root.style.setProperty('--page-bg', pageBackground);
   root.style.setProperty('--navbar-bg', navbarBg);
-  root.style.setProperty('--navbar-text', typographyOverrides.navbar_text || navbar.text_color || typography.body_text_color || '#111827');
-  root.style.setProperty('--navbar-blur', `${Number(navbar.blur) || 8}px`);
-  root.style.setProperty('--navbar-opacity', `${clamp(Number(navbar.opacity ?? 1), 0, 1)}`);
+  root.style.setProperty('--navbar-text', navbarTheme.textColor);
+  root.style.setProperty('--navbar-blur', navbarTheme.blurPx);
+  root.style.setProperty('--navbar-opacity', navbarTheme.opacity);
   root.style.setProperty('--navbar-accent', `linear-gradient(90deg, ${secondary}, ${primary}, ${secondary})`);
   root.style.setProperty('--navbar-border', withOpacity(primary, 0.12));
 
@@ -449,12 +628,12 @@ export const applyThemeCssVariables = (theme, root = document.documentElement) =
   root.style.setProperty('--footer-text', footerTheme.textColor);
   root.style.setProperty('--footer-border', withOpacity(footerTheme.textColor, 0.24));
   root.style.setProperty('--footer-accent', withOpacity(footerTheme.textColor, 0.45));
-  root.style.setProperty('--quick-actions-bg', buildGradient(quickActions));
-  root.style.setProperty('--quick-actions-text', quickActions.text_color || '#ffffff');
-  root.style.setProperty('--quick-actions-icon-bg', quickActions.icon_bg_color || '#ffffff');
-  root.style.setProperty('--app-button-bg', buildGradient(appButtons));
-  root.style.setProperty('--app-button-text', appButtons.text_color || '#ffffff');
-  root.style.setProperty('--app-button-icon', appButtons.icon_color || '#ffffff');
+  root.style.setProperty('--quick-actions-bg', quickActionsTheme.backgroundStyle);
+  root.style.setProperty('--quick-actions-text', quickActionsTheme.textColor);
+  root.style.setProperty('--quick-actions-icon-bg', quickActionsTheme.iconBgColor);
+  root.style.setProperty('--app-button-bg', appButtonsTheme.backgroundStyle);
+  root.style.setProperty('--app-button-text', appButtonsTheme.textColor);
+  root.style.setProperty('--app-button-icon', appButtonsTheme.iconColor);
   root.style.setProperty('--advertisement-bg', withOpacity(advertisement.bg_color || accent, advertisement.bg_opacity ?? 1));
   root.style.setProperty('--advertisement-text', advertisement.text_color || secondary);
 
@@ -462,4 +641,43 @@ export const applyThemeCssVariables = (theme, root = document.documentElement) =
   root.style.setProperty('--heading-color', typography.heading_color || '#111827');
   root.style.setProperty('--subheading-color', typography.subheading_color || secondary);
   root.style.setProperty('--body-text-color', typography.body_text_color || '#374151');
+
+  if (import.meta.env.DEV) {
+    console.log('[Theme][AppliedCSSVars]', {
+      selectedTrustId: safeTheme.selectedTrustId || safeTheme.trustId || null,
+      templateId: safeTheme.templateId || null,
+      templateUpdatedAt: safeTheme.templateUpdatedAt || null,
+      baseTemplateUpdatedAt: safeTheme.baseTemplateUpdatedAt || null,
+      selectedTemplateUpdatedAt: safeTheme.selectedTemplateUpdatedAt || null,
+      source: safeTheme.themeLoadSource || 'unknown',
+      navbar: {
+        bg: navbarBg,
+        bgSource: navbarTheme.backgroundSource,
+        text: navbarTheme.textColor,
+        textSource: navbarTheme.textColorSource,
+        blur: navbarTheme.blurPx,
+        blurSource: navbarTheme.blurSource,
+        opacity: navbarTheme.opacity,
+        opacitySource: navbarTheme.opacitySource
+      },
+      footer: {
+        bg: footerTheme.backgroundStyle,
+        text: footerTheme.textColor
+      },
+      quickActions: {
+        bg: quickActionsTheme.backgroundStyle,
+        text: quickActionsTheme.textColor
+      },
+      appButtons: {
+        bg: appButtonsTheme.backgroundStyle,
+        text: appButtonsTheme.textColor,
+        icon: appButtonsTheme.iconColor
+      },
+      typography: {
+        fontFamily: typography.font_family || DEFAULT_THEME_CONFIG.typography.font_family,
+        heading: typography.heading_color || '#111827',
+        body: typography.body_text_color || '#374151'
+      }
+    });
+  }
 };

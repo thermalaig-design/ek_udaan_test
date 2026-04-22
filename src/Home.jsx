@@ -24,7 +24,7 @@ import {
   setSelectedSponsorId,
   sponsorConfig
 } from './services/sponsorStore';
-import { getFooterThemeStyles, getThemeToken } from './utils/themeUtils';
+import { getFooterThemeStyles, getNavbarThemeStyles, getThemeToken } from './utils/themeUtils';
 
 const DEFAULT_TRUST_NAME = import.meta.env.VITE_DEFAULT_TRUST_NAME || 'Mahila Mandal';
 const DEFAULT_TRUST_LOGO = '/new_logo.png';
@@ -224,6 +224,7 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
   // Global app theme from central provider
   const theme = useAppTheme();
   const footerTheme = useMemo(() => getFooterThemeStyles(theme), [theme]);
+  const navbarTheme = useMemo(() => getNavbarThemeStyles(theme), [theme]);
 
   useEffect(() => {
     if (!import.meta.env.DEV) return;
@@ -236,23 +237,48 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
     }
     const cachedTheme = cachedThemeEntry?.theme || cachedThemeEntry || null;
     const usingDbTheme = Boolean(theme?.templateId || theme?.baseTemplateUpdatedAt || theme?.selectedTemplateUpdatedAt);
+    const resolvedFooterConfig = theme?.themeConfig?.footer || null;
+    const resolvedNavbarConfig = theme?.themeConfig?.navbar || null;
+    const resolvedNavbarBg = theme?.themeConfig?.navbar_bg || null;
+    const resolvedTypographyOverrides = theme?.themeConfig?.typography?.component_overrides || null;
 
     console.log('[FooterTheme][Debug]', {
       currentTemplateId: theme?.templateId || null,
+      currentTrustId: theme?.selectedTrustId || theme?.trustId || selectedTrustId || null,
       currentTemplateUpdatedAt: theme?.templateUpdatedAt || null,
       currentBaseTemplateUpdatedAt: theme?.baseTemplateUpdatedAt || null,
       currentSelectedTemplateUpdatedAt: theme?.selectedTemplateUpdatedAt || null,
       cachedTemplateUpdatedAt: cachedTheme?.templateUpdatedAt || null,
       cachedBaseTemplateUpdatedAt: cachedTheme?.baseTemplateUpdatedAt || null,
       cachedSelectedTemplateUpdatedAt: cachedTheme?.selectedTemplateUpdatedAt || null,
-      resolvedFooterConfig: footerTheme.footerConfig,
+      resolvedFooterConfig,
+      resolvedTypographyOverrides,
       resolvedFooterBackground: footerTheme.backgroundStyle,
       resolvedFooterTextColor: footerTheme.textColor,
+      resolvedFooterTextSource: footerTheme.textColorSource,
       usingTypographyOverride: footerTheme.usingTypographyOverride,
+      hardcodedFooterTextOverrideDetected: false,
       usingDbTheme,
       usingFallbackTheme: !usingDbTheme
     });
-  }, [footerTheme, selectedTrustId, theme]);
+
+    console.log('[NavbarTheme][Debug]', {
+      currentTemplateId: theme?.templateId || null,
+      currentTrustId: theme?.selectedTrustId || theme?.trustId || selectedTrustId || null,
+      resolvedNavbarConfig,
+      resolvedNavbarBg,
+      resolvedTypographyOverrides,
+      resolvedNavbarBackgroundStyle: navbarTheme.backgroundStyle,
+      resolvedNavbarBackgroundSource: navbarTheme.backgroundSource,
+      resolvedNavbarTextColor: navbarTheme.textColor,
+      resolvedNavbarTextSource: navbarTheme.textColorSource,
+      resolvedNavbarBlur: navbarTheme.blurPx,
+      resolvedNavbarBlurSource: navbarTheme.blurSource,
+      resolvedNavbarOpacity: navbarTheme.opacity,
+      resolvedNavbarOpacitySource: navbarTheme.opacitySource,
+      hardcodedNavbarOverrideDetected: false
+    });
+  }, [footerTheme, navbarTheme, selectedTrustId, theme]);
 
   const syncSponsorStoreSnapshot = (trustId) => {
     if (!trustId) {
@@ -1274,8 +1300,14 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
   const shouldShowTrustSelector = trustList.length > 1;
   const showTrustSelector = shouldShowTrustSelector;
   const surfaceColor = theme?.themeConfig?.page_bg?.bg_color_1 || theme?.accentBg || '#ffffff';
-  const mutedTextColor = theme?.themeConfig?.typography?.body_text_color || 'var(--body-text-color, #64748b)';
-  const onPrimaryText = getThemeToken(theme, 'app_buttons.text_color', '#ffffff');
+  const mutedTextColor = getThemeToken(theme, 'typography.body_text_color', 'var(--body-text-color, #64748b)');
+  const headingColor = getThemeToken(theme, 'typography.heading_color', 'var(--heading-color, #111827)');
+  const onPrimaryText = getThemeToken(theme, 'app_buttons.text_color', 'var(--app-button-text, #ffffff)');
+  const appButtonBg = 'var(--app-button-bg)';
+  const quickActionsBg = 'var(--quick-actions-bg)';
+  const quickActionsText = 'var(--quick-actions-text)';
+  const quickActionsIconBg = 'var(--quick-actions-icon-bg)';
+  const navbarTextColor = 'var(--navbar-text)';
   const subtleBorderColor = `color-mix(in srgb, ${theme.secondary} 16%, transparent)`;
   const subtleSurfaceColor = `color-mix(in srgb, ${surfaceColor} 82%, ${theme.accentBg})`;
   const animationMap = {
@@ -1369,14 +1401,14 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
               className="w-10 h-10 rounded-2xl flex items-center justify-center transition-all flex-shrink-0 active:scale-95"
               style={{
                 background: isMenuOpen
-                  ? `linear-gradient(135deg, ${theme.primary}, ${theme.secondary})`
-                  : theme.accentBg,
+                  ? appButtonBg
+                  : 'color-mix(in srgb, var(--navbar-bg) 72%, #ffffff)',
                 boxShadow: isMenuOpen ? `0 4px 12px ${theme.primary}40` : 'none',
               }}
           >
             {isMenuOpen
               ? <X className="h-5 w-5" style={{ color: onPrimaryText }} />
-              : <Menu className="h-[22px] w-[22px]" style={{ color: theme.secondary }} />}
+              : <Menu className="h-[22px] w-[22px]" style={{ color: navbarTextColor }} />}
           </button>
 
           {/* Trust logo + name */}
@@ -1396,7 +1428,7 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
             </div>
             <h1
               className="font-extrabold text-[15px] truncate max-w-[130px]"
-              style={{ color: theme.secondary }}
+              style={{ color: navbarTextColor }}
             >
               {activeTrust?.name || defaultTrust?.name || trustInfo?.name || localStorage.getItem('selected_trust_name') || DEFAULT_TRUST_NAME}
             </h1>
@@ -1411,14 +1443,14 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
                   className="notification-button w-10 h-10 rounded-2xl flex items-center justify-center transition-all active:scale-95"
                   style={{
                     background: isNotificationsOpen
-                      ? `linear-gradient(135deg, ${theme.primary}, ${theme.secondary})`
-                      : theme.accentBg,
+                      ? appButtonBg
+                      : 'color-mix(in srgb, var(--navbar-bg) 72%, #ffffff)',
                     boxShadow: isNotificationsOpen ? `0 4px 12px ${theme.primary}40` : 'none',
                   }}
                 >
                   <Bell
                     className="h-[22px] w-[22px]"
-                    style={{ color: isNotificationsOpen ? onPrimaryText : theme.secondary }}
+                    style={{ color: isNotificationsOpen ? onPrimaryText : navbarTextColor }}
                   />
                   {unreadCount > 0 && (
                     <span
@@ -1439,13 +1471,13 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
                     >
                       <div className="p-4 flex items-center justify-between"
                         style={{ borderBottom: `1px solid ${theme.primary}14`, background: `linear-gradient(135deg,${theme.accent},${surfaceColor})` }}>
-                        <h3 className="font-bold text-sm" style={{ color: theme.secondary }}>Notifications ({notifications.length})</h3>
+                        <h3 className="font-bold text-sm" style={{ color: navbarTextColor }}>Notifications ({notifications.length})</h3>
                         <div className="flex items-center gap-3">
                           {unreadCount > 0 && (
-                            <button onClick={handleMarkAllAsRead} className="text-xs font-bold" style={{ color: theme.secondary }}>Mark all read</button>
+                            <button onClick={handleMarkAllAsRead} className="text-xs font-bold" style={{ color: navbarTextColor }}>Mark all read</button>
                           )}
                           {notifications.length > 0 && (
-                            <button onClick={handleClearAll} className="flex items-center gap-1 text-xs font-bold" style={{ color: theme.primary }}>
+                            <button onClick={handleClearAll} className="flex items-center gap-1 text-xs font-bold" style={{ color: navbarTextColor }}>
                               <Trash2 className="w-3.5 h-3.5" /> Clear
                             </button>
                           )}
@@ -1475,7 +1507,7 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
                         )) : (
                           <div className="p-8 text-center">
                             <div className="w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-3" style={{ background: theme.accent }}>
-                              <Bell className="h-5 w-5" style={{ color: theme.primary }} />
+                              <Bell className="h-5 w-5" style={{ color: navbarTextColor }} />
                             </div>
                             <p className="text-sm text-slate-400 font-medium">No notifications yet</p>
                           </div>
@@ -1484,7 +1516,7 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
                       {notifications.length > 0 && (
                         <div className="p-3 text-center" style={{ borderTop: `1px solid ${subtleBorderColor}`, background: subtleSurfaceColor }}>
                           <button onClick={() => { setIsNotificationsOpen(false); onNavigate('notifications'); }}
-                            className="text-xs font-bold" style={{ color: theme.secondary }}>
+                            className="text-xs font-bold" style={{ color: navbarTextColor }}>
                             View all {notifications.length} →
                           </button>
                         </div>
@@ -1517,12 +1549,12 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
               ) : (
                 <div
                   className="w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-bold flex-shrink-0"
-                  style={{ background: `linear-gradient(135deg, ${theme.primary}, ${theme.secondary})`, color: onPrimaryText }}
+                  style={{ background: appButtonBg, color: onPrimaryText }}
                 >
                   {userProfile.name.charAt(0).toUpperCase()}
                 </div>
               )}
-              <p className="text-[12px] font-semibold truncate" style={{ color: theme.secondary }}>
+              <p className="text-[12px] font-semibold truncate" style={{ color: headingColor }}>
                 Welcome, <span className="font-extrabold">{userProfile.name}</span>
               </p>
             </div>
@@ -1654,22 +1686,22 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
                       onClick={() => onNavigate(action.route)}
                       className="rounded-2xl text-left transition-all active:scale-[0.97] duration-150"
                       style={{
-                        background: surfaceColor,
-                        border: `1px solid ${theme.primary}18`,
-                        boxShadow: `0 4px 16px ${theme.secondary}12, 0 1px 4px ${theme.primary}0A`,
+                        background: quickActionsBg,
+                        border: `1px solid color-mix(in srgb, ${quickActionsText} 22%, transparent)`,
+                        boxShadow: `0 4px 16px color-mix(in srgb, ${quickActionsText} 14%, transparent), 0 1px 4px color-mix(in srgb, ${quickActionsText} 10%, transparent)`,
                         overflow: 'hidden',
                       }}
                     >
                       <div
                         className="h-[4px]"
-                        style={{ background: `linear-gradient(90deg, ${theme.primary} 0%, ${theme.secondary} 100%)` }}
+                        style={{ background: `linear-gradient(90deg, ${quickActionsText} 0%, color-mix(in srgb, ${quickActionsText} 60%, #ffffff) 100%)` }}
                       />
                       <div className="p-3.5">
                         <div
                           className="w-10 h-10 rounded-xl flex items-center justify-center mb-2.5"
                           style={{
-                            background: `linear-gradient(135deg, ${theme.accent}CC 0%, ${theme.accentBg} 100%)`,
-                            border: `1px solid ${theme.primary}18`,
+                            background: quickActionsIconBg,
+                            border: `1px solid color-mix(in srgb, ${quickActionsText} 20%, transparent)`,
                           }}
                         >
                           <img
@@ -1680,14 +1712,14 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
                         </div>
                         <div className="flex items-start justify-between gap-1">
                           <div className="min-w-0 flex-1">
-                            <h3 className="text-[12px] font-extrabold leading-snug" style={{ color: theme.secondary }}>
+                            <h3 className="text-[12px] font-extrabold leading-snug" style={{ color: quickActionsText }}>
                               {action.displayName}
                             </h3>
-                            <p className="text-[10px] font-medium mt-0.5 leading-snug" style={{ color: mutedTextColor }}>
+                            <p className="text-[10px] font-medium mt-0.5 leading-snug" style={{ color: `color-mix(in srgb, ${quickActionsText} 80%, #ffffff)` }}>
                               {action.tagline}
                             </p>
                           </div>
-                          <ChevronRight className="h-3.5 w-3.5 flex-shrink-0 mt-0.5" style={{ color: `${theme.secondary}80` }} />
+                          <ChevronRight className="h-3.5 w-3.5 flex-shrink-0 mt-0.5" style={{ color: `color-mix(in srgb, ${quickActionsText} 72%, transparent)` }} />
                         </div>
                       </div>
                     </button>

@@ -50,6 +50,11 @@ const parseJsonObject = (value, fallback = {}) => {
   return isPlainObject(parsed) ? parsed : fallback;
 };
 
+const tagThemeSource = (theme, source) => {
+  if (!theme || typeof theme !== 'object') return theme;
+  return { ...theme, themeLoadSource: source };
+};
+
 const resolveStoredTrustId = () => {
   const selected = String(localStorage.getItem('selected_trust_id') || '').trim();
   if (selected) return selected;
@@ -199,12 +204,25 @@ export const useTheme = (trustId) => {
     const shouldRefreshFromDb = !hasCachedTheme || isStale(cachedEntry?.ts);
     try {
       if (hasCachedTheme) {
-        setTheme(cachedEntry.theme);
+        const cachedTheme = tagThemeSource(cachedEntry.theme, 'cache');
+        setTheme(cachedTheme);
+        if (import.meta.env.DEV) {
+          console.log('[useTheme] Cache hit:', {
+            selectedTrustId: resolvedTrustId,
+            cacheKey: `theme_cache_${resolvedTrustId}`,
+            cachedAt: cachedEntry?.ts ? new Date(cachedEntry.ts).toISOString() : null,
+            cachedTemplateId: cachedTheme?.templateId || null,
+            cachedTemplateUpdatedAt: cachedTheme?.templateUpdatedAt || null,
+            cachedBaseTemplateUpdatedAt: cachedTheme?.baseTemplateUpdatedAt || null,
+            cachedSelectedTemplateUpdatedAt: cachedTheme?.selectedTemplateUpdatedAt || null
+          });
+        }
         if (!shouldRefreshFromDb) {
           setIsThemeLoading(false);
-          void validateCacheInBackground(cachedEntry.theme);
+          void validateCacheInBackground(cachedTheme);
           validationIntervalId = window.setInterval(() => {
-            const latestCached = readCachedThemeEntry(resolvedTrustId)?.theme || cachedEntry.theme;
+            const latestCachedRaw = readCachedThemeEntry(resolvedTrustId)?.theme || cachedEntry.theme;
+            const latestCached = tagThemeSource(latestCachedRaw, 'cache');
             void validateCacheInBackground(latestCached);
           }, THEME_CACHE_VALIDATE_INTERVAL_MS);
           return () => {
@@ -261,6 +279,7 @@ export const useTheme = (trustId) => {
         );
         resolved.baseThemeConfigRaw = baseThemeConfigRaw;
         resolved.selectedThemeConfigRaw = selectedThemeConfigRaw;
+        resolved.themeLoadSource = 'db';
 
         console.log('[useTheme] Loaded from DB:', {
           selectedTrustId: resolvedTrustId,
@@ -274,13 +293,17 @@ export const useTheme = (trustId) => {
           fetchedBaseTemplateUpdatedAt: baseResult?.template?.updated_at || null,
           fetchedSelectedTemplateUpdatedAt: selectedResult?.template?.updated_at || null,
           cachedTemplateUpdatedAt: cachedEntry?.theme?.templateUpdatedAt || null,
+          replacedCachedTheme: Boolean(cachedEntry?.theme) && (
+            cachedEntry?.theme?.baseTemplateUpdatedAt !== (baseResult?.template?.updated_at || null)
+            || cachedEntry?.theme?.selectedTemplateUpdatedAt !== (selectedResult?.template?.updated_at || null)
+          ),
           homeLayout: resolved.homeLayout,
           animations: resolved.animations,
           finalTheme: resolved
         });
 
         writeThemeCache(resolvedTrustId, resolved);
-        setTheme(resolved);
+        setTheme(tagThemeSource(resolved, 'db'));
       } catch (err) {
         console.warn('useTheme failed:', err);
         setTheme((prev) => prev || { ...DEFAULT_THEME, trustId: BASE_TRUST_ID });

@@ -172,7 +172,7 @@ const SponsorsList = ({ onNavigate, onBack }) => {
           <ArrowLeft className="h-5 w-5" style={{ color: 'var(--navbar-text)' }} />
         </button>
         <div>
-          <h1 className="text-lg font-extrabold" style={{ color: theme.secondary }}>Sponsors</h1>
+          <h1 className="text-lg font-extrabold" style={{ color: 'var(--navbar-text)' }}>Sponsors</h1>
           <p className="text-[11px] font-medium" style={{ color: 'var(--body-text-color)' }}>{trustName}</p>
         </div>
       </div>

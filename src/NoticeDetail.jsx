@@ -109,7 +109,7 @@ const NoticeDetail = ({ onNavigate }) => {
         <button
           onClick={() => onNavigate('home')}
           className="p-2 rounded-xl hover:bg-gray-100 transition-colors flex items-center justify-center"
-          style={{ color: theme.primary }}
+          style={{ color: 'var(--navbar-text)' }}
           aria-label="Go to home"
         >
           <HomeIcon className="h-5 w-5" />
@@ -134,7 +134,7 @@ const NoticeDetail = ({ onNavigate }) => {
             <button
               onClick={handleBack}
               className="mt-4 px-4 py-2 rounded-xl text-white text-sm font-semibold"
-              style={{ background: theme.primary }}
+              style={{ background: 'var(--app-button-bg)', color: 'var(--app-button-text)' }}
             >
               Back to Notice Board
             </button>

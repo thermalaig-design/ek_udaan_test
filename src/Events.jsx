@@ -101,7 +101,7 @@ const Events = ({ onNavigate }) => {
         <button
           onClick={() => onNavigate('home')}
           className="p-2 rounded-xl hover:bg-gray-100 transition-colors flex items-center justify-center"
-          style={{ color: theme.primary }}
+          style={{ color: 'var(--navbar-text)' }}
         >
           <HomeIcon className="h-5 w-5" />
         </button>
@@ -146,7 +146,7 @@ const Events = ({ onNavigate }) => {
             <button
               onClick={loadEvents}
               className="mt-4 px-4 py-2 rounded-xl text-white text-sm font-semibold"
-              style={{ background: theme.primary }}
+              style={{ background: 'var(--app-button-bg)', color: 'var(--app-button-text)' }}
             >
               Retry
             </button>
