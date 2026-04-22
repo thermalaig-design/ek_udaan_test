@@ -4,6 +4,7 @@ import { User, Users, Stethoscope, Building2, Star, Award, ChevronLeft, Phone, M
 import { getProfilePhotos } from './services/api';
 
 const MemberDetails = ({ member, onNavigateBack, previousScreenName }) => {
+  const theme = useAppTheme();
   const [profilePhoto, setProfilePhoto] = useState(null);
   const cleanValue = (value) => {
     if (value === null || value === undefined) return '';
@@ -68,9 +69,9 @@ const MemberDetails = ({ member, onNavigateBack, previousScreenName }) => {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen" style={{ background: 'var(--page-bg, var(--app-page-bg))' }}>
       {/* Header Section */}
-      <div className="bg-white px-6 pt-6 pb-4 shadow-sm">
+      <div className="px-6 pt-6 pb-4 shadow-sm" style={{ background: 'color-mix(in srgb, #ffffff 90%, var(--app-accent-bg))' }}>
           <div className="flex items-center mb-4">
             <button 
               onClick={onNavigateBack}
@@ -79,13 +80,13 @@ const MemberDetails = ({ member, onNavigateBack, previousScreenName }) => {
               <ChevronLeft className="h-5 w-5" />
               <span className="text-sm font-medium">Back</span>
             </button>
-            <h1 className="text-2xl font-bold text-gray-800 flex-1 text-center pr-16">Member Details</h1>
+            <h1 className="text-2xl font-bold flex-1 text-center pr-16" style={{ color: 'var(--heading-color)' }}>Member Details</h1>
           </div>
       </div>
 
       {/* Member Details Card */}
       <div className="p-6">
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+        <div className="rounded-2xl shadow-sm p-6" style={{ background: 'color-mix(in srgb, #ffffff 92%, var(--app-accent-bg))', border: '1px solid color-mix(in srgb, var(--brand-navy) 10%, transparent)' }}>
           <div className="flex items-center gap-4 mb-6">
             <div className="bg-indigo-100 h-20 w-20 rounded-2xl flex items-center justify-center text-indigo-600 overflow-hidden shadow-sm border border-indigo-200">
               {profilePhoto ? (

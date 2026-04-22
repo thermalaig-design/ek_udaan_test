@@ -33,7 +33,7 @@ import Gallery from './Gallery';
 import OtherMemberships from './OtherMemberships';
 import AdminUserProfiles from './admin/AdminUserProfiles';
 import { getCurrentNotificationContext, matchesNotificationForContext } from './services/notificationAudience';
-import { applyThemeCssVariables } from './utils/themeUtils';
+import { applyThemeCssVariables, sanitizeCustomCss } from './utils/themeUtils';
 
 import {
   useAndroidBackHandler,
@@ -47,7 +47,7 @@ import {
 
 const HospitalTrusteeApp = () => {
   const BASE_TRUST_ID = import.meta.env.VITE_DEFAULT_TRUST_ID || 'b353d2ff-ec3b-4b90-a896-69f40662084e';
-  const BASE_TRUST_NAME = import.meta.env.VITE_DEFAULT_TRUST_NAME || 'Ek Udaan';
+  const BASE_TRUST_NAME = import.meta.env.VITE_DEFAULT_TRUST_NAME || 'Mahila Mandal';
   const LAST_VISITED_ROUTE_KEY = 'lastVisitedRoute';
   const PUBLIC_ROUTES = ['/login', '/otp-verification', '/special-otp-verification', '/terms-and-conditions', '/privacy-policy', '/developers', '/vip-login'];
   const navigate = useNavigate();
@@ -73,7 +73,7 @@ const HospitalTrusteeApp = () => {
   const authThemeRoutes = ['/login', '/otp-verification', '/special-otp-verification', '/vip-login', '/terms-and-conditions', '/privacy-policy'];
   const shouldUseBaseTheme = authThemeRoutes.includes(location.pathname);
   const resolvedThemeTrustId = shouldUseBaseTheme ? BASE_TRUST_ID : (activeTrustId || BASE_TRUST_ID);
-  const { theme: appTheme } = useTheme(resolvedThemeTrustId);
+  const { theme: appTheme, refreshTheme } = useTheme(resolvedThemeTrustId);
 
   // Initialize Android features
   useAndroidBackHandler();
@@ -149,10 +149,11 @@ const HospitalTrusteeApp = () => {
     const styleId = 'trust-custom-css-global';
     const existing = document.getElementById(styleId);
     if (existing) existing.remove();
-    if (appTheme?.customCss) {
+    const safeCustomCss = sanitizeCustomCss(appTheme?.customCss || '');
+    if (safeCustomCss) {
       const style = document.createElement('style');
       style.id = styleId;
-      style.textContent = appTheme.customCss;
+      style.textContent = safeCustomCss;
       document.head.appendChild(style);
     }
 
@@ -160,6 +161,12 @@ const HospitalTrusteeApp = () => {
       document.getElementById('trust-custom-css-global')?.remove();
     };
   }, [appTheme]);
+
+  useEffect(() => {
+    const handleThemeRefresh = () => refreshTheme();
+    window.addEventListener('theme-refresh', handleThemeRefresh);
+    return () => window.removeEventListener('theme-refresh', handleThemeRefresh);
+  }, [refreshTheme]);
 
   // Push tap deep link fallback
   useEffect(() => {
@@ -674,9 +681,10 @@ const HospitalTrusteeApp = () => {
   return (
     <GalleryProvider>
       <ThemeContext.Provider value={appTheme}>
-        <div className={`bg-white min-h-screen relative shadow-2xl overflow-x-hidden ${(location.pathname === '/login' || location.pathname === '/otp-verification' || location.pathname === '/profile' || location.pathname === '/vip-login') ? 'overflow-hidden' : 'overflow-y-auto'
-          } max-w-full md:max-w-[430px] md:mx-auto`}>
-      <Routes>
+        <div className="min-h-screen w-full flex justify-center overflow-x-hidden">
+          <div className={`bg-white min-h-screen relative shadow-2xl overflow-x-hidden ${(location.pathname === '/login' || location.pathname === '/otp-verification' || location.pathname === '/profile' || location.pathname === '/vip-login') ? 'overflow-hidden' : 'overflow-y-auto'
+            } w-full max-w-[430px]`}>
+            <Routes>
         <Route
           path="/login"
           element={<Login />}
@@ -954,7 +962,8 @@ const HospitalTrusteeApp = () => {
           element={<PrivacyPolicy />}
         />
         <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
+            </Routes>
+          </div>
         </div>
       </ThemeContext.Provider>
     </GalleryProvider>

@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft, Building2, ChevronRight, Star } from 'lucide-react';
-import { useTheme } from './hooks';
 import { fetchTrustById } from './services/trustService';
+import { useAppTheme } from './context/ThemeContext';
 import {
   flattenListPages,
   getCachedListPage,
@@ -15,7 +15,7 @@ const SPONSOR_SCROLL_KEY = 'sponsor_list_scroll_top_v1';
 
 const SponsorsList = ({ onNavigate, onBack }) => {
   const selectedTrustId = localStorage.getItem('selected_trust_id') || '';
-  const { theme } = useTheme(selectedTrustId);
+  const theme = useAppTheme();
 
   const [trustName, setTrustName] = useState(localStorage.getItem('selected_trust_name') || 'Trust Sponsors');
   const [items, setItems] = useState([]);
@@ -166,26 +166,26 @@ const SponsorsList = ({ onNavigate, onBack }) => {
   };
 
   return (
-    <div className="min-h-screen" style={{ background: `linear-gradient(160deg, #ffffff 0%, ${theme.accentBg || '#f8fafc'} 48%, #ffffff 100%)` }}>
+    <div className="min-h-screen" style={{ background: 'var(--page-bg, var(--app-page-bg))' }}>
       <div className="theme-navbar backdrop-blur border-b px-5 py-4 flex items-center gap-3 sticky top-0 z-10">
-        <button onClick={onBack} className="p-2 rounded-xl hover:bg-gray-100 transition-colors">
-          <ArrowLeft className="h-5 w-5 text-gray-700" />
+        <button onClick={onBack} className="p-2 rounded-xl transition-colors" style={{ background: 'color-mix(in srgb, var(--app-accent-bg) 45%, transparent)' }}>
+          <ArrowLeft className="h-5 w-5" style={{ color: 'var(--navbar-text)' }} />
         </button>
         <div>
           <h1 className="text-lg font-extrabold" style={{ color: theme.secondary }}>Sponsors</h1>
-          <p className="text-[11px] font-medium text-slate-400">{trustName}</p>
+          <p className="text-[11px] font-medium" style={{ color: 'var(--body-text-color)' }}>{trustName}</p>
         </div>
       </div>
 
       <div className="px-4 py-4 space-y-4">
         {isLoading ? (
-          <div className="rounded-2xl bg-white p-6 text-center border border-slate-200">
+          <div className="rounded-2xl p-6 text-center" style={{ background: 'color-mix(in srgb, #ffffff 88%, var(--app-accent-bg))', border: '1px solid color-mix(in srgb, var(--brand-navy) 10%, transparent)' }}>
             <div className="w-8 h-8 rounded-full border-2 border-t-transparent animate-spin mx-auto" style={{ borderColor: theme.primary, borderTopColor: 'transparent' }} />
             <p className="text-xs font-semibold mt-2" style={{ color: theme.secondary }}>Loading sponsors...</p>
           </div>
         ) : list.length === 0 ? (
-          <div className="rounded-2xl bg-white p-6 text-center border border-slate-200">
-            <p className="text-sm font-semibold text-slate-600">No active sponsors available</p>
+          <div className="rounded-2xl p-6 text-center" style={{ background: 'color-mix(in srgb, #ffffff 88%, var(--app-accent-bg))', border: '1px solid color-mix(in srgb, var(--brand-navy) 10%, transparent)' }}>
+            <p className="text-sm font-semibold" style={{ color: 'var(--body-text-color)' }}>No active sponsors available</p>
           </div>
         ) : (
           <div
@@ -195,7 +195,7 @@ const SponsorsList = ({ onNavigate, onBack }) => {
               boxShadow: `0 10px 24px ${theme.secondary}12`,
             }}
           >
-            <div className="rounded-3xl bg-white/95 backdrop-blur px-3 py-3">
+            <div className="rounded-3xl backdrop-blur px-3 py-3" style={{ background: 'color-mix(in srgb, #ffffff 95%, var(--app-accent-bg))' }}>
               <div className="space-y-2">
                 {list.map((sponsor) => (
                   <button

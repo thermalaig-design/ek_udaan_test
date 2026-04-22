@@ -5,12 +5,12 @@ import TermsModal from './components/TermsModal';
 import ImageSlider from './components/ImageSlider';
 import { getProfile, getMarqueeUpdates, getUserNotifications, markNotificationAsRead, markAllNotificationsAsRead, deleteNotification, getMemberTrustLinks } from './services/api';
 import { useGalleryContext } from './context/GalleryContext';
-import { registerSidebarState, useTheme } from './hooks';
+import { useAppTheme } from './context/ThemeContext';
+import { registerSidebarState } from './hooks';
 import { supabase } from './services/supabaseClient';
 import { getCurrentNotificationContext, matchesNotificationForContext } from './services/notificationAudience';
 import { fetchFeatureFlags, subscribeFeatureFlags, isFeatureEnabled } from './services/featureFlags';
-import { fetchMemberTrusts, fetchTrustByName, fetchTrustById, fetchDefaultTrust } from './services/trustService';
-import { DEFAULT_THEME, buildThemeFromTemplate } from './utils/themeUtils';
+import { fetchMemberTrusts, fetchTrustById, fetchDefaultTrust } from './services/trustService';
 import {
   getCachedCarouselBatch,
   getSponsorDebugInfo,
@@ -24,8 +24,9 @@ import {
   setSelectedSponsorId,
   sponsorConfig
 } from './services/sponsorStore';
+import { getFooterThemeStyles, getThemeToken } from './utils/themeUtils';
 
-const DEFAULT_TRUST_NAME = import.meta.env.VITE_DEFAULT_TRUST_NAME || 'Ek Udaan';
+const DEFAULT_TRUST_NAME = import.meta.env.VITE_DEFAULT_TRUST_NAME || 'Mahila Mandal';
 const DEFAULT_TRUST_LOGO = '/new_logo.png';
 const SPONSOR_CHUNK_SIZE = sponsorConfig.CAROUSEL_BATCH_SIZE;
 
@@ -61,7 +62,7 @@ const mergeUniqueTrusts = (...collections) => {
   return merged;
 };
 
-// Ensure default trust (Ek Udaan) is always in the list
+// Ensure default/base trust is always in the list
 const ensureDefaultTrustIncluded = (trustList, defaultTrust, baseAppId = 'b353d2ff-ec3b-4b90-a896-69f40662084e') => {
   if (!trustList || trustList.length === 0) {
     return defaultTrust ? [defaultTrust] : [];
@@ -220,8 +221,38 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
     error: galleryError,
   } = useGalleryContext();
 
-  // Theme for currently selected trust
-  const { theme, isThemeLoading } = useTheme(selectedTrustId);
+  // Global app theme from central provider
+  const theme = useAppTheme();
+  const footerTheme = useMemo(() => getFooterThemeStyles(theme), [theme]);
+
+  useEffect(() => {
+    if (!import.meta.env.DEV) return;
+    const cacheKey = `theme_cache_${selectedTrustId || ''}`;
+    let cachedThemeEntry = null;
+    try {
+      cachedThemeEntry = JSON.parse(sessionStorage.getItem(cacheKey) || 'null');
+    } catch {
+      cachedThemeEntry = null;
+    }
+    const cachedTheme = cachedThemeEntry?.theme || cachedThemeEntry || null;
+    const usingDbTheme = Boolean(theme?.templateId || theme?.baseTemplateUpdatedAt || theme?.selectedTemplateUpdatedAt);
+
+    console.log('[FooterTheme][Debug]', {
+      currentTemplateId: theme?.templateId || null,
+      currentTemplateUpdatedAt: theme?.templateUpdatedAt || null,
+      currentBaseTemplateUpdatedAt: theme?.baseTemplateUpdatedAt || null,
+      currentSelectedTemplateUpdatedAt: theme?.selectedTemplateUpdatedAt || null,
+      cachedTemplateUpdatedAt: cachedTheme?.templateUpdatedAt || null,
+      cachedBaseTemplateUpdatedAt: cachedTheme?.baseTemplateUpdatedAt || null,
+      cachedSelectedTemplateUpdatedAt: cachedTheme?.selectedTemplateUpdatedAt || null,
+      resolvedFooterConfig: footerTheme.footerConfig,
+      resolvedFooterBackground: footerTheme.backgroundStyle,
+      resolvedFooterTextColor: footerTheme.textColor,
+      usingTypographyOverride: footerTheme.usingTypographyOverride,
+      usingDbTheme,
+      usingFallbackTheme: !usingDbTheme
+    });
+  }, [footerTheme, selectedTrustId, theme]);
 
   const syncSponsorStoreSnapshot = (trustId) => {
     if (!trustId) {
@@ -249,71 +280,6 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
     registerSidebarState(isMenuOpen, () => setIsMenuOpen(false));
   }, [isMenuOpen]);
 
-  // Warm theme cache for visible trusts so trust switching feels instant.
-  useEffect(() => {
-    let active = true;
-    const primeThemeCache = async () => {
-      try {
-        const trustIds = Array.from(
-          new Set((trustList || []).map((t) => normalizeTrustId(t?.id)).filter(Boolean))
-        );
-        if (trustIds.length === 0) return;
-
-        for (const trustId of trustIds) {
-          if (!active) return;
-          const cacheKey = `theme_cache_${trustId}`;
-          try {
-            if (sessionStorage.getItem(cacheKey)) continue;
-          } catch {
-            // ignore storage access issues
-          }
-
-          try {
-            const [templateResult, trustResult] = await Promise.all([
-              supabase
-                .from('app_templates')
-                .select('id, trust_id, home_layout, animations, custom_css, template_key, theme_config, updated_at')
-                .eq('trust_id', trustId)
-                .eq('is_active', true)
-                .order('updated_at', { ascending: false })
-                .limit(1)
-                .maybeSingle(),
-              supabase
-                .from('Trust')
-                .select('theme_overrides')
-                .eq('id', trustId)
-                .maybeSingle()
-            ]);
-
-            const overrides = trustResult?.data?.theme_overrides || {};
-            const templateRow = templateResult?.data || {
-              id: null,
-              trust_id: trustId,
-              home_layout: DEFAULT_THEME.homeLayout,
-              animations: DEFAULT_THEME.animations,
-              custom_css: '',
-              template_key: DEFAULT_THEME.templateKey || 'mahila',
-              theme_config: DEFAULT_THEME.themeConfig || {}
-            };
-            const resolved = buildThemeFromTemplate({
-              templateRow,
-              trustOverrides: overrides,
-              trustId
-            });
-            try { sessionStorage.setItem(cacheKey, JSON.stringify(resolved)); } catch { /* ignore */ }
-          } catch {
-            // ignore prefetch failures; main theme loader will handle actual switch
-          }
-        }
-      } catch {
-        // no-op
-      }
-    };
-
-    primeThemeCache();
-    return () => { active = false; };
-  }, [trustList]);
-
   const getSessionSelectionFlag = () => {
     if (typeof window === 'undefined') return false;
     try {
@@ -338,15 +304,11 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
       try {
         let trust = null;
         const envTrustId = import.meta.env.VITE_DEFAULT_TRUST_ID;
-        const envTrustName = import.meta.env.VITE_DEFAULT_TRUST_NAME;
         const normalizedEnvTrustId = normalizeTrustId(envTrustId);
         let resolvedViaEnv = false;
 
         if (envTrustId) {
           trust = await fetchTrustById(envTrustId);
-          resolvedViaEnv = Boolean(trust);
-        } else if (envTrustName) {
-          trust = await fetchTrustByName(envTrustName);
           resolvedViaEnv = Boolean(trust);
         }
 
@@ -627,7 +589,7 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
 
         const primaryTrust = parsedUser?.primary_trust || uniqueTrusts.find((t) => t.is_active) || uniqueTrusts[0];
         const merged = mergeUniqueTrusts(uniqueTrusts);
-        // Ensure default trust is always included (Ek Udaan)
+        // Ensure default/base trust is always included
         const withDefault = ensureDefaultTrustIncluded(merged, defaultTrust);
         setTrustList(() => {
           // Cache full trust list so it appears instantly on next refresh
@@ -1311,6 +1273,21 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
 
   const shouldShowTrustSelector = trustList.length > 1;
   const showTrustSelector = shouldShowTrustSelector;
+  const surfaceColor = theme?.themeConfig?.page_bg?.bg_color_1 || theme?.accentBg || '#ffffff';
+  const mutedTextColor = theme?.themeConfig?.typography?.body_text_color || 'var(--body-text-color, #64748b)';
+  const onPrimaryText = getThemeToken(theme, 'app_buttons.text_color', '#ffffff');
+  const subtleBorderColor = `color-mix(in srgb, ${theme.secondary} 16%, transparent)`;
+  const subtleSurfaceColor = `color-mix(in srgb, ${surfaceColor} 82%, ${theme.accentBg})`;
+  const animationMap = {
+    fadeUp: 'themeFadeUp 420ms ease-out both',
+    fadeSlideDown: 'themeFadeSlideDown 420ms ease-out both',
+    zoomIn: 'themeZoomIn 420ms ease-out both'
+  };
+  const resolveAnimation = (slotName, fallbackName = 'fadeUp') => {
+    const preferred = String(theme?.animations?.[slotName] || '').trim();
+    if (animationMap[preferred]) return animationMap[preferred];
+    return animationMap[fallbackName] || 'none';
+  };
 
   return (
     <div
@@ -1369,6 +1346,7 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
           WebkitBackdropFilter: 'blur(var(--navbar-blur, 12px))',
           boxShadow: `0 2px 16px ${theme.secondary}22`,
           borderBottom: '1px solid var(--navbar-border)',
+          animation: resolveAnimation('navbar', 'fadeSlideDown')
         }}
       >
         {/* Thin top accent bar */}
@@ -1388,16 +1366,16 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
           {/* Hamburger */}
           <button
             onClick={() => setIsMenuOpen(!isMenuOpen)}
-            className="w-10 h-10 rounded-2xl flex items-center justify-center transition-all flex-shrink-0 active:scale-95"
-            style={{
-              background: isMenuOpen
-                ? `linear-gradient(135deg, ${theme.primary}, ${theme.secondary})`
-                : theme.accentBg,
-              boxShadow: isMenuOpen ? `0 4px 12px ${theme.primary}40` : 'none',
-            }}
+              className="w-10 h-10 rounded-2xl flex items-center justify-center transition-all flex-shrink-0 active:scale-95"
+              style={{
+                background: isMenuOpen
+                  ? `linear-gradient(135deg, ${theme.primary}, ${theme.secondary})`
+                  : theme.accentBg,
+                boxShadow: isMenuOpen ? `0 4px 12px ${theme.primary}40` : 'none',
+              }}
           >
             {isMenuOpen
-              ? <X className="h-5 w-5 text-white" />
+              ? <X className="h-5 w-5" style={{ color: onPrimaryText }} />
               : <Menu className="h-[22px] w-[22px]" style={{ color: theme.secondary }} />}
           </button>
 
@@ -1407,7 +1385,7 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
               className="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 p-0.5"
               style={{
                 boxShadow: `0 0 0 2px ${theme.primary}, 0 3px 10px ${theme.primary}30`,
-                background: '#fff',
+                background: surfaceColor,
               }}
             >
               <img
@@ -1440,12 +1418,12 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
                 >
                   <Bell
                     className="h-[22px] w-[22px]"
-                    style={{ color: isNotificationsOpen ? '#fff' : theme.secondary }}
+                    style={{ color: isNotificationsOpen ? onPrimaryText : theme.secondary }}
                   />
                   {unreadCount > 0 && (
                     <span
-                      className="absolute -top-1 -right-1 text-[9px] font-bold h-[18px] w-[18px] flex items-center justify-center rounded-full border-2 border-white"
-                      style={{ background: theme.primary, color: '#fff' }}
+                      className="absolute -top-1 -right-1 text-[9px] font-bold h-[18px] w-[18px] flex items-center justify-center rounded-full border-2"
+                      style={{ background: theme.primary, color: onPrimaryText, borderColor: surfaceColor }}
                     >
                       {unreadCount > 9 ? '9+' : unreadCount}
                     </span>
@@ -1460,7 +1438,7 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
                       style={{ border: `1px solid ${theme.primary}1F` }}
                     >
                       <div className="p-4 flex items-center justify-between"
-                        style={{ borderBottom: `1px solid ${theme.primary}14`, background: `linear-gradient(135deg,${theme.accent},#fff)` }}>
+                        style={{ borderBottom: `1px solid ${theme.primary}14`, background: `linear-gradient(135deg,${theme.accent},${surfaceColor})` }}>
                         <h3 className="font-bold text-sm" style={{ color: theme.secondary }}>Notifications ({notifications.length})</h3>
                         <div className="flex items-center gap-3">
                           {unreadCount > 0 && (
@@ -1477,7 +1455,7 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
                         {notifications.length > 0 ? notifications.slice(0, 4).map((notification) => (
                           <div key={notification.id}
                             className={`p-4 relative cursor-pointer transition-colors ${!notification.is_read ? 'bg-red-50/30' : 'hover:bg-gray-50'}`}
-                            style={{ borderBottom: '1px solid #f1f5f9' }}
+                            style={{ borderBottom: `1px solid ${subtleBorderColor}` }}
                           >
                             <div onClick={() => { handleMarkAsRead(notification.id); sessionStorage.setItem('initialNotification', JSON.stringify(notification)); setIsNotificationsOpen(false); onNavigate('notifications'); }}>
                               {!notification.is_read && <div className="absolute left-2 top-1/2 -translate-y-1/2 w-1.5 h-1.5 rounded-full" style={{ background: theme.primary }} />}
@@ -1504,7 +1482,7 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
                         )}
                       </div>
                       {notifications.length > 0 && (
-                        <div className="p-3 text-center" style={{ borderTop: '1px solid #f1f5f9', background: '#fafafa' }}>
+                        <div className="p-3 text-center" style={{ borderTop: `1px solid ${subtleBorderColor}`, background: subtleSurfaceColor }}>
                           <button onClick={() => { setIsNotificationsOpen(false); onNavigate('notifications'); }}
                             className="text-xs font-bold" style={{ color: theme.secondary }}>
                             View all {notifications.length} →
@@ -1539,7 +1517,7 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
               ) : (
                 <div
                   className="w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-bold flex-shrink-0"
-                  style={{ background: `linear-gradient(135deg, ${theme.primary}, ${theme.secondary})`, color: '#fff' }}
+                  style={{ background: `linear-gradient(135deg, ${theme.primary}, ${theme.secondary})`, color: onPrimaryText }}
                 >
                   {userProfile.name.charAt(0).toUpperCase()}
                 </div>
@@ -1559,7 +1537,16 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
       {(() => {
         const SECTIONS = {
           trustList: showTrustSelector && trustList.length > 1 ? (
-            <div className="flex gap-2 overflow-x-auto px-4 py-2" style={{ scrollbarWidth: 'none', background: theme.accent + '33', borderBottom: `1px solid ${theme.primary}14` }} key="trustList">
+            <div
+              className="flex gap-2 overflow-x-auto overscroll-x-contain px-4 py-2"
+              style={{
+                scrollbarWidth: 'none',
+                background: theme.accent + '33',
+                borderBottom: `1px solid ${theme.primary}14`,
+                animation: resolveAnimation('cards')
+              }}
+              key="trustList"
+            >
               {trustList.map((trust) => {
                 const isActive = normalizeTrustId(trust.id) === selectedTrustId;
                 return (
@@ -1568,8 +1555,8 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
                     onClick={() => handleTrustSelect(trust.id)}
                     className="flex-shrink-0 w-10 h-10 rounded-xl flex items-center justify-center overflow-hidden transition-all duration-200"
                     style={{
-                      border: isActive ? `2.5px solid ${theme.primary}` : '2px solid #e2e8f0',
-                      backgroundColor: isActive ? '#fff' : '#f8fafc',
+                      border: isActive ? `2.5px solid ${theme.primary}` : `2px solid ${subtleBorderColor}`,
+                      backgroundColor: isActive ? surfaceColor : subtleSurfaceColor,
                       transform: isActive ? 'scale(1.05)' : 'scale(1)',
                       boxShadow: isActive ? `0 4px 14px ${theme.primary}38` : 'none',
                     }}
@@ -1584,12 +1571,20 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
             </div>
           ) : null,
           marquee: ff('feature_marquee') && marqueeUpdates.length > 0 ? (
-            <div className="mt-0 mb-2 w-full overflow-hidden" style={{ background: 'var(--marquee-bg)', boxShadow: `0 2px 12px ${theme.primary}4D` }} key="marquee">
+            <div
+              className="mt-0 mb-2 w-full overflow-hidden"
+              style={{
+                background: 'var(--marquee-bg)',
+                boxShadow: `0 2px 12px ${theme.primary}4D`,
+                animation: resolveAnimation('cards')
+              }}
+              key="marquee"
+            >
               <div className="flex items-stretch">
-                <div className="flex-shrink-0 px-3 flex items-center gap-2" style={{ background: 'rgba(0,0,0,0.25)' }}>
+                <div className="flex-shrink-0 px-3 flex items-center gap-2" style={{ background: `color-mix(in srgb, ${theme.secondary} 28%, transparent)` }}>
                   <span className="relative flex h-2 w-2">
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-70" />
-                    <span className="relative inline-flex rounded-full h-2 w-2 bg-white" />
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-70" style={{ background: 'var(--marquee-text)' }} />
+                    <span className="relative inline-flex rounded-full h-2 w-2" style={{ background: 'var(--marquee-text)' }} />
                   </span>
                   <span className="text-[11px] font-bold uppercase tracking-widest whitespace-nowrap" style={{ color: 'var(--marquee-text)' }}>
                     {flagsData?.feature_marquee?.display_name || 'Updates'}
@@ -1607,7 +1602,7 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
             </div>
           ) : null,
           gallery: ff('feature_gallery') ? (
-            <div className="px-4 mt-5 mb-3" key="gallery">
+            <div className="px-4 mt-5 mb-3" style={{ animation: resolveAnimation('gallery', 'zoomIn') }} key="gallery">
               {/* Gallery card */}
               <div
                 className="rounded-3xl overflow-hidden"
@@ -1650,7 +1645,7 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
           ) : null,
 
           quickActions: enabledQuickActions.length > 0 ? (
-            <div className="px-4 mt-5 mb-4" key="quickActions">
+            <div className="px-4 mt-5 mb-4" style={{ animation: resolveAnimation('cards') }} key="quickActions">
               <div className="grid grid-cols-2 gap-3">
                 {enabledQuickActions.map((action) => {
                   return (
@@ -1659,7 +1654,7 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
                       onClick={() => onNavigate(action.route)}
                       className="rounded-2xl text-left transition-all active:scale-[0.97] duration-150"
                       style={{
-                        background: '#ffffff',
+                        background: surfaceColor,
                         border: `1px solid ${theme.primary}18`,
                         boxShadow: `0 4px 16px ${theme.secondary}12, 0 1px 4px ${theme.primary}0A`,
                         overflow: 'hidden',
@@ -1688,7 +1683,7 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
                             <h3 className="text-[12px] font-extrabold leading-snug" style={{ color: theme.secondary }}>
                               {action.displayName}
                             </h3>
-                            <p className="text-[10px] font-medium mt-0.5 leading-snug" style={{ color: '#64748b' }}>
+                            <p className="text-[10px] font-medium mt-0.5 leading-snug" style={{ color: mutedTextColor }}>
                               {action.tagline}
                             </p>
                           </div>
@@ -1703,7 +1698,7 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
           ) : null,
 
           sponsors: (
-            <div className="px-4 mt-5 mb-4" key="sponsors">
+            <div className="px-4 mt-5 mb-4" style={{ animation: resolveAnimation('cards') }} key="sponsors">
               {sponsors.length > 0 ? (
               <div className="relative">
                 <div
@@ -1715,7 +1710,7 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
                   <div
                     className="absolute inset-0 pointer-events-none"
                     style={{
-                      background: `linear-gradient(135deg, ${theme.accentBg}66 0%, #ffffff 38%, ${theme.accent}66 100%)`,
+                      background: `linear-gradient(135deg, ${theme.accentBg}66 0%, ${surfaceColor} 38%, ${theme.accent}66 100%)`,
                     }}
                   />
                   <div className="relative min-h-[168px]">
@@ -1745,7 +1740,7 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
                           <div
                             className="relative rounded-3xl p-4 flex items-center gap-3.5 h-full overflow-hidden"
                             style={{
-                              background: 'rgba(255,255,255,0.93)',
+                              background: `color-mix(in srgb, ${surfaceColor} 93%, transparent)`,
                               backdropFilter: 'blur(8px)',
                             }}
                           >
@@ -1768,7 +1763,7 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
                               <div
                                 className="w-full h-full rounded-[1rem] flex items-center justify-center overflow-hidden"
                                 style={{
-                                  background: '#ffffff',
+                                  background: surfaceColor,
                                   boxShadow: `0 6px 16px ${theme.primary}1A`,
                                 }}
                               >
@@ -1782,7 +1777,7 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
                               <div className="mb-1.5">
                                 <div
                                   className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5"
-                                  style={{ background: '#fff8f8', border: `1px solid ${theme.primary}30`, boxShadow: `0 1px 5px ${theme.primary}12` }}
+                                  style={{ background: `color-mix(in srgb, ${surfaceColor} 74%, ${theme.accent} 26%)`, border: `1px solid ${theme.primary}30`, boxShadow: `0 1px 5px ${theme.primary}12` }}
                                 >
                                   <span className="w-1.5 h-1.5 rounded-full inline-block animate-pulse" style={{ background: theme.primary }} />
                                   <span className="text-[9px] font-bold uppercase tracking-[0.2em]" style={{ color: theme.primary }}>
@@ -1796,12 +1791,12 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
                               </div>
                               <div className="mt-0.5 flex items-center gap-1.5 min-w-0">
                                 <Building2 className="h-3 w-3 flex-shrink-0" style={{ color: `${theme.secondary}80` }} />
-                                <p className="text-[11px] font-bold truncate tracking-wide" style={{ color: '#64748b' }}>
+                                <p className="text-[11px] font-bold truncate tracking-wide" style={{ color: mutedTextColor }}>
                                   {sponsor.company_name || sponsor.position || 'Community partner'}
                                 </p>
                               </div>
 
-                              <p className="text-[10px] font-medium mt-1.5 line-clamp-2" style={{ color: '#6f7f92' }}>
+                              <p className="text-[10px] font-medium mt-1.5 line-clamp-2" style={{ color: `color-mix(in srgb, ${mutedTextColor} 88%, ${theme.secondary} 12%)` }}>
                                 {sponsor.shortText || 'Supporting our community with care and commitment.'}
                               </p>
                             </div>
@@ -1843,7 +1838,7 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
                   <div
                     className="absolute inset-0 pointer-events-none"
                     style={{
-                      background: `linear-gradient(135deg, ${theme.accentBg}66 0%, #ffffff 38%, ${theme.accent}66 100%)`,
+                      background: `linear-gradient(135deg, ${theme.accentBg}66 0%, ${surfaceColor} 38%, ${theme.accent}66 100%)`,
                     }}
                   />
                   <div
@@ -1855,7 +1850,7 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
                     <div
                       className="relative rounded-3xl p-4 min-h-[168px] overflow-hidden"
                       style={{
-                        background: 'rgba(255,255,255,0.93)',
+                        background: `color-mix(in srgb, ${surfaceColor} 93%, transparent)`,
                         backdropFilter: 'blur(8px)',
                       }}
                     >
@@ -1871,13 +1866,13 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
                           <div className="h-3 w-24 rounded-full bg-slate-200 animate-pulse mb-2" />
                           <div className="h-4 w-40 rounded-full bg-slate-200 animate-pulse mb-2" />
                           <div className="h-3 w-28 rounded-full bg-slate-200 animate-pulse mb-3" />
-                          <p className="text-[12px] font-medium" style={{ color: '#64748b' }}>
+                          <p className="text-[12px] font-medium" style={{ color: mutedTextColor }}>
                             {isSponsorSectionLoading
                               ? 'Loading sponsors...'
                               : 'No active sponsors available right now.'}
                           </p>
                           {!isSponsorSectionLoading && !sponsors.length && import.meta.env.DEV && sponsorEmptyDebugReason && (
-                            <p className="text-[11px] mt-1 font-medium break-words" style={{ color: '#b91c1c' }}>
+                            <p className="text-[11px] mt-1 font-medium break-words" style={{ color: getThemeToken(theme, 'typography.component_overrides.error_text', theme.primary) }}>
                               Debug: {sponsorEmptyDebugReason}
                             </p>
                           )}
@@ -1894,11 +1889,11 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
 
         const baseLayout = Array.isArray(theme.homeLayout) && theme.homeLayout.length > 0
           ? theme.homeLayout
-          : ['gallery', 'quickActions', 'sponsors'];
-        const orderedLayout = baseLayout.filter((key) => key !== 'trustList');
-        if (!orderedLayout.includes('sponsors')) orderedLayout.push('sponsors');
-        if (showTrustSelector) orderedLayout.unshift('trustList');
-        return orderedLayout.map((key) => SECTIONS[key] || null);
+          : ['trustList', 'sponsors', 'marquee', 'gallery', 'quickActions'];
+        return baseLayout.map((key) => {
+          if (key === 'trustList' && !showTrustSelector) return null;
+          return SECTIONS[key] || null;
+        });
       })()}
 
 
@@ -1913,6 +1908,19 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
         @keyframes marquee-scroll {
           0%   { transform: translateX(0); }
           100% { transform: translateX(-50%); }
+        }
+
+        @keyframes themeFadeUp {
+          from { opacity: 0; transform: translateY(14px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes themeFadeSlideDown {
+          from { opacity: 0; transform: translateY(-12px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes themeZoomIn {
+          from { opacity: 0; transform: scale(0.98); }
+          to { opacity: 1; transform: scale(1); }
         }
 
         /* Decorative home blobs animations */
@@ -1938,20 +1946,21 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
       <footer
         className="mt-auto py-3 px-6"
         style={{
-          borderTop: `1px solid ${theme.primary}12`,
-          background: `linear-gradient(135deg, ${theme.accent}44, #fff)`,
+          borderTop: '1px solid var(--footer-border, rgba(255, 255, 255, 0.24))',
+          background: 'var(--footer-bg)',
+          color: 'var(--footer-text)'
         }}
       >
         <div className="flex items-center justify-center gap-2">
-          <div className="w-8 h-px" style={{ background: `linear-gradient(to right, transparent, ${theme.primary}60)` }} />
+          <div className="w-8 h-px" style={{ background: 'linear-gradient(to right, transparent, var(--footer-accent, rgba(255, 255, 255, 0.45)))' }} />
           <button
             onClick={() => onNavigate('developers')}
             className="text-[11px] font-medium transition-colors"
-            style={{ color: `${theme.secondary}70` }}
+            style={{ color: 'var(--footer-text)' }}
           >
             Powered by Developers
           </button>
-          <div className="w-8 h-px" style={{ background: `linear-gradient(to left, transparent, ${theme.primary}60)` }} />
+          <div className="w-8 h-px" style={{ background: 'linear-gradient(to left, transparent, var(--footer-accent, rgba(255, 255, 255, 0.45)))' }} />
         </div>
       </footer>
       <TermsModal isOpen={showTermsModal} onAccept={handleAcceptTerms} />

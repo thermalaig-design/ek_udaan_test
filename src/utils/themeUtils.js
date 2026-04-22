@@ -3,6 +3,31 @@ const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 const isPlainObject = (value) =>
   Object.prototype.toString.call(value) === '[object Object]';
 
+const toPathSegments = (path) =>
+  String(path || '')
+    .split('.')
+    .map((part) => part.trim())
+    .filter(Boolean);
+
+const readPath = (source, path) => {
+  const segments = Array.isArray(path) ? path : toPathSegments(path);
+  if (!segments.length) return undefined;
+  let current = source;
+  for (const segment of segments) {
+    if (current === null || current === undefined) return undefined;
+    if (typeof current !== 'object') return undefined;
+    current = current[segment];
+  }
+  return current;
+};
+
+const hasTokenValue = (value) => value !== undefined && value !== null && value !== '';
+
+const readConfigToken = (config, path) => {
+  const value = readPath(config, path);
+  return hasTokenValue(value) ? value : undefined;
+};
+
 const deepMerge = (base, override) => {
   if (!isPlainObject(base)) return isPlainObject(override) ? { ...override } : base;
   if (!isPlainObject(override)) return { ...base };
@@ -30,6 +55,27 @@ const parseJsonObject = (value, fallback = {}) => {
   }
 };
 
+const sanitizeArrayOfStrings = (value, fallback) => {
+  if (!Array.isArray(value)) return fallback;
+  const normalized = value
+    .map((item) => String(item || '').trim())
+    .filter(Boolean);
+  return normalized.length > 0 ? normalized : fallback;
+};
+
+export const sanitizeCustomCss = (css) => {
+  const text = typeof css === 'string' ? css : '';
+  if (!text.trim()) return '';
+  const blockedPatterns = [
+    /@import/gi,
+    /javascript:/gi,
+    /expression\s*\(/gi,
+    /<\/?script/gi
+  ];
+  const isBlocked = blockedPatterns.some((pattern) => pattern.test(text));
+  return isBlocked ? '' : text;
+};
+
 export const DEFAULT_THEME_CONFIG = {
   footer: { bg_color_1: '#1F2937', bg_color_2: null, text_color: '#ffffff', gradient_type: 'none' },
   navbar: { blur: 8, opacity: 0.94, bg_color_1: '#F8FAFC', bg_color_2: null, text_color: '#111827', gradient_type: 'none' },
@@ -51,7 +97,7 @@ export const DEFAULT_THEME_CONFIG = {
     body_text_color: '#374151',
     subheading_color: '#1F2937',
     component_overrides: {
-      footer_text: '#ffffff',
+      footer_text: null,
       navbar_text: '#111827',
       marquee_text: '#ffffff',
       sidebar_text: '#111827'
@@ -78,6 +124,26 @@ export const DEFAULT_THEME = {
   themeConfig: DEFAULT_THEME_CONFIG,
   template: null,
   trustId: null
+};
+
+export const mergeResolvedThemes = (baseTheme, selectedTheme) => {
+  const safeBase = baseTheme || DEFAULT_THEME;
+  if (!selectedTheme) return { ...safeBase };
+
+  const merged = deepMerge(safeBase, selectedTheme);
+  merged.homeLayout = sanitizeArrayOfStrings(
+    selectedTheme.homeLayout,
+    sanitizeArrayOfStrings(safeBase.homeLayout, DEFAULT_THEME.homeLayout)
+  );
+  merged.animations = isPlainObject(selectedTheme.animations)
+    ? deepMerge(safeBase.animations || DEFAULT_THEME.animations, selectedTheme.animations)
+    : (safeBase.animations || DEFAULT_THEME.animations);
+  merged.customCss = selectedTheme.customCss || safeBase.customCss || '';
+  merged.template = selectedTheme.template || safeBase.template || null;
+  merged.templateId = selectedTheme.templateId || safeBase.templateId || null;
+  merged.templateUpdatedAt = selectedTheme.templateUpdatedAt || safeBase.templateUpdatedAt || null;
+  merged.trustId = selectedTheme.trustId || safeBase.trustId || null;
+  return merged;
 };
 
 const hexToRgb = (hex) => {
@@ -178,20 +244,32 @@ export const buildThemeFromTemplate = ({
   const pageBg = themeConfig.page_bg || {};
   const sidebar = themeConfig.sidebar || {};
   const marquee = themeConfig.marquee || {};
-  const typography = themeConfig.typography || {};
   const quickActions = themeConfig.quick_actions || {};
   const appButtons = themeConfig.app_buttons || {};
   const footer = themeConfig.footer || {};
   const advertisement = themeConfig.advertisement || {};
 
-  const primary = quickActions.bg_color_1 || appButtons.bg_color_1 || marquee.bg_color_1 || DEFAULT_THEME.primary;
-  const secondary = navbar.bg_color_1 || footer.bg_color_1 || DEFAULT_THEME.secondary;
-  const accent = advertisement.bg_color || pageBg.bg_color_2 || DEFAULT_THEME.accent;
-  const accentBg = pageBg.bg_color_1 || DEFAULT_THEME.accentBg;
+  const primary = themeConfig.primary_color
+    || quickActions.bg_color_1
+    || appButtons.bg_color_1
+    || marquee.bg_color_1
+    || DEFAULT_THEME.primary;
+  const secondary = themeConfig.secondary_color
+    || navbar.bg_color_1
+    || footer.bg_color_1
+    || DEFAULT_THEME.secondary;
+  const accent = themeConfig.accent_color
+    || advertisement.bg_color
+    || pageBg.bg_color_2
+    || DEFAULT_THEME.accent;
+  const accentBg = themeConfig.accent_bg
+    || pageBg.bg_color_1
+    || DEFAULT_THEME.accentBg;
 
-  const resolvedHomeLayout = Array.isArray(templateRow.home_layout)
-    ? templateRow.home_layout
-    : DEFAULT_THEME.homeLayout;
+  const resolvedHomeLayout = sanitizeArrayOfStrings(
+    templateRow.home_layout,
+    DEFAULT_THEME.homeLayout
+  );
   const resolvedAnimations = isPlainObject(templateRow.animations)
     ? templateRow.animations
     : DEFAULT_THEME.animations;
@@ -207,12 +285,108 @@ export const buildThemeFromTemplate = ({
     marqueeBg: buildGradient(marquee),
     homeLayout: resolvedHomeLayout,
     animations: resolvedAnimations,
-    customCss: templateRow.custom_css || '',
+    customCss: sanitizeCustomCss(templateRow.custom_css || ''),
     templateKey: templateRow.template_key || 'mahila',
     themeConfig,
     template: templateRow,
     templateId: templateRow.id || null,
+    templateUpdatedAt: templateRow.updated_at || null,
     trustId: trustId || templateRow.trust_id || null
+  };
+};
+
+export const getThemeToken = (theme, path, fallback, baseTheme = DEFAULT_THEME) => {
+  const safeTheme = theme || DEFAULT_THEME;
+  const normalizedPath = String(path || '').trim();
+  if (!normalizedPath) return fallback;
+
+  const configPath = normalizedPath.startsWith('theme_config.')
+    ? normalizedPath.replace(/^theme_config\./, '')
+    : normalizedPath;
+
+  const selectedConfigValue = readConfigToken(safeTheme?.selectedThemeConfigRaw, configPath);
+  if (selectedConfigValue !== undefined) return selectedConfigValue;
+
+  const baseConfigValue = readConfigToken(safeTheme?.baseThemeConfigRaw, configPath);
+  if (baseConfigValue !== undefined) return baseConfigValue;
+
+  const resolveFromTheme = (targetTheme) => {
+    if (!targetTheme) return undefined;
+    const configValue = readPath(targetTheme?.themeConfig, configPath);
+    if (configValue !== undefined && configValue !== null && configValue !== '') return configValue;
+
+    const topLevelMap = {
+      primary_color: targetTheme.primary,
+      secondary_color: targetTheme.secondary,
+      accent_color: targetTheme.accent,
+      accent_bg: targetTheme.accentBg
+    };
+    if (Object.prototype.hasOwnProperty.call(topLevelMap, configPath)) {
+      const mapped = topLevelMap[configPath];
+      if (mapped !== undefined && mapped !== null && mapped !== '') return mapped;
+    }
+
+    const directValue = readPath(targetTheme, normalizedPath);
+    if (directValue !== undefined && directValue !== null && directValue !== '') return directValue;
+    return undefined;
+  };
+
+  const currentValue = resolveFromTheme(safeTheme);
+  if (currentValue !== undefined) return currentValue;
+
+  const baseValue = resolveFromTheme(baseTheme);
+  if (baseValue !== undefined) return baseValue;
+
+  return fallback;
+};
+
+export const getFooterThemeStyles = (theme, baseTheme = DEFAULT_THEME) => {
+  const selectedConfig = theme?.selectedThemeConfigRaw || null;
+  const baseConfig = theme?.baseThemeConfigRaw || null;
+  const bgColor1 = getThemeToken(
+    theme,
+    'footer.bg_color_1',
+    DEFAULT_THEME_CONFIG.footer.bg_color_1,
+    baseTheme
+  );
+  const bgColor2 = getThemeToken(theme, 'footer.bg_color_2', null, baseTheme);
+  const gradientType = getThemeToken(
+    theme,
+    'footer.gradient_type',
+    DEFAULT_THEME_CONFIG.footer.gradient_type,
+    baseTheme
+  );
+  const selectedFooterTextOverride = readConfigToken(selectedConfig, 'typography.component_overrides.footer_text');
+  const selectedFooterText = readConfigToken(selectedConfig, 'footer.text_color');
+  const baseFooterTextOverride = readConfigToken(baseConfig, 'typography.component_overrides.footer_text');
+  const baseFooterText = readConfigToken(baseConfig, 'footer.text_color');
+
+  const fallbackFooterText = getThemeToken(
+    theme,
+    'footer.text_color',
+    DEFAULT_THEME_CONFIG.footer.text_color,
+    baseTheme
+  );
+  const footerTextColor = selectedFooterTextOverride
+    || selectedFooterText
+    || baseFooterTextOverride
+    || baseFooterText
+    || fallbackFooterText
+    || '#ffffff';
+  const footerTextOverride = selectedFooterTextOverride || baseFooterTextOverride || null;
+
+  const footerConfig = {
+    bg_color_1: bgColor1,
+    bg_color_2: bgColor2,
+    text_color: getThemeToken(theme, 'footer.text_color', DEFAULT_THEME_CONFIG.footer.text_color, baseTheme),
+    gradient_type: gradientType
+  };
+
+  return {
+    footerConfig,
+    backgroundStyle: buildGradient(footerConfig),
+    textColor: footerTextColor,
+    usingTypographyOverride: Boolean(footerTextOverride)
   };
 };
 
@@ -224,11 +398,11 @@ export const applyThemeCssVariables = (theme, root = document.documentElement) =
   const sidebar = config.sidebar || {};
   const marquee = config.marquee || {};
   const typography = config.typography || {};
-  const footer = config.footer || {};
   const appButtons = config.app_buttons || {};
   const advertisement = config.advertisement || {};
   const quickActions = config.quick_actions || {};
   const typographyOverrides = typography.component_overrides || {};
+  const footerTheme = getFooterThemeStyles(safeTheme, DEFAULT_THEME);
 
   const primary = safeTheme.primary || DEFAULT_THEME.primary;
   const secondary = safeTheme.secondary || DEFAULT_THEME.secondary;
@@ -271,8 +445,10 @@ export const applyThemeCssVariables = (theme, root = document.documentElement) =
   root.style.setProperty('--marquee-bg', marqueeBg);
   root.style.setProperty('--marquee-text', typographyOverrides.marquee_text || marquee.text_color || '#ffffff');
 
-  root.style.setProperty('--footer-bg', buildGradient(footer));
-  root.style.setProperty('--footer-text', typographyOverrides.footer_text || footer.text_color || '#ffffff');
+  root.style.setProperty('--footer-bg', footerTheme.backgroundStyle);
+  root.style.setProperty('--footer-text', footerTheme.textColor);
+  root.style.setProperty('--footer-border', withOpacity(footerTheme.textColor, 0.24));
+  root.style.setProperty('--footer-accent', withOpacity(footerTheme.textColor, 0.45));
   root.style.setProperty('--quick-actions-bg', buildGradient(quickActions));
   root.style.setProperty('--quick-actions-text', quickActions.text_color || '#ffffff');
   root.style.setProperty('--quick-actions-icon-bg', quickActions.icon_bg_color || '#ffffff');

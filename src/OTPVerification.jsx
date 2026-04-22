@@ -6,6 +6,7 @@ import { fetchDirectoryData } from './services/directoryService';
 import { fetchTrustById } from './services/trustService';
 import { getMemberTrustLinks } from './services/api';
 import { persistUserSession } from './utils/storageUtils';
+import { useAppTheme } from './context/ThemeContext';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const TRUST_ID = import.meta.env.VITE_DEFAULT_TRUST_ID || 'b353d2ff-ec3b-4b90-a896-69f40662084e';
@@ -50,6 +51,7 @@ function OTPVerification() {
   const navigate = useNavigate();
   const location = useLocation();
   useBackNavigation(() => navigate('/login'));
+  const theme = useAppTheme();
 
   const [otp, setOtp] = useState('');
   const [loading, setLoading] = useState(false);
@@ -127,7 +129,7 @@ function OTPVerification() {
         return;
       }
 
-      // Keep app context pinned to base trust on login (Ek Udaan).
+      // Keep app context pinned to base trust on login.
       const selectedTrustId = TRUST_ID;
       const selectedTrustName = trustInfo?.name || localStorage.getItem('selected_trust_name') || '';
       localStorage.setItem('selected_trust_id', String(selectedTrustId));
@@ -170,13 +172,13 @@ function OTPVerification() {
   // ─── Derived values ─────────────────────────────────────────────────────────────────────
   // Only show logo when Supabase returns a real icon_url — no fallback to Mah-Setu image
   const displayLogo = trustInfo?.icon_url || null;
-  const displayName = trustInfo?.name || 'Ek Udaan';
+  const displayName = trustInfo?.name || 'Mahila Mandal';
 
   if (!canRenderOtpPage) return null;
 
   // ─── Render ──────────────────────────────────────────────────────────────────
   return (
-    <div style={styles.page}>
+    <div style={{ ...styles.page, color: theme?.themeConfig?.typography?.body_text_color || 'var(--body-text-color)' }}>
       {/* Ambient blobs */}
       <div style={styles.blobTL} />
       <div style={styles.blobBR} />
@@ -308,8 +310,8 @@ function OTPVerification() {
           50%      { transform: translateY(16px) scale(0.97); }
         }
         @keyframes pulseRing {
-          0%,100% { box-shadow: 0 0 0 0   rgba(192,36,26,0.20); }
-          50%      { box-shadow: 0 0 0 12px rgba(192,36,26,0); }
+          0%,100% { box-shadow: 0 0 0 0   color-mix(in srgb, var(--brand-red, #C0241A) 20%, transparent); }
+          50%      { box-shadow: 0 0 0 12px color-mix(in srgb, var(--brand-red, #C0241A) 0%, transparent); }
         }
         @keyframes spin {
           to { transform: rotate(360deg); }
@@ -323,15 +325,15 @@ function OTPVerification() {
 const RED      = 'var(--brand-red, #C0241A)';
 const RED_DARK = 'var(--brand-red-dark, #9B1A13)';
 const NAVY     = 'var(--brand-navy, #2B2F7E)';
-const WHITE    = '#FFFFFF';
+const WHITE    = 'var(--app-button-text, #FFFFFF)';
 const GRAY     = 'var(--body-text-color, #64748b)';
-const BORDER   = 'rgba(148, 163, 184, 0.35)';
+const BORDER   = 'color-mix(in srgb, var(--brand-navy, #2B2F7E) 22%, transparent)';
 
 const styles = {
   page: {
-    fontFamily: "'Inter', sans-serif",
+    fontFamily: "var(--font-family, 'Inter', sans-serif)",
     minHeight: '100vh',
-    background: 'var(--page-bg, linear-gradient(135deg, #fff5f5 0%, #ffffff 40%, #f0f1fb 100%))',
+    background: 'var(--page-bg, var(--app-page-bg))',
     position: 'relative', overflow: 'hidden',
     display: 'flex', alignItems: 'center', justifyContent: 'center',
     padding: '24px 16px',
@@ -339,13 +341,13 @@ const styles = {
   blobTL: {
     position: 'absolute', top: '-80px', left: '-80px',
     width: '300px', height: '300px', borderRadius: '50%',
-    background: 'radial-gradient(circle, rgba(192,36,26,0.15) 0%, transparent 70%)',
+    background: 'radial-gradient(circle, color-mix(in srgb, var(--brand-red, #C0241A) 16%, transparent) 0%, transparent 70%)',
     animation: 'float1 7s ease-in-out infinite', pointerEvents: 'none',
   },
   blobBR: {
     position: 'absolute', bottom: '-100px', right: '-80px',
     width: '340px', height: '340px', borderRadius: '50%',
-    background: 'radial-gradient(circle, rgba(43,47,126,0.12) 0%, transparent 70%)',
+    background: 'radial-gradient(circle, color-mix(in srgb, var(--brand-navy, #2B2F7E) 14%, transparent) 0%, transparent 70%)',
     animation: 'float2 9s ease-in-out infinite', pointerEvents: 'none',
   },
   wrapper: {
@@ -354,8 +356,8 @@ const styles = {
   },
   card: {
     background: WHITE, borderRadius: '28px',
-    boxShadow: '0 24px 60px rgba(192,36,26,0.10), 0 8px 24px rgba(43,47,126,0.08)',
-    border: '1px solid rgba(192,36,26,0.10)',
+    boxShadow: '0 24px 60px color-mix(in srgb, var(--brand-red, #C0241A) 11%, transparent), 0 8px 24px color-mix(in srgb, var(--brand-navy, #2B2F7E) 8%, transparent)',
+    border: '1px solid color-mix(in srgb, var(--brand-red, #C0241A) 10%, transparent)',
     overflow: 'hidden', padding: '0 0 28px 0',
   },
   topBar: {
@@ -370,7 +372,7 @@ const styles = {
     width: '80px', height: '80px', borderRadius: '50%',
     background: WHITE,
     display: 'flex', alignItems: 'center', justifyContent: 'center',
-    boxShadow: '0 0 0 4px #FDECEA, 0 6px 20px rgba(192,36,26,0.18)',
+    boxShadow: '0 0 0 4px var(--brand-red-light, #FDECEA), 0 6px 20px color-mix(in srgb, var(--brand-red, #C0241A) 20%, transparent)',
     animation: 'pulseRing 3s ease-in-out infinite',
     padding: '6px',
   },
@@ -381,7 +383,7 @@ const styles = {
   logoMonogram: {
     width: '100%', height: '100%', borderRadius: '50%',
     display: 'flex', alignItems: 'center', justifyContent: 'center',
-    background: 'linear-gradient(135deg, #FDECEA 0%, #EAEBF8 100%)',
+    background: 'linear-gradient(135deg, var(--brand-red-light, #FDECEA) 0%, var(--brand-navy-light, #EAEBF8) 100%)',
     color: NAVY, fontWeight: 800, fontSize: '24px', letterSpacing: '1px',
   },
 
@@ -406,20 +408,20 @@ const styles = {
     width: '100%', boxSizing: 'border-box',
     padding: '16px 12px', fontSize: '28px',
     textAlign: 'center', letterSpacing: '0.5em',
-    fontWeight: 700, color: '#1e293b',
+    fontWeight: 700, color: 'var(--body-text-color, #1e293b)',
     border: `2px solid ${BORDER}`, borderRadius: '16px',
-    background: '#f8fafc', outline: 'none',
-    fontFamily: "'Inter', monospace",
+    background: 'color-mix(in srgb, var(--app-accent-bg, #F8FAFC) 72%, #ffffff)', outline: 'none',
+    fontFamily: "var(--font-family, 'Inter', monospace)",
     transition: 'all 0.22s ease',
   },
   otpInputFocus: {
-    borderColor: RED, background: '#fff8f8',
-    boxShadow: '0 0 0 4px rgba(192,36,26,0.10)',
+    borderColor: RED, background: 'color-mix(in srgb, #ffffff 85%, var(--brand-red-light, #FDECEA))',
+    boxShadow: '0 0 0 4px color-mix(in srgb, var(--brand-red, #C0241A) 11%, transparent)',
   },
 
   errorBox: {
     display: 'flex', alignItems: 'center', gap: '8px',
-    background: '#FDECEA', border: '1.5px solid rgba(192,36,26,0.25)',
+    background: 'var(--brand-red-light, #FDECEA)', border: '1.5px solid color-mix(in srgb, var(--brand-red, #C0241A) 28%, transparent)',
     borderRadius: '12px', padding: '12px 14px',
     fontSize: '13px', fontWeight: 500, color: RED_DARK,
   },
@@ -428,9 +430,9 @@ const styles = {
   backBtn: {
     flex: 1, padding: '14px', borderRadius: '16px',
     border: 'none', cursor: 'pointer',
-    background: '#EAEBF8', color: NAVY,
+    background: 'var(--brand-navy-light, #EAEBF8)', color: NAVY,
     fontSize: '15px', fontWeight: 700,
-    fontFamily: "'Inter', sans-serif",
+    fontFamily: "var(--font-family, 'Inter', sans-serif)",
     transition: 'all 0.2s ease',
   },
   verifyBtn: {
@@ -438,15 +440,15 @@ const styles = {
     border: 'none', cursor: 'pointer',
     background: `linear-gradient(135deg, ${RED} 0%, ${RED_DARK} 50%, ${NAVY} 100%)`,
     color: WHITE, fontSize: '15px', fontWeight: 700,
-    fontFamily: "'Inter', sans-serif",
-    boxShadow: '0 8px 24px rgba(192,36,26,0.30)',
+    fontFamily: "var(--font-family, 'Inter', sans-serif)",
+    boxShadow: '0 8px 24px color-mix(in srgb, var(--brand-red, #C0241A) 32%, transparent)',
     transition: 'all 0.2s ease',
   },
   verifyBtnDisabled: { opacity: 0.52, cursor: 'not-allowed', boxShadow: 'none' },
   btnInner: { display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' },
   spinner: {
     width: '16px', height: '16px',
-    border: '2.5px solid rgba(255,255,255,0.35)',
+    border: '2.5px solid color-mix(in srgb, #ffffff 35%, transparent)',
     borderTop: '2.5px solid #fff',
     borderRadius: '50%', display: 'inline-block',
     animation: 'spin 0.75s linear infinite',
@@ -460,7 +462,7 @@ const styles = {
   resendBtn: {
     background: 'none', border: 'none', cursor: 'pointer',
     color: RED, fontWeight: 700, fontSize: '13px',
-    fontFamily: "'Inter', sans-serif",
+    fontFamily: "var(--font-family, 'Inter', sans-serif)",
     padding: 0,
   },
 };

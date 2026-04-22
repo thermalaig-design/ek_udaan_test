@@ -4,6 +4,7 @@ import { useBackNavigation } from './hooks';
 import { specialLogin } from './services/authService';
 import { fetchDirectoryData } from './services/directoryService';
 import { persistUserSession } from './utils/storageUtils';
+import { useAppTheme } from './context/ThemeContext';
 
 const OTP_FLOW_KEY = 'otp_flow_allowed';
 const TRUST_ID = import.meta.env.VITE_DEFAULT_TRUST_ID || 'b353d2ff-ec3b-4b90-a896-69f40662084e';
@@ -11,6 +12,7 @@ const TRUST_ID = import.meta.env.VITE_DEFAULT_TRUST_ID || 'b353d2ff-ec3b-4b90-a8
 function SpecialOTPVerification() {
   const navigate = useNavigate();
   const location = useLocation();
+  useAppTheme();
   useBackNavigation(() => navigate('/login'));
   const [passcode, setPasscode] = useState('');
   const [loading, setLoading] = useState(false);
@@ -93,11 +95,11 @@ function SpecialOTPVerification() {
   if (!canRenderSpecialOtp) return null;
 
   return (
-    <div className="brand-page min-h-screen flex items-center justify-center px-4 py-8 relative overflow-hidden">
+    <div className="brand-page min-h-screen flex items-center justify-center px-4 py-8 relative overflow-hidden" style={{ background: 'var(--page-bg, var(--app-page-bg))' }}>
       <div className="pointer-events-none absolute -top-20 -left-20 w-72 h-72 rounded-full"
-        style={{ background: 'radial-gradient(circle, rgba(192,36,26,0.15) 0%, transparent 70%)' }} />
+        style={{ background: 'radial-gradient(circle, color-mix(in srgb, var(--brand-red, #C0241A) 18%, transparent) 0%, transparent 70%)' }} />
       <div className="pointer-events-none absolute -bottom-24 -right-16 w-80 h-80 rounded-full"
-        style={{ background: 'radial-gradient(circle, rgba(43,47,126,0.12) 0%, transparent 70%)' }} />
+        style={{ background: 'radial-gradient(circle, color-mix(in srgb, var(--brand-navy, #2B2F7E) 14%, transparent) 0%, transparent 70%)' }} />
 
       <div className="relative w-full max-w-md" style={{ animation: 'fadeUp 0.5s ease-out both' }}>
         <div className="brand-card overflow-hidden">
@@ -106,25 +108,25 @@ function SpecialOTPVerification() {
           {/* Shield icon header */}
           <div className="flex justify-center mt-6 mb-4">
             <div className="w-16 h-16 rounded-2xl flex items-center justify-center text-3xl"
-              style={{ background: '#EAEBF8' }}>
+              style={{ background: 'var(--brand-navy-light, #EAEBF8)' }}>
               🔐
             </div>
           </div>
 
           <div className="text-center px-6 mb-6">
-            <h2 className="text-2xl font-extrabold tracking-tight" style={{ color: '#2B2F7E' }}>
+            <h2 className="text-2xl font-extrabold tracking-tight" style={{ color: 'var(--heading-color, var(--brand-navy, #2B2F7E))' }}>
               Special Login
             </h2>
             <div className="flex items-center justify-center gap-2 mt-2 mb-3">
-              <span className="flex-1 h-px" style={{ background: 'linear-gradient(to right, transparent, #C0241A)' }} />
-              <span className="w-1.5 h-1.5 rounded-full" style={{ background: '#C0241A' }} />
-              <span className="flex-1 h-px" style={{ background: 'linear-gradient(to left, transparent, #C0241A)' }} />
+              <span className="flex-1 h-px" style={{ background: 'linear-gradient(to right, transparent, var(--brand-red, #C0241A))' }} />
+              <span className="w-1.5 h-1.5 rounded-full" style={{ background: 'var(--brand-red, #C0241A)' }} />
+              <span className="flex-1 h-px" style={{ background: 'linear-gradient(to left, transparent, var(--brand-red, #C0241A))' }} />
             </div>
-            <p className="text-sm text-gray-500 font-medium">Enter the special passcode for</p>
-            <p className="font-bold text-base mt-1" style={{ color: '#2B2F7E' }}>+91 {phoneNumber}</p>
+            <p className="text-sm font-medium" style={{ color: 'var(--body-text-color, #64748b)' }}>Enter the special passcode for</p>
+            <p className="font-bold text-base mt-1" style={{ color: 'var(--subheading-color, var(--brand-navy, #2B2F7E))' }}>+91 {phoneNumber}</p>
 
             <div className="mt-4 rounded-xl px-4 py-2.5 text-sm font-semibold flex items-center justify-center gap-2"
-              style={{ background: '#EAEBF8', color: '#2B2F7E' }}>
+              style={{ background: 'var(--brand-navy-light, #EAEBF8)', color: 'var(--brand-navy, #2B2F7E)' }}>
               <span>🔧</span> Special Access Enabled
             </div>
           </div>
@@ -132,7 +134,7 @@ function SpecialOTPVerification() {
           <form onSubmit={handleSubmit} className="px-6 pb-6 space-y-4">
             <div>
               <label className="block text-xs font-bold uppercase tracking-widest mb-2"
-                style={{ color: '#2B2F7E' }}>
+                style={{ color: 'var(--subheading-color, var(--brand-navy, #2B2F7E))' }}>
                 Special Passcode
               </label>
               <input
@@ -146,17 +148,17 @@ function SpecialOTPVerification() {
                 onBlur={() => setFocused(false)}
                 className="w-full px-5 py-4 text-2xl text-center tracking-[0.5em] font-bold rounded-2xl outline-none transition-all"
                 style={{
-                  border: focused ? '2px solid #C0241A' : '2px solid #e2e8f0',
-                  background: focused ? '#fff8f8' : '#f8fafc',
-                  color: '#1e293b',
-                  boxShadow: focused ? '0 0 0 4px rgba(192,36,26,0.10)' : 'none',
+                  border: focused ? '2px solid var(--brand-red, #C0241A)' : '2px solid color-mix(in srgb, var(--brand-navy, #2B2F7E) 16%, #ffffff)',
+                  background: focused ? 'color-mix(in srgb, #ffffff 84%, var(--brand-red-light, #FDECEA))' : 'color-mix(in srgb, var(--app-accent-bg, #F8FAFC) 74%, #ffffff)',
+                  color: 'var(--body-text-color, #1e293b)',
+                  boxShadow: focused ? '0 0 0 4px color-mix(in srgb, var(--brand-red, #C0241A) 12%, transparent)' : 'none',
                 }}
               />
             </div>
 
             {error && (
               <div className="rounded-2xl px-4 py-3 text-sm font-medium flex items-center gap-2"
-                style={{ background: '#FDECEA', border: '1.5px solid rgba(192,36,26,0.25)', color: '#9B1A13' }}>
+                style={{ background: 'var(--brand-red-light, #FDECEA)', border: '1.5px solid color-mix(in srgb, var(--brand-red, #C0241A) 26%, transparent)', color: 'var(--brand-red-dark, #9B1A13)' }}>
                 <span>⚠️</span><span>{error}</span>
               </div>
             )}
@@ -166,7 +168,7 @@ function SpecialOTPVerification() {
                 type="button"
                 onClick={handleBack}
                 className="flex-1 py-4 rounded-2xl font-bold text-base transition-all active:scale-[0.98]"
-                style={{ background: '#EAEBF8', color: '#2B2F7E' }}
+                style={{ background: 'var(--brand-navy-light, #EAEBF8)', color: 'var(--brand-navy, #2B2F7E)' }}
               >
                 ← Back
               </button>
@@ -186,8 +188,8 @@ function SpecialOTPVerification() {
             </div>
           </form>
 
-          <div className="border-t pb-5 pt-4 text-center" style={{ borderColor: '#f1f5f9' }}>
-            <p className="text-xs text-gray-400 font-medium">Special access for authorized users only</p>
+          <div className="border-t pb-5 pt-4 text-center" style={{ borderColor: 'color-mix(in srgb, var(--brand-navy, #2B2F7E) 10%, #ffffff)' }}>
+            <p className="text-xs font-medium" style={{ color: 'color-mix(in srgb, var(--body-text-color, #64748b) 70%, #ffffff)' }}>Special access for authorized users only</p>
           </div>
         </div>
       </div>

@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { ArrowLeft, Building2, Globe, Mail, MapPin, Phone, Star } from 'lucide-react';
-import { useTheme } from './hooks';
 import { getCachedSponsorById, getCachedSponsorDetail, getSponsorDetail, readSelectedSponsorId } from './services/sponsorStore';
+import { useAppTheme } from './context/ThemeContext';
 
 const ASSOCIATION_LABEL = 'In Association With';
 
@@ -26,7 +26,7 @@ const buildHref = {
 
 const SponsorDetails = ({ onBack }) => {
   const selectedTrustId = localStorage.getItem('selected_trust_id') || '';
-  const { theme } = useTheme(selectedTrustId);
+  const theme = useAppTheme();
 
   const [sponsorId] = useState(() => readSelectedSponsorId());
 
@@ -132,7 +132,7 @@ const SponsorDetails = ({ onBack }) => {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center" style={{ background: `linear-gradient(160deg, #ffffff 0%, ${theme.accentBg || '#f8fafc'} 52%, #ffffff 100%)` }}>
+      <div className="min-h-screen flex items-center justify-center" style={{ background: 'var(--page-bg, var(--app-page-bg))' }}>
         <div className="text-center">
           <div className="animate-spin rounded-full h-10 w-10 border-2 border-t-transparent mx-auto" style={{ borderColor: theme.primary, borderTopColor: 'transparent' }} />
           <p className="mt-3 text-sm text-slate-500 font-medium">Loading sponsor details...</p>
@@ -143,7 +143,7 @@ const SponsorDetails = ({ onBack }) => {
 
   if (!data) {
     return (
-      <div className="min-h-screen flex items-center justify-center px-5" style={{ background: `linear-gradient(160deg, #ffffff 0%, ${theme.accentBg || '#f8fafc'} 52%, #ffffff 100%)` }}>
+      <div className="min-h-screen flex items-center justify-center px-5" style={{ background: 'var(--page-bg, var(--app-page-bg))' }}>
         <div className="rounded-3xl bg-white border border-slate-200 p-6 max-w-sm w-full text-center shadow-sm">
           <h2 className="text-lg font-bold text-slate-800">No sponsor selected</h2>
           <p className="text-sm text-slate-500 mt-2">Please choose a sponsor from the list.</p>
@@ -166,14 +166,14 @@ const SponsorDetails = ({ onBack }) => {
   };
 
   return (
-    <div className="min-h-screen" style={{ background: `linear-gradient(160deg, #ffffff 0%, ${theme.accentBg || '#f8fafc'} 52%, #ffffff 100%)` }}>
+    <div className="min-h-screen" style={{ background: 'var(--page-bg, var(--app-page-bg))' }}>
       <div className="theme-navbar backdrop-blur border-b px-5 py-4 flex items-center gap-3 sticky top-0 z-10">
-        <button onClick={onBack} className="p-2 rounded-xl hover:bg-gray-100 transition-colors">
-          <ArrowLeft className="h-5 w-5 text-gray-700" />
+        <button onClick={onBack} className="p-2 rounded-xl transition-colors" style={{ background: 'color-mix(in srgb, var(--app-accent-bg) 45%, transparent)' }}>
+          <ArrowLeft className="h-5 w-5" style={{ color: 'var(--navbar-text)' }} />
         </button>
         <div>
           <h1 className="text-lg font-extrabold" style={{ color: theme.secondary }}>Sponsor Details</h1>
-          <p className="text-[11px] text-slate-400 font-medium">Selected sponsor profile</p>
+          <p className="text-[11px] font-medium" style={{ color: 'var(--body-text-color)' }}>Selected sponsor profile</p>
         </div>
       </div>
 
@@ -185,7 +185,7 @@ const SponsorDetails = ({ onBack }) => {
             boxShadow: `0 14px 30px ${theme.secondary}1A`,
           }}
         >
-          <div className="relative rounded-3xl bg-white/95 backdrop-blur overflow-hidden">
+          <div className="relative rounded-3xl backdrop-blur overflow-hidden" style={{ background: 'color-mix(in srgb, #ffffff 95%, var(--app-accent-bg))' }}>
             <div className="absolute -top-14 -right-10 h-28 w-28 rounded-full pointer-events-none" style={{ background: `radial-gradient(circle, ${theme.primary}4A 0%, transparent 70%)` }} />
             <div className="absolute -bottom-12 -left-10 h-24 w-24 rounded-full pointer-events-none" style={{ background: `radial-gradient(circle, ${theme.secondary}38 0%, transparent 72%)` }} />
 
@@ -215,15 +215,15 @@ const SponsorDetails = ({ onBack }) => {
                     </h2>
                   ) : null}
                   {data.position ? (
-                    <p className="mt-1 text-base font-semibold text-slate-600 break-words">{data.position}</p>
+                    <p className="mt-1 text-base font-semibold break-words" style={{ color: 'var(--body-text-color)' }}>{data.position}</p>
                   ) : null}
                   {data.position2 ? (
-                    <p className="mt-1 text-sm font-medium text-slate-500 break-words">{data.position2}</p>
+                    <p className="mt-1 text-sm font-medium break-words" style={{ color: 'var(--body-text-color)' }}>{data.position2}</p>
                   ) : null}
                   {data.company ? (
                     <div className="mt-2 inline-flex max-w-full items-start justify-center gap-1.5">
-                      <Building2 className="h-4 w-4 text-slate-400 flex-shrink-0 mt-0.5" />
-                      <p className="text-sm font-semibold text-slate-500 break-words text-left">{data.company}</p>
+                      <Building2 className="h-4 w-4 flex-shrink-0 mt-0.5" style={{ color: 'var(--body-text-color)' }} />
+                      <p className="text-sm font-semibold break-words text-left" style={{ color: 'var(--body-text-color)' }}>{data.company}</p>
                     </div>
                   ) : null}
                 </div>

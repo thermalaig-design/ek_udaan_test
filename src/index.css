@@ -44,6 +44,8 @@
 
   --footer-bg: #1F2937;
   --footer-text: #ffffff;
+  --footer-border: rgba(255, 255, 255, 0.24);
+  --footer-accent: rgba(255, 255, 255, 0.45);
   --quick-actions-bg: #1F2937;
   --quick-actions-text: #ffffff;
   --quick-actions-icon-bg: #ffffff;
@@ -88,6 +90,7 @@
 
 html, body {
   -webkit-overflow-scrolling: touch;
+  overflow-x: hidden;
 }
 
 input, textarea, select {
@@ -109,6 +112,7 @@ body {
   width: 100%;
   height: 100%;
   overflow: auto;
+  overflow-x: hidden;
   scrollbar-width: thin;
   scrollbar-color: rgba(43, 47, 126, 0.4) rgba(0, 0, 0, 0.05);
   -ms-overflow-style: auto;
@@ -132,8 +136,8 @@ body {
   body {
     padding-top: max(0px, var(--safe-area-top));
     padding-bottom: max(0px, var(--safe-area-bottom));
-    padding-left: max(0px, var(--safe-area-left));
-    padding-right: max(0px, var(--safe-area-right));
+    padding-left: 0px;
+    padding-right: 0px;
   }
 }
 

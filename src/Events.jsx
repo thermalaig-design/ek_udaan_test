@@ -89,15 +89,15 @@ const Events = ({ onNavigate }) => {
   }, []);
 
   return (
-    <div className={`bg-white min-h-screen pb-10 relative${isMenuOpen ? ' overflow-hidden max-h-screen' : ''}`}>
+    <div className={`min-h-screen pb-10 relative${isMenuOpen ? ' overflow-hidden max-h-screen' : ''}`} style={{ background: 'var(--page-bg, var(--app-page-bg))' }}>
       <div className="theme-navbar border-b px-6 py-5 flex items-center justify-between sticky top-0 z-50 shadow-sm pointer-events-auto" style={{ paddingTop: 'max(env(safe-area-inset-top, 0px), 20px)' }}>
         <button
           onClick={() => setIsMenuOpen(!isMenuOpen)}
           className="p-2 rounded-xl hover:bg-gray-100 transition-colors pointer-events-auto"
         >
-          {isMenuOpen ? <X className="h-6 w-6 text-gray-700" /> : <Menu className="h-6 w-6 text-gray-700" />}
+          {isMenuOpen ? <X className="h-6 w-6" style={{ color: 'var(--navbar-text)' }} /> : <Menu className="h-6 w-6" style={{ color: 'var(--navbar-text)' }} />}
         </button>
-        <h1 className="text-lg font-bold text-gray-800">Events</h1>
+        <h1 className="text-lg font-bold" style={{ color: 'var(--navbar-text)' }}>Events</h1>
         <button
           onClick={() => onNavigate('home')}
           className="p-2 rounded-xl hover:bg-gray-100 transition-colors flex items-center justify-center"
@@ -114,14 +114,14 @@ const Events = ({ onNavigate }) => {
         currentPage="events"
       />
 
-      <div className="bg-white px-6 pt-8 pb-4">
+      <div className="px-6 pt-8 pb-4" style={{ background: 'transparent' }}>
         <div className="flex items-center gap-4">
-          <div className="bg-white p-3 rounded-2xl shadow-sm border border-gray-100">
+          <div className="p-3 rounded-2xl shadow-sm" style={{ background: 'color-mix(in srgb, #ffffff 92%, var(--app-accent-bg))', border: '1px solid color-mix(in srgb, var(--brand-navy) 10%, transparent)' }}>
             <Calendar className="h-12 w-12" style={{ color: theme.secondary }} />
           </div>
           <div>
-            <h1 className="text-2xl font-bold text-gray-800">Upcoming Events</h1>
-            <p className="text-gray-500 text-sm font-medium">Live events from trust database</p>
+            <h1 className="text-2xl font-bold" style={{ color: 'var(--heading-color)' }}>Upcoming Events</h1>
+            <p className="text-sm font-medium" style={{ color: 'var(--body-text-color)' }}>Live events from trust database</p>
           </div>
         </div>
       </div>

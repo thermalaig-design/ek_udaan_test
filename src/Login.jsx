@@ -3,6 +3,7 @@ import { useNavigate, Link } from 'react-router-dom';
 import { useBackNavigation } from './hooks';
 import { checkPhoneNumber } from './services/authService';
 import { fetchTrustById } from './services/trustService';
+import { useAppTheme } from './context/ThemeContext';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const TRUST_ID = import.meta.env.VITE_DEFAULT_TRUST_ID || 'b353d2ff-ec3b-4b90-a896-69f40662084e';
@@ -10,7 +11,7 @@ const TRUST_ID = import.meta.env.VITE_DEFAULT_TRUST_ID || 'b353d2ff-ec3b-4b90-a8
 const LOGIN_TRUST_CACHE_KEY = 'cached_base_trust_info';
 const TRUST_CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
 // No static fallback image — show monogram placeholder until Supabase icon_url loads
-const DEFAULT_TRUST_NAME = import.meta.env.VITE_DEFAULT_TRUST_NAME || 'Ek Udaan';
+const DEFAULT_TRUST_NAME = import.meta.env.VITE_DEFAULT_TRUST_NAME || 'Mahila Mandal';
 const OTP_FLOW_KEY = 'otp_flow_allowed';
 
 // ─── Cache helpers ─────────────────────────────────────────────────────────────
@@ -50,6 +51,7 @@ const setCachedBaseTrust = (trust) => {
 function Login() {
   const navigate = useNavigate();
   useBackNavigation();
+  const theme = useAppTheme();
 
   const [phoneNumber, setPhoneNumber] = useState('');
   const [loading, setLoading] = useState(false);
@@ -74,8 +76,8 @@ function Login() {
     try { localStorage.removeItem('cached_trust_info'); } catch { /* ignore */ }
   }, []);
 
-  // Always fetch the BASE trust (TRUST_ID = Ek Udaan) — never reads selected_trust_id.
-  // Login page must always show Ek Udaan branding regardless of which trust was last active.
+  // Always fetch the BASE trust by TRUST_ID — never read selected_trust_id here.
+  // Login page must always show base-trust branding regardless of last active trust.
   useEffect(() => {
     let active = true;
 
@@ -146,7 +148,7 @@ function Login() {
 
   // ─── Render ──────────────────────────────────────────────────────────────────
   return (
-    <div style={styles.page}>
+    <div style={{ ...styles.page, color: theme?.themeConfig?.typography?.body_text_color || 'var(--body-text-color)' }}>
       {/* Decorative blobs */}
       <div style={styles.blobTL} />
       <div style={styles.blobBR} />
@@ -289,8 +291,8 @@ function Login() {
           to { transform: rotate(360deg); }
         }
         @keyframes pulseRing {
-          0%,100% { box-shadow: 0 0 0 0   rgba(192,36,26,0.20); }
-          50%      { box-shadow: 0 0 0 12px rgba(192,36,26,0); }
+          0%,100% { box-shadow: 0 0 0 0   color-mix(in srgb, var(--brand-red, #C0241A) 20%, transparent); }
+          50%      { box-shadow: 0 0 0 12px color-mix(in srgb, var(--brand-red, #C0241A) 0%, transparent); }
         }
         @keyframes pulse2 {
           0%,100% { opacity: 1; transform: scale(1); }
@@ -309,15 +311,17 @@ function Login() {
 const RED      = 'var(--brand-red, #C0241A)';
 const RED_DARK = 'var(--brand-red-dark, #9B1A13)';
 const NAVY     = 'var(--brand-navy, #2B2F7E)';
-const WHITE    = '#FFFFFF';
+const NAVY_LIGHT = 'var(--brand-navy-light, #EAEBF8)';
+const RED_LIGHT = 'var(--brand-red-light, #FDECEA)';
+const WHITE    = 'var(--login-surface, #FFFFFF)';
 const GRAY     = 'var(--body-text-color, #64748b)';
-const BORDER   = 'rgba(148, 163, 184, 0.35)';
+const BORDER   = 'color-mix(in srgb, var(--brand-navy, #2B2F7E) 18%, transparent)';
 
 const styles = {
   page: {
-    fontFamily: "'Inter', sans-serif",
+    fontFamily: "var(--font-family, 'Inter', sans-serif)",
     minHeight: '100vh',
-    background: 'var(--page-bg, linear-gradient(135deg, #fff5f5 0%, #ffffff 40%, #f0f1fb 100%))',
+    background: 'var(--page-bg, var(--app-page-bg))',
     position: 'relative',
     overflow: 'hidden',
     display: 'flex',
@@ -330,19 +334,19 @@ const styles = {
   blobTL: {
     position: 'absolute', top: '-80px', left: '-80px',
     width: '320px', height: '320px', borderRadius: '50%',
-    background: 'radial-gradient(circle, rgba(192,36,26,0.18) 0%, transparent 70%)',
+    background: `radial-gradient(circle, color-mix(in srgb, ${RED} 18%, transparent) 0%, transparent 70%)`,
     animation: 'float1 7s ease-in-out infinite', pointerEvents: 'none',
   },
   blobBR: {
     position: 'absolute', bottom: '-100px', right: '-80px',
     width: '360px', height: '360px', borderRadius: '50%',
-    background: 'radial-gradient(circle, rgba(43,47,126,0.14) 0%, transparent 70%)',
+    background: `radial-gradient(circle, color-mix(in srgb, ${NAVY} 14%, transparent) 0%, transparent 70%)`,
     animation: 'float2 9s ease-in-out infinite', pointerEvents: 'none',
   },
   blobCenter: {
     position: 'absolute', top: '40%', left: '60%',
     width: '200px', height: '200px', borderRadius: '50%',
-    background: 'radial-gradient(circle, rgba(192,36,26,0.07) 0%, transparent 70%)',
+    background: `radial-gradient(circle, color-mix(in srgb, ${RED} 8%, transparent) 0%, transparent 70%)`,
     animation: 'float3 6s ease-in-out infinite', pointerEvents: 'none',
   },
 
@@ -353,8 +357,8 @@ const styles = {
 
   card: {
     background: WHITE, borderRadius: '28px',
-    boxShadow: '0 24px 60px rgba(192,36,26,0.10), 0 8px 24px rgba(43,47,126,0.08)',
-    border: '1px solid rgba(192,36,26,0.10)',
+    boxShadow: `0 24px 60px color-mix(in srgb, ${RED} 10%, transparent), 0 8px 24px color-mix(in srgb, ${NAVY} 8%, transparent)`,
+    border: `1px solid color-mix(in srgb, ${RED} 10%, transparent)`,
     overflow: 'hidden', padding: '0 0 28px 0',
   },
 
@@ -371,7 +375,7 @@ const styles = {
     width: '120px', height: '120px', borderRadius: '50%',
     background: WHITE,
     display: 'flex', alignItems: 'center', justifyContent: 'center',
-    boxShadow: '0 0 0 4px #FDECEA, 0 8px 28px rgba(192,36,26,0.18)',
+    boxShadow: `0 0 0 4px ${RED_LIGHT}, 0 8px 28px color-mix(in srgb, ${RED} 18%, transparent)`,
     animation: 'pulseRing 3s ease-in-out infinite',
     padding: '8px',
   },
@@ -382,7 +386,7 @@ const styles = {
   logoMonogram: {
     width: '100%', height: '100%', borderRadius: '50%',
     display: 'flex', alignItems: 'center', justifyContent: 'center',
-    background: 'linear-gradient(135deg, #FDECEA 0%, #EAEBF8 100%)',
+    background: `linear-gradient(135deg, ${RED_LIGHT} 0%, ${NAVY_LIGHT} 100%)`,
     color: NAVY, fontWeight: 800, fontSize: '36px', letterSpacing: '1px',
   },
 
@@ -395,7 +399,7 @@ const styles = {
   },
   nameSkeleton: {
     height: '28px', borderRadius: '6px', margin: '0 auto 4px auto', width: '180px',
-    background: 'linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%)',
+    background: 'linear-gradient(90deg, color-mix(in srgb, var(--app-accent-bg, #F8FAFC) 70%, #ffffff) 25%, color-mix(in srgb, var(--brand-navy-light, #EAEBF8) 55%, #ffffff) 50%, color-mix(in srgb, var(--app-accent-bg, #F8FAFC) 70%, #ffffff) 75%)',
     backgroundSize: '400px 100%',
     animation: 'shimmer 1.4s ease-in-out infinite',
   },
@@ -419,7 +423,7 @@ const styles = {
   badge: {
     display: 'flex', alignItems: 'center', justifyContent: 'center',
     gap: '6px',
-    background: '#EAEBF8', color: NAVY,
+    background: NAVY_LIGHT, color: NAVY,
     fontSize: '11px', fontWeight: 700, letterSpacing: '0.08em',
     textTransform: 'uppercase', borderRadius: '20px',
     padding: '5px 14px', width: 'fit-content',
@@ -443,12 +447,12 @@ const styles = {
   inputRow: {
     display: 'flex', alignItems: 'center',
     border: `2px solid ${BORDER}`, borderRadius: '16px',
-    background: '#f1f5f9', transition: 'all 0.22s ease',
+    background: 'color-mix(in srgb, var(--app-accent-bg, #F8FAFC) 70%, #ffffff)', transition: 'all 0.22s ease',
     overflow: 'hidden',
   },
   inputRowFocus: {
-    borderColor: RED, background: '#fff8f8',
-    boxShadow: '0 0 0 4px rgba(192,36,26,0.10)',
+    borderColor: RED, background: 'color-mix(in srgb, #ffffff 82%, var(--brand-red-light, #FDECEA))',
+    boxShadow: `0 0 0 4px color-mix(in srgb, ${RED} 10%, transparent)`,
   },
   prefix: {
     display: 'flex', alignItems: 'center', gap: '6px',
@@ -462,14 +466,14 @@ const styles = {
   },
   input: {
     flex: 1, border: 'none', background: 'transparent',
-    padding: '14px 14px', fontSize: '16px', color: '#1e293b',
-    fontFamily: "'Inter', sans-serif", fontWeight: 500,
+    padding: '14px 14px', fontSize: '16px', color: 'var(--body-text-color, #1e293b)',
+    fontFamily: "var(--font-family, 'Inter', sans-serif)", fontWeight: 500,
     outline: 'none', letterSpacing: '0.02em',
   },
 
   errorBox: {
     display: 'flex', alignItems: 'center', gap: '8px',
-    background: '#FDECEA', border: '1.5px solid rgba(192,36,26,0.25)',
+    background: RED_LIGHT, border: `1.5px solid color-mix(in srgb, ${RED} 25%, transparent)`,
     borderRadius: '12px', padding: '12px 14px',
     fontSize: '13px', fontWeight: 500, color: RED_DARK,
   },
@@ -479,9 +483,9 @@ const styles = {
     border: 'none',
     background: `linear-gradient(135deg, ${RED} 0%, ${RED_DARK} 50%, ${NAVY} 100%)`,
     color: WHITE, fontSize: '16px', fontWeight: 700,
-    fontFamily: "'Inter', sans-serif", cursor: 'pointer',
+    fontFamily: "var(--font-family, 'Inter', sans-serif)", cursor: 'pointer',
     letterSpacing: '0.02em',
-    boxShadow: '0 8px 24px rgba(192,36,26,0.32)',
+    boxShadow: `0 8px 24px color-mix(in srgb, ${RED} 32%, transparent)`,
     transition: 'all 0.2s ease', marginTop: '4px',
   },
   btnDisabled: { opacity: 0.52, cursor: 'not-allowed', boxShadow: 'none' },
@@ -491,8 +495,8 @@ const styles = {
   arrow: { fontSize: '20px', fontWeight: 400 },
   spinner: {
     width: '18px', height: '18px',
-    border: '2.5px solid rgba(255,255,255,0.35)',
-    borderTop: '2.5px solid #fff',
+    border: '2.5px solid color-mix(in srgb, #ffffff 35%, transparent)',
+    borderTop: '2.5px solid #ffffff',
     borderRadius: '50%', display: 'inline-block',
     animation: 'spin 0.75s linear infinite',
   },

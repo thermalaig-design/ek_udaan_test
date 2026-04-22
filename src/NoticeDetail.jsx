@@ -96,16 +96,16 @@ const NoticeDetail = ({ onNavigate }) => {
   const dateLabel = formatDateRange(notice?.start_date, notice?.end_date);
 
   return (
-    <div className="bg-slate-50 min-h-screen pb-8">
+    <div className="min-h-screen pb-8" style={{ background: 'var(--page-bg, var(--app-page-bg))' }}>
       <div className="theme-navbar border-b px-6 py-5 flex items-center justify-between sticky top-0 z-40 shadow-sm" style={{ paddingTop: 'max(env(safe-area-inset-top, 0px), 20px)' }}>
         <button
           onClick={handleBack}
           className="p-2 rounded-xl hover:bg-gray-100 transition-colors"
           aria-label="Back to notice board"
         >
-          <ArrowLeft className="h-5 w-5 text-gray-700" />
+          <ArrowLeft className="h-5 w-5" style={{ color: 'var(--navbar-text)' }} />
         </button>
-        <h1 className="text-lg font-bold text-gray-800">Notice Details</h1>
+        <h1 className="text-lg font-bold" style={{ color: 'var(--navbar-text)' }}>Notice Details</h1>
         <button
           onClick={() => onNavigate('home')}
           className="p-2 rounded-xl hover:bg-gray-100 transition-colors flex items-center justify-center"
@@ -128,9 +128,9 @@ const NoticeDetail = ({ onNavigate }) => {
         )}
 
         {!loading && error && (
-          <div className="bg-red-50 border border-red-200 rounded-2xl p-6 text-center">
-            <h3 className="font-bold text-red-800">Unable to load notice</h3>
-            <p className="text-sm text-red-600 mt-1">{error}</p>
+          <div className="rounded-2xl p-6 text-center" style={{ background: 'var(--brand-red-light)', border: '1px solid color-mix(in srgb, var(--brand-red) 25%, transparent)' }}>
+            <h3 className="font-bold" style={{ color: 'var(--brand-red-dark)' }}>Unable to load notice</h3>
+            <p className="text-sm mt-1" style={{ color: 'var(--brand-red-dark)' }}>{error}</p>
             <button
               onClick={handleBack}
               className="mt-4 px-4 py-2 rounded-xl text-white text-sm font-semibold"
@@ -145,9 +145,9 @@ const NoticeDetail = ({ onNavigate }) => {
           <div
             className="rounded-2xl border bg-white p-5 shadow-sm border-l-4"
             style={{
-              borderLeftColor: isVip ? '#D4AF37' : theme.primary,
-              borderColor: isVip ? '#F1E2A4' : '#E2E8F0',
-              background: isVip ? 'linear-gradient(180deg, #fffdf6 0%, #ffffff 48%)' : '#ffffff'
+              borderLeftColor: isVip ? 'color-mix(in srgb, var(--brand-red) 45%, #d4af37)' : theme.primary,
+              borderColor: isVip ? 'color-mix(in srgb, var(--brand-red) 22%, #f1e2a4)' : 'color-mix(in srgb, var(--brand-navy) 10%, transparent)',
+              background: isVip ? 'linear-gradient(180deg, color-mix(in srgb, var(--brand-red-light) 50%, #fffdf6) 0%, #ffffff 48%)' : '#ffffff'
             }}
           >
             <div className="flex items-center justify-between gap-3 mb-4">
@@ -155,11 +155,11 @@ const NoticeDetail = ({ onNavigate }) => {
                 className="text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded-full inline-flex items-center gap-1"
                 style={
                   isVip
-                    ? { color: '#8A6A00', background: '#FDF3C7' }
+                    ? { color: 'color-mix(in srgb, var(--brand-red-dark) 50%, #8A6A00)', background: 'color-mix(in srgb, var(--brand-red-light) 48%, #FDF3C7)' }
                     : { color: theme.primary, background: `color-mix(in srgb, ${theme.primary} 12%, white)` }
                 }
               >
-                {isVip ? <Star className="h-3 w-3" fill="#D4AF37" color="#D4AF37" /> : null}
+                {isVip ? <Star className="h-3 w-3" fill="color-mix(in srgb, var(--brand-red) 45%, #d4af37)" color="color-mix(in srgb, var(--brand-red) 45%, #d4af37)" /> : null}
                 {isVip ? 'VIP NOTICE' : 'GEN'}
               </span>
               {dateLabel && (
@@ -170,11 +170,11 @@ const NoticeDetail = ({ onNavigate }) => {
               )}
             </div>
 
-            <h2 className="text-xl font-bold text-slate-900 leading-tight">
+            <h2 className="text-xl font-bold leading-tight" style={{ color: 'var(--heading-color)' }}>
               {notice.name}
             </h2>
 
-            <p className="mt-4 text-slate-700 text-sm leading-relaxed whitespace-pre-line">
+            <p className="mt-4 text-sm leading-relaxed whitespace-pre-line" style={{ color: 'var(--body-text-color)' }}>
               {notice.description || 'No description provided.'}
             </p>
 

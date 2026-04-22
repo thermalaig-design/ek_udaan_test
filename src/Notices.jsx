@@ -203,15 +203,15 @@ const Notices = ({ onNavigate }) => {
   };
 
   return (
-    <div className={`bg-slate-50 min-h-screen pb-10 relative${isMenuOpen ? ' overflow-hidden max-h-screen' : ''}`}>
+    <div className={`min-h-screen pb-10 relative${isMenuOpen ? ' overflow-hidden max-h-screen' : ''}`} style={{ background: 'var(--page-bg, var(--app-page-bg))' }}>
       <div className="theme-navbar border-b px-6 py-5 flex items-center justify-between sticky top-0 z-50 shadow-sm pointer-events-auto" style={{ paddingTop: 'max(env(safe-area-inset-top, 0px), 20px)' }}>
         <button
           onClick={() => setIsMenuOpen(!isMenuOpen)}
           className="p-2 rounded-xl hover:bg-gray-100 transition-colors pointer-events-auto"
         >
-          {isMenuOpen ? <X className="h-6 w-6 text-gray-700" /> : <Menu className="h-6 w-6 text-gray-700" />}
+          {isMenuOpen ? <X className="h-6 w-6" style={{ color: 'var(--navbar-text)' }} /> : <Menu className="h-6 w-6" style={{ color: 'var(--navbar-text)' }} />}
         </button>
-        <h1 className="text-lg font-bold text-gray-800">Notice Board</h1>
+        <h1 className="text-lg font-bold" style={{ color: 'var(--navbar-text)' }}>Notice Board</h1>
         <button
           onClick={() => onNavigate('home')}
           className="p-2 rounded-xl hover:bg-gray-100 transition-colors flex items-center justify-center"
@@ -237,19 +237,20 @@ const Notices = ({ onNavigate }) => {
       />
 
       <div className="px-6 pt-7 pb-4">
-        <div className="rounded-2xl border border-slate-200/80 bg-gradient-to-br from-white via-white to-slate-50 p-4 shadow-sm">
+        <div className="rounded-2xl p-4 shadow-sm" style={{ border: '1px solid color-mix(in srgb, var(--brand-navy) 10%, transparent)', background: 'color-mix(in srgb, var(--app-accent-bg) 32%, #ffffff)' }}>
           <div className="flex items-start gap-3">
-            <div className="h-11 w-11 rounded-xl border border-slate-200 bg-white/95 flex items-center justify-center shrink-0">
+            <div className="h-11 w-11 rounded-xl flex items-center justify-center shrink-0" style={{ border: '1px solid color-mix(in srgb, var(--brand-navy) 10%, transparent)', background: 'color-mix(in srgb, #ffffff 95%, var(--app-accent-bg))' }}>
               <Bell className="h-5 w-5" style={{ color: theme.secondary }} />
             </div>
             <div className="flex-1 min-w-0">
-              <h1 className="text-xl font-bold text-slate-800 leading-tight">Notice Board</h1>
-              <p className="text-slate-500 text-xs sm:text-sm mt-1">Important updates and active notices from your trust</p>
+              <h1 className="text-xl font-bold leading-tight" style={{ color: 'var(--heading-color)' }}>Notice Board</h1>
+              <p className="text-xs sm:text-sm mt-1" style={{ color: 'var(--body-text-color)' }}>Important updates and active notices from your trust</p>
             </div>
             <button
               onClick={handleRefresh}
               disabled={refreshing}
-              className="h-9 w-9 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 disabled:opacity-60 flex items-center justify-center shrink-0"
+              className="h-9 w-9 rounded-xl disabled:opacity-60 flex items-center justify-center shrink-0"
+              style={{ border: '1px solid color-mix(in srgb, var(--brand-navy) 10%, transparent)', background: 'color-mix(in srgb, #ffffff 88%, var(--app-accent-bg))' }}
               title="Refresh notices"
             >
               <RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} style={{ color: theme.primary }} />
@@ -305,21 +306,21 @@ const Notices = ({ onNavigate }) => {
               onClick={() => openNoticeDetail(notice.id)}
               className="w-full text-left bg-white rounded-2xl p-4 sm:p-5 border transition-all hover:shadow-md active:scale-[0.995] border-l-4 shadow-sm"
               style={{
-                borderLeftColor: isVip ? '#D4AF37' : theme.primary,
-                borderColor: isVip ? '#F1E2A4' : '#E2E8F0',
-                background: isVip ? 'linear-gradient(180deg, #fffdf6 0%, #ffffff 45%)' : '#ffffff'
+                borderLeftColor: isVip ? 'color-mix(in srgb, var(--brand-red) 45%, #d4af37)' : theme.primary,
+                borderColor: isVip ? 'color-mix(in srgb, var(--brand-red) 20%, #f1e2a4)' : 'color-mix(in srgb, var(--brand-navy) 10%, transparent)',
+                background: isVip ? 'linear-gradient(180deg, color-mix(in srgb, var(--brand-red-light) 48%, #fffdf6) 0%, #ffffff 45%)' : '#ffffff'
               }}
             >
               <div className="flex items-center justify-between gap-3 mb-3">
                 <span
                   className="text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded-full inline-flex items-center gap-1"
-                  style={
-                    isVip
-                      ? { color: '#8A6A00', background: '#FDF3C7' }
-                      : { color: theme.primary, background: `color-mix(in srgb, ${theme.primary} 12%, white)` }
-                  }
-                >
-                  {isVip ? <Star className="h-3 w-3" fill="#D4AF37" color="#D4AF37" /> : null}
+                style={
+                  isVip
+                    ? { color: 'color-mix(in srgb, var(--brand-red-dark) 50%, #8A6A00)', background: 'color-mix(in srgb, var(--brand-red-light) 48%, #FDF3C7)' }
+                    : { color: theme.primary, background: `color-mix(in srgb, ${theme.primary} 12%, white)` }
+                }
+              >
+                  {isVip ? <Star className="h-3 w-3" fill="color-mix(in srgb, var(--brand-red) 45%, #d4af37)" color="color-mix(in srgb, var(--brand-red) 45%, #d4af37)" /> : null}
                   {isVip ? 'VIP Notice' : 'GEN'}
                 </span>
                 {dateLabel && (

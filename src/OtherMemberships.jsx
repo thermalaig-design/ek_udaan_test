@@ -5,6 +5,7 @@ import {
   AlertCircle, Building2, Hash, Tag, FileText, Loader2, Save
 } from 'lucide-react';
 import { getMemberTrustLinks } from './services/api';
+import { useAppTheme } from './context/ThemeContext';
 
 // ─── Supabase helpers ──────────────────────────────────────────────────────
 
@@ -65,17 +66,17 @@ const deleteOtherMembership = async (id) => {
 
 // ─── Styles — use CSS variables so theme updates automatically ────────────
 const colors = {
-  primary:   'var(--brand-navy)',
-  secondary: 'var(--brand-navy-light)',
-  accent:    'var(--brand-red)',
+  primary:   'var(--brand-red)',
+  secondary: 'var(--brand-navy)',
+  accent:    'var(--app-accent)',
   bg:        'var(--app-page-bg)',
-  card: '#fff',
-  border: '#E8EDFF',
-  muted: '#94a3b8',
-  success: '#16a34a',
-  successBg: '#DCFCE7',
-  error: '#EF4444',
-  errorBg: '#FEF2F2',
+  card: 'color-mix(in srgb, #ffffff 92%, var(--app-accent-bg))',
+  border: 'color-mix(in srgb, var(--brand-navy) 14%, transparent)',
+  muted: 'var(--body-text-color, #64748b)',
+  success: 'color-mix(in srgb, var(--brand-red) 35%, #16a34a)',
+  successBg: 'color-mix(in srgb, var(--app-accent-bg) 65%, #DCFCE7)',
+  error: 'var(--brand-red-dark, #EF4444)',
+  errorBg: 'var(--brand-red-light, #FEF2F2)',
 };
 
 // ─── Small reusable components ─────────────────────────────────────────────
@@ -93,9 +94,9 @@ const inputStyle = {
   border: `1.5px solid ${colors.border}`,
   borderRadius: '12px',
   fontSize: '14px',
-  fontFamily: "'Inter', sans-serif",
-  color: '#1e293b',
-  background: '#F8F9FF',
+  fontFamily: "var(--font-family, 'Inter', sans-serif)",
+  color: 'var(--body-text-color, #1e293b)',
+  background: 'color-mix(in srgb, var(--app-accent-bg) 72%, #ffffff)',
   outline: 'none',
   boxSizing: 'border-box',
   transition: 'border-color 0.2s',
@@ -115,6 +116,7 @@ const EMPTY_FORM = {
 
 const OtherMemberships = ({ onNavigate }) => {
   const navigate = useNavigate();
+  useAppTheme();
 
   // ── state ──
   const [trustLinks, setTrustLinks] = useState([]);     // from member_trust_links
