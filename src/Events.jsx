@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Calendar, CheckCircle2, ChevronRight, Clock3, Home as HomeIcon, MapPin, Menu, Paperclip, RefreshCw, X, Zap } from 'lucide-react';
+import { Calendar, CheckCircle2, ChevronRight, Clock3, FileText, Home as HomeIcon, MapPin, Menu, Paperclip, X, Zap } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import Sidebar from './components/Sidebar';
 import { useAppTheme } from './context/ThemeContext';
@@ -18,6 +18,39 @@ const CATEGORY_META = {
   current: { label: 'Current', icon: Zap },
   upcoming: { label: 'Upcoming', icon: Clock3 },
   past: { label: 'Past', icon: CheckCircle2 },
+};
+
+const isLikelyUrl = (value) => /^https?:\/\//i.test(String(value || '').trim());
+
+const getAttachmentUrl = (attachment) => {
+  if (typeof attachment === 'string') return attachment.trim();
+  if (!attachment || typeof attachment !== 'object') return '';
+  return String(attachment.url || attachment.path || attachment.href || '').trim();
+};
+
+const getAttachmentLabel = (attachment, idx) => {
+  if (typeof attachment === 'object' && attachment) {
+    const label = String(attachment.name || attachment.title || '').trim();
+    if (label) return label;
+  }
+
+  const url = getAttachmentUrl(attachment);
+  if (!url) return `Attachment ${idx + 1}`;
+
+  try {
+    const parsed = new URL(url);
+    const last = (parsed.pathname || '').split('/').filter(Boolean).pop();
+    return decodeURIComponent(last || `Attachment ${idx + 1}`);
+  } catch {
+    return `Attachment ${idx + 1}`;
+  }
+};
+
+const getAttachmentType = (url) => {
+  const clean = String(url || '').toLowerCase().split('?')[0].split('#')[0];
+  if (/\.(png|jpe?g|gif|webp|bmp|svg)$/.test(clean)) return 'image';
+  if (/\.pdf$/.test(clean)) return 'pdf';
+  return 'other';
 };
 
 const Events = ({ onNavigate }) => {
@@ -285,7 +318,22 @@ const Events = ({ onNavigate }) => {
             const timeLabel = formatTimeRange(event.startTime, event.endTime);
             const isOngoing = activeTab === 'current';
             const isPast = activeTab === 'past';
-            const attachCount = Array.isArray(event.attachments) ? event.attachments.length : 0;
+            const rawAttachments = Array.isArray(event.attachments) ? event.attachments : [];
+            const normalizedAttachments = rawAttachments
+              .map((attachment, idx) => {
+                const url = getAttachmentUrl(attachment);
+                if (!isLikelyUrl(url)) return null;
+                return {
+                  id: `${event.id}_att_${idx}`,
+                  url,
+                  label: getAttachmentLabel(attachment, idx),
+                  type: getAttachmentType(url),
+                };
+              })
+              .filter(Boolean);
+            const attachCount = normalizedAttachments.length;
+            const firstAttachment = attachCount > 0 ? normalizedAttachments[0] : null;
+            const extraAttachmentCount = attachCount > 1 ? attachCount - 1 : 0;
 
             return (
               <button
@@ -333,6 +381,36 @@ const Events = ({ onNavigate }) => {
                     <div className="flex items-center gap-1"><MapPin className="h-3 w-3" style={{ color: theme.primary }} />{event.location}</div>
                   )}
                 </div>
+
+                {firstAttachment && (
+                  <div
+                    className="mb-3 rounded-xl overflow-hidden border"
+                    style={{ borderColor: 'color-mix(in srgb, var(--brand-navy) 12%, transparent)' }}
+                  >
+                    {firstAttachment.type === 'image' ? (
+                      <img
+                        src={firstAttachment.url}
+                        alt={firstAttachment.label}
+                        loading="lazy"
+                        className="w-full h-36 object-cover bg-slate-100"
+                      />
+                    ) : (
+                      <div
+                        className="h-16 px-3 flex items-center gap-2 text-xs font-semibold"
+                        style={{ background: 'color-mix(in srgb, var(--surface-color) 70%, var(--app-accent-bg))', color: 'var(--body-text-color)' }}
+                      >
+                        <FileText className="h-4 w-4 shrink-0" />
+                        <span>{firstAttachment.type === 'pdf' ? 'PDF Preview Available' : 'File Attachment'}</span>
+                      </div>
+                    )}
+                    <div
+                      className="px-3 py-2 text-[11px] font-medium truncate"
+                      style={{ color: 'var(--body-text-color)', background: 'var(--surface-color)' }}
+                    >
+                      {firstAttachment.label}{extraAttachmentCount > 0 ? ` +${extraAttachmentCount} more` : ''}
+                    </div>
+                  </div>
+                )}
 
                 <div className="pt-3 flex items-center justify-between gap-3" style={{ borderTop: '1px solid color-mix(in srgb, var(--brand-navy) 10%, transparent)' }}>
                   <div className="flex items-center gap-1.5 text-xs font-medium" style={{ color: 'var(--body-text-color)' }}>

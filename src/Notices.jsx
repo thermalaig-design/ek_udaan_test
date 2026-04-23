@@ -10,6 +10,8 @@ import {
   readNoticeboardProgress
 } from './services/noticeboardStore';
 
+const LEGACY_ATTACHMENT_SEPARATOR = '||::||';
+
 const formatDateRange = (startDate, endDate) => {
   const toLabel = (value) => {
     if (!value) return '';
@@ -31,6 +33,66 @@ const formatDateRange = (startDate, endDate) => {
   if (start) return `From ${start}`;
   if (end) return `Till ${end}`;
   return '';
+};
+
+const isLikelyUrl = (value) => /^https?:\/\//i.test(String(value || '').trim());
+const isDataUrl = (value) => /^data:/i.test(String(value || '').trim());
+
+const getAttachmentUrl = (attachment) => {
+  if (typeof attachment === 'string') {
+    const value = attachment.trim();
+    if (!value) return '';
+    if (value.includes(LEGACY_ATTACHMENT_SEPARATOR)) {
+      const [, payload = ''] = value.split(LEGACY_ATTACHMENT_SEPARATOR);
+      return String(payload || '').trim();
+    }
+    return value;
+  }
+  if (!attachment || typeof attachment !== 'object') return '';
+  const value = String(attachment.url || attachment.path || attachment.href || '').trim();
+  if (!value) return '';
+  if (value.includes(LEGACY_ATTACHMENT_SEPARATOR)) {
+    const [, payload = ''] = value.split(LEGACY_ATTACHMENT_SEPARATOR);
+    return String(payload || '').trim();
+  }
+  return value;
+};
+
+const getAttachmentLabel = (attachment, idx) => {
+  if (typeof attachment === 'object' && attachment) {
+    const label = String(attachment.name || attachment.title || '').trim();
+    if (label) return label;
+  }
+
+  if (typeof attachment === 'string' && attachment.includes(LEGACY_ATTACHMENT_SEPARATOR)) {
+    const [name = ''] = attachment.split(LEGACY_ATTACHMENT_SEPARATOR);
+    const cleanName = String(name || '').trim();
+    if (cleanName) return cleanName;
+  }
+
+  const url = getAttachmentUrl(attachment);
+  if (!url) return `Attachment ${idx + 1}`;
+  if (isDataUrl(url)) return `Attachment ${idx + 1}`;
+
+  try {
+    const parsed = new URL(url);
+    const last = (parsed.pathname || '').split('/').filter(Boolean).pop();
+    return decodeURIComponent(last || `Attachment ${idx + 1}`);
+  } catch {
+    return `Attachment ${idx + 1}`;
+  }
+};
+
+const getAttachmentType = (url) => {
+  const value = String(url || '').trim().toLowerCase();
+  if (!value) return 'other';
+  if (value.startsWith('data:image/')) return 'image';
+  if (value.startsWith('data:application/pdf')) return 'pdf';
+
+  const clean = value.split('?')[0].split('#')[0];
+  if (/\.(png|jpe?g|jfif|gif|webp|bmp|svg)$/.test(clean)) return 'image';
+  if (/\.pdf$/.test(clean)) return 'pdf';
+  return 'other';
 };
 
 const Notices = ({ onNavigate }) => {
@@ -264,6 +326,22 @@ const Notices = ({ onNavigate }) => {
           {notices.map((notice) => {
             const dateLabel = formatDateRange(notice.start_date, notice.end_date);
             const isVip = String(notice?.type || '').toLowerCase() === 'vip';
+            const rawAttachments = Array.isArray(notice.attachments) ? notice.attachments : [];
+            const normalizedAttachments = rawAttachments
+              .map((attachment, idx) => {
+                const url = getAttachmentUrl(attachment);
+                if (!url || (!isLikelyUrl(url) && !isDataUrl(url))) return null;
+                return {
+                  id: `${notice.id}_att_${idx}`,
+                  url,
+                  label: getAttachmentLabel(attachment, idx),
+                  type: getAttachmentType(url),
+                };
+              })
+              .filter(Boolean);
+            const attachCount = normalizedAttachments.length;
+            const firstAttachment = attachCount > 0 ? normalizedAttachments[0] : null;
+            const extraAttachmentCount = attachCount > 1 ? attachCount - 1 : 0;
             return (
             <button
               key={notice.id}
@@ -307,12 +385,55 @@ const Notices = ({ onNavigate }) => {
                 </div>
               )}
 
+              {firstAttachment && (
+                <div
+                  className="mb-3 rounded-xl overflow-hidden border"
+                  style={{ borderColor: 'color-mix(in srgb, var(--brand-navy) 12%, transparent)' }}
+                >
+                  {firstAttachment.type === 'image' ? (
+                    <div className="relative w-full h-36 bg-slate-100">
+                      <img
+                        src={firstAttachment.url}
+                        alt={firstAttachment.label}
+                        loading="lazy"
+                        className="w-full h-36 object-cover bg-slate-100"
+                        onError={(e) => {
+                          e.currentTarget.style.display = 'none';
+                          const fallback = e.currentTarget.nextElementSibling;
+                          if (fallback) fallback.style.display = 'flex';
+                        }}
+                      />
+                      <div
+                        className="hidden absolute inset-0 items-center justify-center px-3 text-xs font-semibold text-slate-600"
+                        style={{ background: 'color-mix(in srgb, var(--surface-color) 74%, var(--app-accent-bg))' }}
+                      >
+                        Image unavailable
+                      </div>
+                    </div>
+                  ) : (
+                    <div
+                      className="h-16 px-3 flex items-center gap-2 text-xs font-semibold"
+                      style={{ background: 'color-mix(in srgb, var(--surface-color) 70%, var(--app-accent-bg))', color: 'var(--body-text-color)' }}
+                    >
+                      <FileText className="h-4 w-4 shrink-0" />
+                      <span>{firstAttachment.type === 'pdf' ? 'PDF Preview Available' : 'File Attachment'}</span>
+                    </div>
+                  )}
+                  <div
+                    className="px-3 py-2 text-[11px] font-medium truncate"
+                    style={{ color: 'var(--body-text-color)', background: 'var(--surface-color)' }}
+                  >
+                    {firstAttachment.label}{extraAttachmentCount > 0 ? ` +${extraAttachmentCount} more` : ''}
+                  </div>
+                </div>
+              )}
+
               <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-3">
                 <div className="flex items-center gap-1.5 text-xs font-medium text-slate-500">
-                  {Array.isArray(notice.attachments) && notice.attachments.length > 0 && (
+                  {attachCount > 0 && (
                     <>
                       <Paperclip className="h-3.5 w-3.5" />
-                      {notice.attachments.length} Attachment{notice.attachments.length === 1 ? '' : 's'}
+                      {attachCount} Attachment{attachCount === 1 ? '' : 's'}
                     </>
                   )}
                 </div>

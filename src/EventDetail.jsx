@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { ArrowLeft, Calendar, Clock3, ExternalLink, MapPin, Paperclip, Tag } from 'lucide-react';
+import { ArrowLeft, Calendar, Clock3, ExternalLink, FileText, MapPin, Paperclip, Tag } from 'lucide-react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useAppTheme } from './context/ThemeContext';
 import { loadEventDetail } from './services/eventsStore';
@@ -20,6 +20,38 @@ const Section = ({ icon, label, children, theme }) => {
 
 const isUrl = (v) => {
   try { new URL(String(v)); return true; } catch { return false; }
+};
+
+const getAttachmentUrl = (attachment) => {
+  if (typeof attachment === 'string') return attachment.trim();
+  if (!attachment || typeof attachment !== 'object') return '';
+  return String(attachment.url || attachment.path || attachment.href || '').trim();
+};
+
+const getAttachmentLabel = (attachment, idx) => {
+  if (typeof attachment === 'object' && attachment) {
+    const label = String(attachment.name || attachment.title || '').trim();
+    if (label) return label;
+  }
+
+  const url = getAttachmentUrl(attachment);
+  if (!url) return `Attachment ${idx + 1}`;
+
+  try {
+    const parsed = new URL(url);
+    const last = (parsed.pathname || '').split('/').filter(Boolean).pop();
+    return decodeURIComponent(last || `Attachment ${idx + 1}`);
+  } catch {
+    return `Attachment ${idx + 1}`;
+  }
+};
+
+const getAttachmentType = (url) => {
+  const value = String(url || '').toLowerCase();
+  const clean = value.split('?')[0].split('#')[0];
+  if (/\.(png|jpe?g|gif|webp|bmp|svg)$/.test(clean)) return 'image';
+  if (/\.(pdf)$/.test(clean)) return 'pdf';
+  return 'other';
 };
 
 const EventDetail = () => {
@@ -57,6 +89,18 @@ const EventDetail = () => {
   const dateLabel = event ? formatEventDate(event.startEventDate, event.endEventDate) : '';
   const timeLabel = event ? formatTimeRange(event.startTime, event.endTime) : '';
   const attachments = Array.isArray(event?.attachments) ? event.attachments : [];
+  const normalizedAttachments = attachments
+    .map((att, idx) => {
+      const url = getAttachmentUrl(att);
+      if (!url || !isUrl(url)) return null;
+      return {
+        id: `${idx}-${url}`,
+        url,
+        label: getAttachmentLabel(att, idx),
+        type: getAttachmentType(url)
+      };
+    })
+    .filter(Boolean);
 
   return (
     <div className="min-h-screen pb-10" style={{ background: 'var(--page-bg, var(--app-page-bg))' }}>
@@ -140,30 +184,52 @@ const EventDetail = () => {
           )}
 
           {/* Attachments */}
-          {attachments.length > 0 && (
-            <Section icon={Paperclip} label={`Attachments (${attachments.length})`} theme={theme}>
-              <div className="space-y-2">
-                {attachments.map((att, i) => {
-                  const url = typeof att === 'string' ? att : att?.url || att?.path || null;
-                  const label = typeof att === 'string' ? `Attachment ${i + 1}` : (att?.name || att?.title || `Attachment ${i + 1}`);
-                  if (url && isUrl(url)) {
-                    return (
-                      <a key={i} href={url} target="_blank" rel="noopener noreferrer"
-                        className="flex items-center gap-2 text-sm font-medium rounded-xl p-2 transition-colors"
-                        style={{ color: theme.primary, background: `color-mix(in srgb, ${theme.primary} 8%, white)` }}
-                      >
-                        <ExternalLink className="h-3.5 w-3.5 shrink-0" />
-                        {label}
+          {normalizedAttachments.length > 0 && (
+            <Section icon={Paperclip} label={`Attachments (${normalizedAttachments.length})`} theme={theme}>
+              <div className="space-y-3">
+                {normalizedAttachments.map((attachment) => (
+                  <div
+                    key={attachment.id}
+                    className="rounded-xl border overflow-hidden"
+                    style={{ borderColor: 'color-mix(in srgb, var(--brand-navy) 12%, transparent)' }}
+                  >
+                    {attachment.type === 'image' && (
+                      <a href={attachment.url} target="_blank" rel="noopener noreferrer" className="block">
+                        <img src={attachment.url} alt={attachment.label} loading="lazy" className="w-full h-44 object-cover bg-slate-100" />
                       </a>
-                    );
-                  }
-                  return (
-                    <div key={i} className="flex items-center gap-2 text-sm font-medium text-gray-600 rounded-xl p-2 bg-slate-50">
-                      <Paperclip className="h-3.5 w-3.5 shrink-0 text-slate-400" />
-                      {url || label}
+                    )}
+
+                    {attachment.type === 'pdf' && (
+                      <div className="w-full h-56 bg-slate-50">
+                        <iframe
+                          title={attachment.label}
+                          src={attachment.url}
+                          className="w-full h-full border-0"
+                        />
+                      </div>
+                    )}
+
+                    {attachment.type === 'other' && (
+                      <div className="flex items-center gap-2 p-3 bg-slate-50 text-slate-700">
+                        <FileText className="h-4 w-4 shrink-0" />
+                        <span className="truncate flex-1">{attachment.label}</span>
+                      </div>
+                    )}
+
+                    <div className="px-3 py-2 text-xs font-medium flex items-center justify-between gap-2" style={{ color: 'var(--body-text-color)' }}>
+                      <span className="truncate">{attachment.label}</span>
+                      <a
+                        href={attachment.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1 font-semibold"
+                        style={{ color: theme.primary }}
+                      >
+                        Open <ExternalLink className="h-3.5 w-3.5" />
+                      </a>
                     </div>
-                  );
-                })}
+                  </div>
+                ))}
               </div>
             </Section>
           )}

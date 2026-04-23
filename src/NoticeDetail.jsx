@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, Calendar, FileText, Home as HomeIcon, Paperclip, Star } from 'lucide-react';
+import { ArrowLeft, Calendar, ExternalLink, FileText, Home as HomeIcon, Paperclip, Star } from 'lucide-react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useAppTheme } from './context/ThemeContext';
 import { getNoticeboardSnapshot, loadNoticeDetail } from './services/noticeboardStore';
@@ -27,10 +27,44 @@ const formatDateRange = (startDate, endDate) => {
 };
 
 const isLikelyUrl = (value) => /^https?:\/\//i.test(String(value || '').trim());
+const isDataUrl = (value) => /^data:/i.test(String(value || '').trim());
+const LEGACY_ATTACHMENT_SEPARATOR = '||::||';
+
+const getAttachmentUrl = (attachment) => {
+  if (typeof attachment === 'string') {
+    const value = attachment.trim();
+    if (!value) return '';
+    if (value.includes(LEGACY_ATTACHMENT_SEPARATOR)) {
+      const [, payload = ''] = value.split(LEGACY_ATTACHMENT_SEPARATOR);
+      return String(payload || '').trim();
+    }
+    return value;
+  }
+  if (!attachment || typeof attachment !== 'object') return '';
+  const value = String(attachment.url || attachment.path || attachment.href || '').trim();
+  if (!value) return '';
+  if (value.includes(LEGACY_ATTACHMENT_SEPARATOR)) {
+    const [, payload = ''] = value.split(LEGACY_ATTACHMENT_SEPARATOR);
+    return String(payload || '').trim();
+  }
+  return value;
+};
 
 const getAttachmentLabel = (attachment, idx) => {
-  const value = String(attachment || '').trim();
+  if (typeof attachment === 'object' && attachment) {
+    const label = String(attachment.name || attachment.title || '').trim();
+    if (label) return label;
+  }
+
+  if (typeof attachment === 'string' && attachment.includes(LEGACY_ATTACHMENT_SEPARATOR)) {
+    const [name = ''] = attachment.split(LEGACY_ATTACHMENT_SEPARATOR);
+    const cleanName = String(name || '').trim();
+    if (cleanName) return cleanName;
+  }
+
+  const value = getAttachmentUrl(attachment);
   if (!value) return `Attachment ${idx + 1}`;
+  if (isDataUrl(value)) return `Attachment ${idx + 1}`;
   if (!isLikelyUrl(value)) return value;
   try {
     const url = new URL(value);
@@ -39,6 +73,18 @@ const getAttachmentLabel = (attachment, idx) => {
   } catch {
     return `Attachment ${idx + 1}`;
   }
+};
+
+const getAttachmentType = (url) => {
+  const value = String(url || '').trim().toLowerCase();
+  if (!value) return 'other';
+  if (value.startsWith('data:image/')) return 'image';
+  if (value.startsWith('data:application/pdf')) return 'pdf';
+
+  const clean = value.split('?')[0].split('#')[0];
+  if (/\.(png|jpe?g|jfif|gif|webp|bmp|svg)$/.test(clean)) return 'image';
+  if (/\.pdf$/.test(clean)) return 'pdf';
+  return 'other';
 };
 
 const NoticeDetail = ({ onNavigate }) => {
@@ -94,6 +140,19 @@ const NoticeDetail = ({ onNavigate }) => {
 
   const isVip = String(notice?.type || '').toLowerCase() === 'vip';
   const dateLabel = formatDateRange(notice?.start_date, notice?.end_date);
+  const attachments = Array.isArray(notice?.attachments) ? notice.attachments : [];
+  const normalizedAttachments = attachments
+    .map((attachment, idx) => {
+      const url = getAttachmentUrl(attachment);
+      if (!url || (!isLikelyUrl(url) && !isDataUrl(url))) return null;
+      return {
+        id: `${notice?.id || 'notice'}_att_${idx}`,
+        url,
+        label: getAttachmentLabel(attachment, idx),
+        type: getAttachmentType(url),
+      };
+    })
+    .filter(Boolean);
 
   return (
     <div className="min-h-screen pb-8" style={{ background: 'var(--page-bg, var(--app-page-bg))' }}>
@@ -178,28 +237,68 @@ const NoticeDetail = ({ onNavigate }) => {
               {notice.description || 'No description provided.'}
             </p>
 
-            {Array.isArray(notice.attachments) && notice.attachments.length > 0 && (
+            {normalizedAttachments.length > 0 && (
               <div className="mt-6 border-t border-slate-100 pt-5">
-                <h3 className="text-sm font-semibold text-slate-800 mb-3">Attachments</h3>
-                <div className="space-y-2">
-                  {notice.attachments.map((attachment, idx) => (
-                    isLikelyUrl(attachment) ? (
-                      <a
-                        key={`${notice.id}_detail_att_${idx}`}
-                        href={attachment}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="w-full rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 px-3 py-2.5 text-sm font-medium text-slate-700 flex items-center gap-2"
-                      >
-                        <Paperclip className="h-4 w-4 shrink-0" />
-                        <span className="truncate">{getAttachmentLabel(attachment, idx)}</span>
-                      </a>
-                    ) : (
-                      <div key={`${notice.id}_detail_att_${idx}`} className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm font-medium text-slate-700 flex items-center gap-2">
-                        <Paperclip className="h-4 w-4 shrink-0" />
-                        <span className="truncate">{getAttachmentLabel(attachment, idx)}</span>
+                <h3 className="text-sm font-semibold text-slate-800 mb-3">Attachments ({normalizedAttachments.length})</h3>
+                <div className="space-y-3">
+                  {normalizedAttachments.map((attachment) => (
+                    <div
+                      key={attachment.id}
+                      className="rounded-xl border overflow-hidden"
+                      style={{ borderColor: 'color-mix(in srgb, var(--brand-navy) 12%, transparent)' }}
+                    >
+                      {attachment.type === 'image' && (
+                        <div className="relative w-full h-44 bg-slate-100">
+                          <img
+                            src={attachment.url}
+                            alt={attachment.label}
+                            loading="lazy"
+                            className="w-full h-44 object-cover bg-slate-100"
+                            onError={(e) => {
+                              e.currentTarget.style.display = 'none';
+                              const fallback = e.currentTarget.nextElementSibling;
+                              if (fallback) fallback.style.display = 'flex';
+                            }}
+                          />
+                          <div
+                            className="hidden absolute inset-0 items-center justify-center px-3 text-xs font-semibold text-slate-600"
+                            style={{ background: 'color-mix(in srgb, var(--surface-color) 74%, var(--app-accent-bg))' }}
+                          >
+                            Image unavailable
+                          </div>
+                        </div>
+                      )}
+
+                      {attachment.type === 'pdf' && (
+                        <div className="w-full h-56 bg-slate-50">
+                          <iframe
+                            title={attachment.label}
+                            src={attachment.url}
+                            className="w-full h-full border-0"
+                          />
+                        </div>
+                      )}
+
+                      {attachment.type === 'other' && (
+                        <div className="flex items-center gap-2 p-3 bg-slate-50 text-slate-700">
+                          <FileText className="h-4 w-4 shrink-0" />
+                          <span className="truncate flex-1">{attachment.label}</span>
+                        </div>
+                      )}
+
+                      <div className="px-3 py-2 text-xs font-medium flex items-center justify-between gap-2" style={{ color: 'var(--body-text-color)' }}>
+                        <span className="truncate">{attachment.label}</span>
+                        <a
+                          href={attachment.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 font-semibold"
+                          style={{ color: theme.primary }}
+                        >
+                          Open <ExternalLink className="h-3.5 w-3.5" />
+                        </a>
                       </div>
-                    )
+                    </div>
                   ))}
                 </div>
               </div>
