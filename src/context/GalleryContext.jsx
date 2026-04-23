@@ -1,13 +1,15 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { fetchGalleryFoldersPaginated, fetchPhotosByFolderPaginated } from '../services/galleryService';
 
-const GALLERY_CONTEXT_VERSION = 4;
-const GALLERY_CACHE_KEY = 'gallery_normalized_cache_v4';
+const GALLERY_CONTEXT_VERSION = 5;
+const GALLERY_CACHE_KEY_PREFIX = 'gallery_normalized_cache_v5';
+const LEGACY_GALLERY_CACHE_KEY = 'gallery_normalized_cache_v4';
 const ALBUMS_META_TTL_MS = 20 * 60 * 1000; // 20 mins
 const ALBUM_DETAIL_TTL_MS = 12 * 60 * 1000; // 12 mins
 const PAGE_TTL_MS = 12 * 60 * 1000; // 12 mins
 const IMAGES_PER_PAGE = 10;
 const ALBUMS_BATCH_SIZE = 12;
+const ENABLE_GALLERY_TRUST_DEBUG = import.meta.env.DEV || import.meta.env.VITE_GALLERY_DEBUG === 'true';
 
 const GalleryContext = createContext();
 
@@ -17,6 +19,21 @@ const getSelectedTrustId = () => {
   } catch {
     return null;
   }
+};
+
+const normalizeTrustId = (value) => {
+  if (value === null || value === undefined) return null;
+  const normalized = String(value).trim();
+  if (!normalized) return null;
+  if (normalized === 'null' || normalized === 'undefined') return null;
+  return normalized;
+};
+
+const resolveCacheKey = (trustId) => `${GALLERY_CACHE_KEY_PREFIX}:${normalizeTrustId(trustId) || 'none'}`;
+
+const logGalleryTrust = (...args) => {
+  if (!ENABLE_GALLERY_TRUST_DEBUG) return;
+  console.log('[Gallery][Trust]', ...args);
 };
 
 const isFresh = (timestamp, ttlMs) => {
@@ -37,7 +54,7 @@ const dedupeImagesById = (images = []) => {
 };
 
 const createEmptyStore = (trustId = null) => ({
-  trustId,
+  trustId: normalizeTrustId(trustId),
   albumsById: {},
   albumOrder: [],
   albumListPages: {},
@@ -53,43 +70,70 @@ const createEmptyStore = (trustId = null) => ({
   lastFetchTime: null,
 });
 
-const readPersistedStore = () => {
-  const trustId = getSelectedTrustId();
+const deserializeStore = (trustId, parsed) => {
+  if (!parsed?.data) return createEmptyStore(trustId);
+  const data = parsed.data;
+  return {
+    trustId: normalizeTrustId(trustId),
+    albumsById: data.albumsById || {},
+    albumOrder: Array.isArray(data.albumOrder) ? data.albumOrder : [],
+    albumListPages: data.albumListPages || {},
+    hasMoreAlbums: typeof data.hasMoreAlbums === 'boolean' ? data.hasMoreAlbums : true,
+    nextAlbumPage: Number(data.nextAlbumPage || 1),
+    albumDetails: data.albumDetails || {},
+    cacheTimestamps: data.cacheTimestamps || {
+      albumsMeta: null,
+      albumListPages: {},
+      albumDetails: {},
+      pages: {},
+    },
+    lastFetchTime: data.lastFetchTime || data.cacheTimestamps?.albumsMeta || null,
+  };
+};
+
+const readPersistedStoreForTrust = (requestedTrustId) => {
+  const trustId = normalizeTrustId(requestedTrustId);
   const empty = createEmptyStore(trustId);
   try {
-    const raw = localStorage.getItem(GALLERY_CACHE_KEY);
-    if (!raw) return empty;
-
-    const parsed = JSON.parse(raw);
-    if (
-      parsed?.version !== GALLERY_CONTEXT_VERSION ||
-      parsed?.trustId !== trustId ||
-      !parsed?.data
-    ) {
-      return empty;
+    const cacheKey = resolveCacheKey(trustId);
+    const raw = localStorage.getItem(cacheKey);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed?.version === GALLERY_CONTEXT_VERSION && normalizeTrustId(parsed?.trustId) === trustId) {
+        return deserializeStore(trustId, parsed);
+      }
     }
 
-    const data = parsed.data;
-    return {
-      trustId,
-      albumsById: data.albumsById || {},
-      albumOrder: Array.isArray(data.albumOrder) ? data.albumOrder : [],
-      albumListPages: data.albumListPages || {},
-      hasMoreAlbums: typeof data.hasMoreAlbums === 'boolean' ? data.hasMoreAlbums : true,
-      nextAlbumPage: Number(data.nextAlbumPage || 1),
-      albumDetails: data.albumDetails || {},
-      cacheTimestamps: data.cacheTimestamps || {
-        albumsMeta: null,
-        albumListPages: {},
-        albumDetails: {},
-        pages: {},
-      },
-      lastFetchTime: data.lastFetchTime || data.cacheTimestamps?.albumsMeta || null,
-    };
+    const legacyRaw = localStorage.getItem(LEGACY_GALLERY_CACHE_KEY);
+    if (legacyRaw) {
+      const legacyParsed = JSON.parse(legacyRaw);
+      if (
+        legacyParsed?.version === 4
+        && normalizeTrustId(legacyParsed?.trustId) === trustId
+        && legacyParsed?.data
+      ) {
+        const migrated = deserializeStore(trustId, legacyParsed);
+        try {
+          localStorage.setItem(cacheKey, JSON.stringify({
+            version: GALLERY_CONTEXT_VERSION,
+            trustId,
+            timestamp: Date.now(),
+            data: migrated,
+          }));
+        } catch {
+          // ignore migration persistence failures
+        }
+        return migrated;
+      }
+    }
+
+    return empty;
   } catch {
     return empty;
   }
 };
+
+const readPersistedStore = () => readPersistedStoreForTrust(getSelectedTrustId());
 
 export function GalleryProvider({ children }) {
   const bootstrap = readPersistedStore();
@@ -110,37 +154,83 @@ export function GalleryProvider({ children }) {
   const albumsPageInFlightRef = useRef(new Map());
   const pageInFlightRef = useRef(new Map());
 
-  const ensureTrustSynced = useCallback(() => {
-    const selectedTrustId = getSelectedTrustId();
-    if (selectedTrustId === trustId) return selectedTrustId;
+  const ensureTrustSynced = useCallback((incomingTrustId = null) => {
+    const selectedTrustId = normalizeTrustId(incomingTrustId || getSelectedTrustId());
+    const previousTrustId = normalizeTrustId(trustId);
+    if (selectedTrustId === previousTrustId) {
+      return {
+        trustId: selectedTrustId,
+        previousTrustId,
+        changed: false,
+        cacheHit: albumOrder.length > 0,
+        snapshot: {
+          trustId: selectedTrustId,
+          albumsById,
+          albumOrder,
+          albumListPages,
+          hasMoreAlbums,
+          nextAlbumPage,
+          albumDetails,
+          cacheTimestamps,
+          lastFetchTime,
+        },
+      };
+    }
 
-    setTrustId(selectedTrustId);
-    setAlbumsById({});
-    setAlbumOrder([]);
-    setAlbumListPages({});
-    setHasMoreAlbums(true);
-    setNextAlbumPage(1);
-    setAlbumDetails({});
-    setCacheTimestamps({
-      albumsMeta: null,
-      albumListPages: {},
-      albumDetails: {},
-      pages: {},
-    });
-    setLastFetchTime(null);
+    const snapshot = readPersistedStoreForTrust(selectedTrustId);
+    const cacheHit = Array.isArray(snapshot.albumOrder) && snapshot.albumOrder.length > 0;
+
+    setTrustId(snapshot.trustId);
+    setAlbumsById(snapshot.albumsById);
+    setAlbumOrder(snapshot.albumOrder);
+    setAlbumListPages(snapshot.albumListPages);
+    setHasMoreAlbums(snapshot.hasMoreAlbums);
+    setNextAlbumPage(snapshot.nextAlbumPage);
+    setAlbumDetails(snapshot.albumDetails);
+    setCacheTimestamps(snapshot.cacheTimestamps);
+    setLastFetchTime(snapshot.lastFetchTime);
     setError(null);
+    setIsLoading(!cacheHit);
+    setIsLoadingMoreAlbums(false);
     albumsPageInFlightRef.current.clear();
     pageInFlightRef.current.clear();
-    return selectedTrustId;
-  }, [trustId]);
+
+    logGalleryTrust('Trust switched', {
+      previousTrustId,
+      selectedTrustId,
+      cacheHit,
+      cachedAlbums: snapshot.albumOrder.length,
+      oldTrustDataCleared: true,
+    });
+
+    return {
+      trustId: selectedTrustId,
+      previousTrustId,
+      changed: true,
+      cacheHit,
+      snapshot,
+    };
+  }, [
+    albumDetails,
+    albumListPages,
+    albumOrder,
+    albumsById,
+    cacheTimestamps,
+    hasMoreAlbums,
+    lastFetchTime,
+    nextAlbumPage,
+    trustId,
+  ]);
 
   const persistStore = useCallback((nextStore) => {
     try {
+      const targetTrustId = normalizeTrustId(nextStore?.trustId);
+      if (!targetTrustId) return;
       localStorage.setItem(
-        GALLERY_CACHE_KEY,
+        resolveCacheKey(targetTrustId),
         JSON.stringify({
           version: GALLERY_CONTEXT_VERSION,
-          trustId: nextStore.trustId,
+          trustId: targetTrustId,
           timestamp: Date.now(),
           data: nextStore,
         })
@@ -186,20 +276,36 @@ export function GalleryProvider({ children }) {
 
   const loadAlbumsPage = useCallback(async (page, opts = {}) => {
     const safePage = Math.max(1, Number(page) || 1);
-    const activeTrustId = ensureTrustSynced();
+    const trustSync = ensureTrustSynced();
+    const activeTrustId = trustSync.trustId;
     if (!activeTrustId) {
       setIsLoading(false);
       setIsLoadingMoreAlbums(false);
       return { fromCache: true, page: safePage };
     }
 
+    const sourceAlbumListPages = trustSync.changed ? (trustSync.snapshot?.albumListPages || {}) : albumListPages;
+    const sourceCacheTimestamps = trustSync.changed ? (trustSync.snapshot?.cacheTimestamps || cacheTimestamps) : cacheTimestamps;
+    const sourceAlbumOrder = trustSync.changed ? (trustSync.snapshot?.albumOrder || []) : albumOrder;
+    const sourceAlbumsById = trustSync.changed ? (trustSync.snapshot?.albumsById || {}) : albumsById;
+    const sourceAlbumDetails = trustSync.changed ? (trustSync.snapshot?.albumDetails || {}) : albumDetails;
+
     const force = opts?.force === true;
     const replaceFirstPage = opts?.replaceFirstPage === true;
-    const cachedPageIds = albumListPages?.[safePage];
-    const pageTs = cacheTimestamps.albumListPages?.[safePage];
+    const cachedPageIds = sourceAlbumListPages?.[safePage];
+    const pageTs = sourceCacheTimestamps.albumListPages?.[safePage];
     const pageIsFresh = Array.isArray(cachedPageIds)
       && cachedPageIds.length > 0
       && isFresh(pageTs, ALBUMS_META_TTL_MS);
+
+    logGalleryTrust('Albums page request', {
+      selectedTrustId: normalizeTrustId(getSelectedTrustId()),
+      galleryTrustId: activeTrustId,
+      previousTrustId: trustSync.previousTrustId,
+      page: safePage,
+      cacheHit: pageIsFresh,
+      cacheMiss: !pageIsFresh,
+    });
 
     if (!force && pageIsFresh) {
       return { fromCache: true, page: safePage };
@@ -216,14 +322,14 @@ export function GalleryProvider({ children }) {
     }
 
     const run = (async () => {
-      const shouldShowInitialLoader = safePage === 1 && albumOrder.length === 0;
+      const shouldShowInitialLoader = safePage === 1 && sourceAlbumOrder.length === 0;
       if (shouldShowInitialLoader) setIsLoading(true);
       if (!shouldShowInitialLoader) setIsLoadingMoreAlbums(true);
       setError(null);
       try {
         const { folders, hasMore, previewsByFolder } = await fetchAlbumsMetaPage(activeTrustId, safePage);
         const pageAlbumIds = [];
-        const nextAlbumsById = { ...albumsById };
+        const nextAlbumsById = { ...sourceAlbumsById };
 
         folders.forEach((folder) => {
           const id = String(folder.id);
@@ -240,7 +346,7 @@ export function GalleryProvider({ children }) {
         });
 
         const nextAlbumOrder = (() => {
-          const existing = [...albumOrder];
+          const existing = [...sourceAlbumOrder];
           if (safePage === 1 && replaceFirstPage) {
             const remaining = existing.filter((id) => !pageAlbumIds.includes(id));
             return [...pageAlbumIds, ...remaining];
@@ -255,7 +361,7 @@ export function GalleryProvider({ children }) {
         })();
 
         const nextAlbumListPages = {
-          ...albumListPages,
+          ...sourceAlbumListPages,
           [safePage]: pageAlbumIds,
         };
 
@@ -263,11 +369,11 @@ export function GalleryProvider({ children }) {
         const nextTimestamps = {
           albumsMeta: now,
           albumListPages: {
-            ...(cacheTimestamps.albumListPages || {}),
+            ...(sourceCacheTimestamps.albumListPages || {}),
             [safePage]: now,
           },
-          albumDetails: { ...cacheTimestamps.albumDetails },
-          pages: { ...cacheTimestamps.pages },
+          albumDetails: { ...(sourceCacheTimestamps.albumDetails || {}) },
+          pages: { ...(sourceCacheTimestamps.pages || {}) },
         };
         const nextPage = hasMore ? (safePage + 1) : safePage;
 
@@ -278,7 +384,7 @@ export function GalleryProvider({ children }) {
           albumListPages: nextAlbumListPages,
           hasMoreAlbums: hasMore,
           nextAlbumPage: nextPage,
-          albumDetails,
+          albumDetails: sourceAlbumDetails,
           cacheTimestamps: nextTimestamps,
           lastFetchTime: now,
         };
@@ -292,6 +398,12 @@ export function GalleryProvider({ children }) {
         setLastFetchTime(now);
         setError(null);
         persistStore(nextStore);
+        logGalleryTrust('Albums fetch completed', {
+          trustId: activeTrustId,
+          page: safePage,
+          albumsReturned: pageAlbumIds.length,
+          hasMore,
+        });
         return { fromCache: false, page: safePage, hasMore };
       } catch (err) {
         setError(err?.message || 'Failed to load gallery');
@@ -311,6 +423,7 @@ export function GalleryProvider({ children }) {
     albumListPages,
     albumOrder,
     albumsById,
+    cacheTimestamps,
     cacheTimestamps.albumDetails,
     cacheTimestamps.albumListPages,
     cacheTimestamps.pages,
@@ -320,10 +433,24 @@ export function GalleryProvider({ children }) {
   ]);
 
   const ensureAlbumsLoaded = useCallback(async (opts = {}) => {
+    const trustSync = ensureTrustSynced();
+    const sourceAlbumListPages = trustSync.changed ? (trustSync.snapshot?.albumListPages || {}) : albumListPages;
+    const sourceCacheTimestamps = trustSync.changed ? (trustSync.snapshot?.cacheTimestamps || cacheTimestamps) : cacheTimestamps;
     const force = opts?.force === true;
-    const hasFirstPage = Array.isArray(albumListPages?.[1]) && albumListPages[1].length > 0;
-    const firstPageTs = cacheTimestamps.albumListPages?.[1];
+    const hasFirstPage = Array.isArray(sourceAlbumListPages?.[1]) && sourceAlbumListPages[1].length > 0;
+    const firstPageTs = sourceCacheTimestamps.albumListPages?.[1];
     const firstPageFresh = hasFirstPage && isFresh(firstPageTs, ALBUMS_META_TTL_MS);
+
+    logGalleryTrust('Ensure albums loaded', {
+      selectedTrustId: normalizeTrustId(getSelectedTrustId()),
+      galleryTrustId: trustSync.trustId,
+      previousTrustId: trustSync.previousTrustId,
+      cacheHit: firstPageFresh,
+      cacheMiss: !firstPageFresh,
+      hasFirstPage,
+      force,
+      changed: trustSync.changed,
+    });
 
     if (!force && hasFirstPage && firstPageFresh) {
       return { fromCache: true, page: 1 };
@@ -333,7 +460,7 @@ export function GalleryProvider({ children }) {
       return { fromCache: true, page: 1, stale: true };
     }
     return loadAlbumsPage(1, { force, replaceFirstPage: force && hasFirstPage });
-  }, [albumListPages, cacheTimestamps.albumListPages, loadAlbumsPage]);
+  }, [albumListPages, cacheTimestamps, ensureTrustSynced, loadAlbumsPage]);
 
   const loadMoreAlbums = useCallback(async () => {
     if (!hasMoreAlbums) return { done: true, fromCache: true };
@@ -354,16 +481,36 @@ export function GalleryProvider({ children }) {
       return { photos: [], totalPages: 0, totalCount: 0, perPage: IMAGES_PER_PAGE, fromCache: true };
     }
 
-    const activeTrustId = ensureTrustSynced();
-    const cachedPage = albumDetails?.[aid]?.pages?.[page] || null;
-    const pageTs = cacheTimestamps.pages?.[aid]?.[page];
+    const trustSync = ensureTrustSynced();
+    const activeTrustId = trustSync.trustId;
+    const sourceAlbumDetails = trustSync.changed ? (trustSync.snapshot?.albumDetails || {}) : albumDetails;
+    const sourceCacheTimestamps = trustSync.changed ? (trustSync.snapshot?.cacheTimestamps || cacheTimestamps) : cacheTimestamps;
+    const sourceAlbumsById = trustSync.changed ? (trustSync.snapshot?.albumsById || {}) : albumsById;
+    const sourceAlbumOrder = trustSync.changed ? (trustSync.snapshot?.albumOrder || []) : albumOrder;
+    const sourceAlbumListPages = trustSync.changed ? (trustSync.snapshot?.albumListPages || {}) : albumListPages;
+    const sourceHasMoreAlbums = trustSync.changed ? Boolean(trustSync.snapshot?.hasMoreAlbums) : hasMoreAlbums;
+    const sourceNextAlbumPage = trustSync.changed ? Number(trustSync.snapshot?.nextAlbumPage || 1) : nextAlbumPage;
+    const sourceLastFetchTime = trustSync.changed ? (trustSync.snapshot?.lastFetchTime || null) : lastFetchTime;
+
+    const cachedPage = sourceAlbumDetails?.[aid]?.pages?.[page] || null;
+    const pageTs = sourceCacheTimestamps.pages?.[aid]?.[page];
     const pageIsFresh = Boolean(cachedPage && pageTs && isFresh(pageTs, PAGE_TTL_MS));
+
+    logGalleryTrust('Album page request', {
+      selectedTrustId: normalizeTrustId(getSelectedTrustId()),
+      galleryTrustId: activeTrustId,
+      previousTrustId: trustSync.previousTrustId,
+      albumId: aid,
+      page,
+      cacheHit: pageIsFresh,
+      cacheMiss: !pageIsFresh,
+    });
 
     if (!opts?.force && pageIsFresh) {
       return {
         photos: cachedPage,
-        totalPages: albumDetails?.[aid]?.totalPages || 0,
-        totalCount: albumDetails?.[aid]?.totalCount || albumsById?.[aid]?.imageCount || 0,
+        totalPages: sourceAlbumDetails?.[aid]?.totalPages || 0,
+        totalCount: sourceAlbumDetails?.[aid]?.totalCount || sourceAlbumsById?.[aid]?.imageCount || 0,
         perPage: IMAGES_PER_PAGE,
         fromCache: true,
       };
@@ -373,8 +520,8 @@ export function GalleryProvider({ children }) {
       void getAlbumPage(aid, page, { force: true });
       return {
         photos: cachedPage,
-        totalPages: albumDetails?.[aid]?.totalPages || 0,
-        totalCount: albumDetails?.[aid]?.totalCount || albumsById?.[aid]?.imageCount || 0,
+        totalPages: sourceAlbumDetails?.[aid]?.totalPages || 0,
+        totalCount: sourceAlbumDetails?.[aid]?.totalCount || sourceAlbumsById?.[aid]?.imageCount || 0,
         perPage: IMAGES_PER_PAGE,
         fromCache: true,
         stale: true,
@@ -388,17 +535,17 @@ export function GalleryProvider({ children }) {
 
     const run = (async () => {
       const res = await fetchPhotosByFolderPaginated(aid, activeTrustId, page, IMAGES_PER_PAGE);
-      const previewImages = albumsById?.[aid]?.previewImages || [];
+      const previewImages = sourceAlbumsById?.[aid]?.previewImages || [];
       const pagePhotos = page === 1
         ? dedupeImagesById([...previewImages, ...(res?.photos || [])])
         : (res?.photos || []);
 
-      const current = albumDetails?.[aid] || { pages: {}, loadedPages: [] };
+      const current = sourceAlbumDetails?.[aid] || { pages: {}, loadedPages: [] };
       const loadedPages = Array.from(new Set([...(current.loadedPages || []), page])).sort((a, b) => a - b);
       const now = Date.now();
 
       const nextAlbumDetails = {
-        ...albumDetails,
+        ...sourceAlbumDetails,
         [aid]: {
           pages: {
             ...(current.pages || {}),
@@ -413,25 +560,25 @@ export function GalleryProvider({ children }) {
       };
 
       const nextAlbumsById = {
-        ...albumsById,
+        ...sourceAlbumsById,
         [aid]: {
-          ...(albumsById?.[aid] || { id: aid, name: 'Album', previewImages: [] }),
-          imageCount: Number(res?.totalCount || albumsById?.[aid]?.imageCount || 0),
-          previewImages: (albumsById?.[aid]?.previewImages || []).slice(0, 2),
+          ...(sourceAlbumsById?.[aid] || { id: aid, name: 'Album', previewImages: [] }),
+          imageCount: Number(res?.totalCount || sourceAlbumsById?.[aid]?.imageCount || 0),
+          previewImages: (sourceAlbumsById?.[aid]?.previewImages || []).slice(0, 2),
         },
       };
 
       const nextTimestamps = {
-        albumsMeta: cacheTimestamps.albumsMeta,
-        albumListPages: { ...(cacheTimestamps.albumListPages || {}) },
+        albumsMeta: sourceCacheTimestamps.albumsMeta,
+        albumListPages: { ...(sourceCacheTimestamps.albumListPages || {}) },
         albumDetails: {
-          ...(cacheTimestamps.albumDetails || {}),
+          ...(sourceCacheTimestamps.albumDetails || {}),
           [aid]: now,
         },
         pages: {
-          ...(cacheTimestamps.pages || {}),
+          ...(sourceCacheTimestamps.pages || {}),
           [aid]: {
-            ...(cacheTimestamps.pages?.[aid] || {}),
+            ...(sourceCacheTimestamps.pages?.[aid] || {}),
             [page]: now,
           },
         },
@@ -440,19 +587,25 @@ export function GalleryProvider({ children }) {
       const nextStore = {
         trustId: activeTrustId,
         albumsById: nextAlbumsById,
-        albumOrder,
-        albumListPages,
-        hasMoreAlbums,
-        nextAlbumPage,
+        albumOrder: sourceAlbumOrder,
+        albumListPages: sourceAlbumListPages,
+        hasMoreAlbums: sourceHasMoreAlbums,
+        nextAlbumPage: sourceNextAlbumPage,
         albumDetails: nextAlbumDetails,
         cacheTimestamps: nextTimestamps,
-        lastFetchTime: lastFetchTime || cacheTimestamps.albumsMeta || now,
+        lastFetchTime: sourceLastFetchTime || sourceCacheTimestamps.albumsMeta || now,
       };
 
       setAlbumsById(nextAlbumsById);
       setAlbumDetails(nextAlbumDetails);
       setCacheTimestamps(nextTimestamps);
       persistStore(nextStore);
+      logGalleryTrust('Album images fetched', {
+        trustId: activeTrustId,
+        albumId: aid,
+        page,
+        imagesReturned: Array.isArray(pagePhotos) ? pagePhotos.length : 0,
+      });
 
       return {
         photos: pagePhotos,
@@ -473,6 +626,7 @@ export function GalleryProvider({ children }) {
     albumListPages,
     albumOrder,
     albumsById,
+    cacheTimestamps,
     cacheTimestamps.albumDetails,
     cacheTimestamps.albumListPages,
     cacheTimestamps.albumsMeta,
@@ -485,12 +639,12 @@ export function GalleryProvider({ children }) {
   ]);
 
   const invalidateCache = useCallback(() => {
+    const activeTrustId = normalizeTrustId(getSelectedTrustId());
     try {
-      localStorage.removeItem(GALLERY_CACHE_KEY);
+      localStorage.removeItem(resolveCacheKey(activeTrustId));
     } catch {
       // ignore
     }
-    const activeTrustId = getSelectedTrustId();
     setTrustId(activeTrustId);
     setAlbumsById({});
     setAlbumOrder([]);
@@ -521,14 +675,41 @@ export function GalleryProvider({ children }) {
   }, [ensureAlbumsLoaded]);
 
   useEffect(() => {
-    const onStorage = (event) => {
-      if (event.key === 'selected_trust_id') {
-        ensureTrustSynced();
+    const handleTrustChangeEvent = (event) => {
+      const nextTrustId = normalizeTrustId(event?.detail?.trustId || getSelectedTrustId());
+      const previousTrustId = normalizeTrustId(trustId);
+      logGalleryTrust('Trust change event received', {
+        previousTrustId,
+        selectedTrustId: normalizeTrustId(getSelectedTrustId()),
+        eventTrustId: nextTrustId,
+      });
+      const sync = ensureTrustSynced(nextTrustId);
+      if (sync.trustId) {
+        void ensureAlbumsLoaded({ background: true });
       }
     };
+
+    const onStorage = (event) => {
+      if (event.key === 'selected_trust_id') {
+        const nextTrustId = normalizeTrustId(event?.newValue || getSelectedTrustId());
+        logGalleryTrust('Storage trust change detected', {
+          previousTrustId: normalizeTrustId(trustId),
+          selectedTrustId: normalizeTrustId(getSelectedTrustId()),
+          eventTrustId: nextTrustId,
+        });
+        const sync = ensureTrustSynced(nextTrustId);
+        if (sync.trustId) {
+          void ensureAlbumsLoaded({ background: true });
+        }
+      }
+    };
+    window.addEventListener('trust-changed', handleTrustChangeEvent);
     window.addEventListener('storage', onStorage);
-    return () => window.removeEventListener('storage', onStorage);
-  }, [ensureTrustSynced]);
+    return () => {
+      window.removeEventListener('trust-changed', handleTrustChangeEvent);
+      window.removeEventListener('storage', onStorage);
+    };
+  }, [ensureAlbumsLoaded, ensureTrustSynced, trustId]);
 
   const folders = useMemo(
     () => albumOrder

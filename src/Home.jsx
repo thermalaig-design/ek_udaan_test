@@ -62,14 +62,74 @@ const mergeUniqueTrusts = (...collections) => {
   return merged;
 };
 
+const readCachedTrustList = () => {
+  try {
+    const raw = localStorage.getItem('trust_list_cache');
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+};
+
+const mergeTrustsWithExistingVisuals = (incomingTrusts = [], existingTrusts = []) => {
+  const byId = new Map(
+    (existingTrusts || [])
+      .filter(Boolean)
+      .map((trust) => [String(trust?.id || '').trim(), trust])
+      .filter(([id]) => Boolean(id))
+  );
+
+  return (incomingTrusts || []).map((trust) => {
+    const id = String(trust?.id || '').trim();
+    if (!id) return trust;
+    const existing = byId.get(id);
+    if (!existing) return trust;
+    return {
+      ...trust,
+      name: trust?.name || existing?.name || null,
+      icon_url: trust?.icon_url || existing?.icon_url || null,
+      remark: trust?.remark || existing?.remark || null,
+    };
+  });
+};
+
+const TrustChipIcon = ({ iconUrl, altText }) => {
+  const [imgError, setImgError] = useState(false);
+
+  useEffect(() => {
+    setImgError(false);
+  }, [iconUrl]);
+
+  const src = String(iconUrl || '').trim();
+  const hasValidIcon = Boolean(src) && !imgError;
+
+  if (!hasValidIcon) {
+    return <Building2 className="h-4 w-4" style={{ color: '#64748B' }} />;
+  }
+
+  return (
+    <img
+      src={src}
+      alt={altText || 'Hospital'}
+      className="w-7 h-7 object-contain"
+      loading="eager"
+      decoding="async"
+      onError={() => setImgError(true)}
+    />
+  );
+};
+
 // Ensure default/base trust is always in the list
-const ensureDefaultTrustIncluded = (trustList, defaultTrust, baseAppId = 'b353d2ff-ec3b-4b90-a896-69f40662084e') => {
+const ensureDefaultTrustIncluded = (trustList, defaultTrust) => {
   if (!trustList || trustList.length === 0) {
     return defaultTrust ? [defaultTrust] : [];
   }
 
   // Check if default trust is already in the list by ID
-  const defaultId = String(defaultTrust?.id || baseAppId || '').trim();
+  const defaultId = String(defaultTrust?.id || '').trim();
+  if (!defaultId) return trustList;
   const hasDefault = trustList.some((t) => String(t?.id || '').trim() === defaultId);
 
   // If default trust is not here, add it to the beginning
@@ -166,8 +226,6 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
     } catch { /* ignore */ }
     return [];
   });
-  const [trustIconErrors, setTrustIconErrors] = useState({});
-
   const [defaultTrust, setDefaultTrust] = useState(() => {
     try {
       const cached = localStorage.getItem('default_trust_cache');
@@ -217,10 +275,10 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
   const hasLoadedMemberTrusts = useRef(false);
   const {
     carouselImages,
-    ensureAlbumsLoaded,
     isLoading: isGalleryMetaLoading,
     error: galleryError,
   } = useGalleryContext();
+  const [showGalleryLoader, setShowGalleryLoader] = useState(false);
 
   // Global app theme from central provider
   const theme = useAppTheme();
@@ -280,6 +338,17 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
       hardcodedNavbarOverrideDetected: false
     });
   }, [footerTheme, navbarTheme, selectedTrustId, theme]);
+
+  useEffect(() => {
+    if (!(isGalleryMetaLoading && carouselImages.length === 0)) {
+      setShowGalleryLoader(false);
+      return undefined;
+    }
+
+    // Prevent short loader flash during quick trust-switch cache/fetch swaps.
+    const timer = setTimeout(() => setShowGalleryLoader(true), 220);
+    return () => clearTimeout(timer);
+  }, [isGalleryMetaLoading, carouselImages.length]);
 
   const syncSponsorStoreSnapshot = (trustId) => {
     if (!trustId) {
@@ -499,6 +568,8 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
       
       // Ensure default trust is always included
       mergedTrusts = ensureDefaultTrustIncluded(mergedTrusts, defaultTrust);
+      // Preserve known icon_url/name from cache so trust chips don't flash placeholders.
+      mergedTrusts = mergeTrustsWithExistingVisuals(mergedTrusts, readCachedTrustList());
       
       setTrustList(mergedTrusts);
       try { localStorage.setItem('trust_list_cache', JSON.stringify(mergedTrusts)); } catch { /* ignore */ }
@@ -678,7 +749,8 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
         const primaryTrust = parsedUser?.primary_trust || uniqueTrusts.find((t) => t.is_active) || uniqueTrusts[0];
         const merged = mergeUniqueTrusts(uniqueTrusts);
         // Ensure default/base trust is always included
-        const withDefault = ensureDefaultTrustIncluded(merged, defaultTrust);
+        let withDefault = ensureDefaultTrustIncluded(merged, defaultTrust);
+        withDefault = mergeTrustsWithExistingVisuals(withDefault, readCachedTrustList());
         setTrustList(() => {
           // Cache full trust list so it appears instantly on next refresh
           try { localStorage.setItem('trust_list_cache', JSON.stringify(withDefault)); } catch { /* ignore */ }
@@ -788,9 +860,6 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
           normalizeTrustId(t.id) === normalizedId ? { ...t, ...freshTrust } : t
         ));
         if (freshTrust.name) localStorage.setItem('selected_trust_name', freshTrust.name);
-        window.dispatchEvent(new CustomEvent('trust-changed', { 
-          detail: { trustId: normalizedId, trustName: freshTrust.name || null } 
-        }));
       }
     } catch (err) {
       console.warn('Failed to refresh trust details:', err?.message);
@@ -1064,11 +1133,7 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
     return () => clearTimeout(timer);
   }, [currentSponsorTrustId, isSponsorsLoading, isCarouselReady, sponsors.length]);
 
-  // Gallery
-  useEffect(() => {
-    if (import.meta.env.VITE_DISABLE_GALLERY === 'true') return;
-    void ensureAlbumsLoaded({ background: true });
-  }, [ensureAlbumsLoaded, selectedTrustId, trustInfo?.id]);
+  // Gallery trust-sync and reload are handled centrally in GalleryContext.
 
   // Notifications
   useEffect(() => {
@@ -1710,9 +1775,6 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
             >
               {trustList.map((trust) => {
                 const isActive = normalizeTrustId(trust.id) === selectedTrustId;
-                const trustId = normalizeTrustId(trust?.id);
-                const iconUrl = String(trust?.icon_url || '').trim();
-                const hasValidIcon = Boolean(iconUrl) && !trustIconErrors[trustId];
                 return (
                   <button
                     key={trust.id || trust.name}
@@ -1726,18 +1788,10 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
                     }}
                     title={trust.name || 'Hospital'}
                   >
-                    {hasValidIcon
-                      ? <img
-                        src={iconUrl}
-                        alt={trust.name || 'Hospital'}
-                        className="w-7 h-7 object-contain"
-                        loading="lazy"
-                        onError={() => {
-                          if (!trustId) return;
-                          setTrustIconErrors((prev) => ({ ...prev, [trustId]: true }));
-                        }}
-                      />
-                      : <Building2 className="h-4 w-4" style={{ color: '#64748B' }} />}
+                    <TrustChipIcon
+                      iconUrl={trust?.icon_url}
+                      altText={trust?.name || 'Hospital'}
+                    />
                   </button>
                 );
               })}
@@ -1785,7 +1839,7 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
                 }}
               >
                 <div className="h-[3px]" style={{ background: `linear-gradient(90deg, ${theme.primary}, ${theme.secondary})` }} />
-                {(isGalleryMetaLoading && carouselImages.length === 0) ? (
+                {showGalleryLoader ? (
                   <div className="w-full h-[200px] flex items-center justify-center" style={{ background: theme.accentBg }}>
                     <div className="flex flex-col items-center gap-2">
                       <div className="w-8 h-8 rounded-full border-2 border-t-transparent animate-spin" style={{ borderColor: theme.primary, borderTopColor: 'transparent' }} />

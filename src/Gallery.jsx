@@ -100,6 +100,7 @@ export function Gallery({ onNavigate }) {
   const navigate = useNavigate();
   const theme = useAppTheme();
   const {
+    trustId,
     albumsById,
     albumOrder,
     albumDetails,
@@ -199,6 +200,21 @@ export function Gallery({ onNavigate }) {
 
   const totalPages = Math.max(0, Number(albumTotalPages || 0));
   const filteredImages = albumPageImages;
+
+  useEffect(() => {
+    setSelectedAlbumId(null);
+    setCurrentPage(1);
+    setAlbumPageImages([]);
+    setAlbumTotalPages(0);
+    setSelectedImage(null);
+    setIsPlaying(false);
+    if (import.meta.env.DEV || import.meta.env.VITE_GALLERY_DEBUG === 'true') {
+      // eslint-disable-next-line no-console
+      console.log('[Gallery][Trust] UI state reset on trust change', {
+        selectedTrustId: trustId || null,
+      });
+    }
+  }, [trustId]);
 
   const loadAlbumPage = useCallback(async (albumId, page, opts = {}) => {
     const aid = String(albumId || '');
