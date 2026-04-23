@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { ArrowLeft, Building2, Globe, Mail, MapPin, Phone, Star } from 'lucide-react';
 import { getCachedSponsorById, getCachedSponsorDetail, getSponsorDetail, readSelectedSponsorId } from './services/sponsorStore';
 import { useAppTheme } from './context/ThemeContext';
+import { getThemeToken } from './utils/themeUtils';
 
 const ASSOCIATION_LABEL = 'In Association With';
 
@@ -27,6 +28,30 @@ const buildHref = {
 const SponsorDetails = ({ onBack }) => {
   const selectedTrustId = localStorage.getItem('selected_trust_id') || '';
   const theme = useAppTheme();
+  const toRgba = (color, alpha = 1) => {
+    const safeAlpha = Number.isFinite(Number(alpha)) ? Math.max(0, Math.min(1, Number(alpha))) : 1;
+    const raw = String(color || '').trim();
+    const match = raw.match(/^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/);
+    if (!match) return raw || `rgba(0,0,0,${safeAlpha})`;
+    const hex = match[1].length === 3 ? match[1].split('').map((ch) => ch + ch).join('') : match[1];
+    const r = parseInt(hex.slice(0, 2), 16);
+    const g = parseInt(hex.slice(2, 4), 16);
+    const b = parseInt(hex.slice(4, 6), 16);
+    return `rgba(${r}, ${g}, ${b}, ${safeAlpha})`;
+  };
+  const headingColor = getThemeToken(theme, 'typography.heading_color', '#111827');
+  const bodyColor = getThemeToken(theme, 'typography.body_text_color', '#475569');
+  const sponsorTheme = {
+    bgColor: getThemeToken(theme, 'advertisement.bg_color', theme.accentBg || '#EEF2F7'),
+    bgOpacity: Number(getThemeToken(theme, 'advertisement.bg_opacity', 1)),
+    titleColor: getThemeToken(theme, 'advertisement.title_color', headingColor),
+    subtitleColor: getThemeToken(theme, 'advertisement.subtitle_color', bodyColor),
+    descriptionColor: getThemeToken(theme, 'advertisement.description_color', bodyColor),
+    badgeBgColor: getThemeToken(theme, 'advertisement.badge_bg_color', theme.accentBg || '#FFFFFF'),
+    badgeTextColor: getThemeToken(theme, 'advertisement.badge_text_color', theme.primary || '#334155'),
+    cardBorderColor: getThemeToken(theme, 'advertisement.card_border_color', theme.primary || '#64748B'),
+    cardShadowColor: getThemeToken(theme, 'advertisement.card_shadow_color', theme.secondary || '#0F172A')
+  };
 
   const [sponsorId] = useState(() => readSelectedSponsorId());
 
@@ -134,8 +159,8 @@ const SponsorDetails = ({ onBack }) => {
     return (
       <div className="min-h-screen flex items-center justify-center" style={{ background: 'var(--page-bg, var(--app-page-bg))' }}>
         <div className="text-center">
-          <div className="animate-spin rounded-full h-10 w-10 border-2 border-t-transparent mx-auto" style={{ borderColor: theme.primary, borderTopColor: 'transparent' }} />
-          <p className="mt-3 text-sm text-slate-500 font-medium">Loading sponsor details...</p>
+          <div className="animate-spin rounded-full h-10 w-10 border-2 border-t-transparent mx-auto" style={{ borderColor: sponsorTheme.badgeTextColor, borderTopColor: 'transparent' }} />
+          <p className="mt-3 text-sm font-medium" style={{ color: sponsorTheme.descriptionColor }}>Loading sponsor details...</p>
         </div>
       </div>
     );
@@ -144,13 +169,13 @@ const SponsorDetails = ({ onBack }) => {
   if (!data) {
     return (
       <div className="min-h-screen flex items-center justify-center px-5" style={{ background: 'var(--page-bg, var(--app-page-bg))' }}>
-        <div className="rounded-3xl bg-white border border-slate-200 p-6 max-w-sm w-full text-center shadow-sm">
-          <h2 className="text-lg font-bold text-slate-800">No sponsor selected</h2>
-          <p className="text-sm text-slate-500 mt-2">Please choose a sponsor from the list.</p>
+        <div className="rounded-3xl p-6 max-w-sm w-full text-center shadow-sm" style={{ background: toRgba(sponsorTheme.bgColor, sponsorTheme.bgOpacity), border: `1px solid ${sponsorTheme.cardBorderColor}` }}>
+          <h2 className="text-lg font-bold" style={{ color: sponsorTheme.titleColor }}>No sponsor selected</h2>
+          <p className="text-sm mt-2" style={{ color: sponsorTheme.descriptionColor }}>Please choose a sponsor from the list.</p>
           <button
             onClick={onBack}
             className="mt-4 px-4 py-2 rounded-xl text-sm font-semibold text-white"
-            style={{ background: `linear-gradient(135deg, ${theme.primary} 0%, ${theme.secondary} 100%)` }}
+            style={{ background: sponsorTheme.badgeBgColor, color: sponsorTheme.badgeTextColor }}
           >
             Go Back
           </button>
@@ -160,8 +185,8 @@ const SponsorDetails = ({ onBack }) => {
   }
 
   const iconByType = {
-    phone: <Phone className="h-4 w-4" style={{ color: theme.primary }} />,
-    email: <Mail className="h-4 w-4" style={{ color: theme.primary }} />,
+    phone: <Phone className="h-4 w-4" style={{ color: sponsorTheme.badgeTextColor }} />,
+    email: <Mail className="h-4 w-4" style={{ color: sponsorTheme.badgeTextColor }} />,
     whatsapp: <Phone className="h-4 w-4 text-emerald-500" />
   };
 
@@ -181,21 +206,21 @@ const SponsorDetails = ({ onBack }) => {
         <div
           className="rounded-3xl p-[1px]"
           style={{
-            background: `linear-gradient(130deg, ${theme.primary}40 0%, ${theme.secondary}2A 50%, ${theme.primary}2C 100%)`,
-            boxShadow: `0 14px 30px ${theme.secondary}1A`,
+            background: sponsorTheme.cardBorderColor,
+            boxShadow: `0 14px 30px ${sponsorTheme.cardShadowColor}55`,
           }}
         >
-          <div className="relative rounded-3xl backdrop-blur overflow-hidden" style={{ background: 'color-mix(in srgb, #ffffff 95%, var(--app-accent-bg))' }}>
-            <div className="absolute -top-14 -right-10 h-28 w-28 rounded-full pointer-events-none" style={{ background: `radial-gradient(circle, ${theme.primary}4A 0%, transparent 70%)` }} />
-            <div className="absolute -bottom-12 -left-10 h-24 w-24 rounded-full pointer-events-none" style={{ background: `radial-gradient(circle, ${theme.secondary}38 0%, transparent 72%)` }} />
+          <div className="relative rounded-3xl backdrop-blur overflow-hidden" style={{ background: toRgba(sponsorTheme.bgColor, sponsorTheme.bgOpacity) }}>
+            <div className="absolute -top-14 -right-10 h-28 w-28 rounded-full pointer-events-none" style={{ background: `radial-gradient(circle, ${sponsorTheme.cardShadowColor}4A 0%, transparent 70%)` }} />
+            <div className="absolute -bottom-12 -left-10 h-24 w-24 rounded-full pointer-events-none" style={{ background: `radial-gradient(circle, ${sponsorTheme.cardBorderColor}38 0%, transparent 72%)` }} />
 
-            <div className="relative px-4 pt-5 pb-4 border-b border-slate-100">
+            <div className="relative px-4 pt-5 pb-4 border-b" style={{ borderBottomColor: sponsorTheme.cardBorderColor }}>
               <div className="flex flex-col items-center text-center">
                 <div
                   className="w-32 h-32 rounded-[1.8rem] p-[3px] shadow-sm"
-                  style={{ background: `linear-gradient(145deg, ${theme.primary}66, ${theme.secondary}55)` }}
+                  style={{ background: `linear-gradient(145deg, ${sponsorTheme.cardBorderColor}66, ${sponsorTheme.cardShadowColor}55)` }}
                 >
-                  <div className="w-full h-full rounded-[1.65rem] overflow-hidden bg-slate-50 flex items-center justify-center">
+                  <div className="w-full h-full rounded-[1.65rem] overflow-hidden flex items-center justify-center" style={{ background: sponsorTheme.badgeBgColor }}>
                     {data.photo ? (
                       <img
                         src={data.photo}
@@ -203,27 +228,27 @@ const SponsorDetails = ({ onBack }) => {
                         className="w-full h-full object-contain"
                       />
                     ) : (
-                      <Star className="h-10 w-10" style={{ color: theme.primary }} />
+                      <Star className="h-10 w-10" style={{ color: sponsorTheme.badgeTextColor }} />
                     )}
                   </div>
                 </div>
 
                 <div className="mt-4 w-full">
                   {data.name ? (
-                    <h2 className="text-[28px] leading-tight font-extrabold break-words" style={{ color: theme.secondary }}>
+                    <h2 className="text-[28px] leading-tight font-extrabold break-words" style={{ color: sponsorTheme.titleColor }}>
                       {data.name}
                     </h2>
                   ) : null}
                   {data.position ? (
-                    <p className="mt-1 text-base font-semibold break-words" style={{ color: 'var(--body-text-color)' }}>{data.position}</p>
+                    <p className="mt-1 text-base font-semibold break-words" style={{ color: sponsorTheme.subtitleColor }}>{data.position}</p>
                   ) : null}
                   {data.position2 ? (
-                    <p className="mt-1 text-sm font-medium break-words" style={{ color: 'var(--body-text-color)' }}>{data.position2}</p>
+                    <p className="mt-1 text-sm font-medium break-words" style={{ color: sponsorTheme.subtitleColor }}>{data.position2}</p>
                   ) : null}
                   {data.company ? (
                     <div className="mt-2 inline-flex max-w-full items-start justify-center gap-1.5">
-                      <Building2 className="h-4 w-4 flex-shrink-0 mt-0.5" style={{ color: 'var(--body-text-color)' }} />
-                      <p className="text-sm font-semibold break-words text-left" style={{ color: 'var(--body-text-color)' }}>{data.company}</p>
+                      <Building2 className="h-4 w-4 flex-shrink-0 mt-0.5" style={{ color: sponsorTheme.subtitleColor }} />
+                      <p className="text-sm font-semibold break-words text-left" style={{ color: sponsorTheme.subtitleColor }}>{data.company}</p>
                     </div>
                   ) : null}
                 </div>
@@ -232,16 +257,16 @@ const SponsorDetails = ({ onBack }) => {
 
             <div className="px-4 py-4 space-y-3">
               {data.about ? (
-                <div className="rounded-2xl border border-slate-200 bg-white p-3.5">
-                  <p className="text-[11px] uppercase tracking-[0.14em] font-bold mb-1" style={{ color: theme.primary }}>About</p>
-                  <p className="text-sm leading-relaxed text-slate-700">{data.about}</p>
+                <div className="rounded-2xl border p-3.5" style={{ background: toRgba(sponsorTheme.bgColor, Math.max(0.45, sponsorTheme.bgOpacity * 0.85)), borderColor: sponsorTheme.cardBorderColor }}>
+                  <p className="text-[11px] uppercase tracking-[0.14em] font-bold mb-1" style={{ color: sponsorTheme.badgeTextColor }}>About</p>
+                  <p className="text-sm leading-relaxed" style={{ color: sponsorTheme.descriptionColor }}>{data.about}</p>
                 </div>
               ) : null}
 
               {data.contacts.length > 0 ? (
-                <div className="rounded-2xl border border-slate-200 bg-white p-3.5">
-                  <p className="text-[11px] uppercase tracking-[0.14em] font-bold mb-2" style={{ color: theme.primary }}>Contact Details</p>
-                  <div className="space-y-2 text-sm text-slate-700">
+                <div className="rounded-2xl border p-3.5" style={{ background: toRgba(sponsorTheme.bgColor, Math.max(0.45, sponsorTheme.bgOpacity * 0.85)), borderColor: sponsorTheme.cardBorderColor }}>
+                  <p className="text-[11px] uppercase tracking-[0.14em] font-bold mb-2" style={{ color: sponsorTheme.badgeTextColor }}>Contact Details</p>
+                  <div className="space-y-2 text-sm" style={{ color: sponsorTheme.descriptionColor }}>
                     {data.contacts.map((item, idx) => {
                       const href = buildHref[item.type](item.value);
                       if (!href) return null;
@@ -249,7 +274,7 @@ const SponsorDetails = ({ onBack }) => {
                         <div key={`${item.label}-${idx}`} className="flex items-start gap-2">
                           <span className="mt-0.5">{iconByType[item.type]}</span>
                           <div className="min-w-0">
-                            <p className="text-[11px] text-slate-400 font-semibold">{item.label}</p>
+                            <p className="text-[11px] font-semibold" style={{ color: sponsorTheme.subtitleColor }}>{item.label}</p>
                             <a href={href} target={item.type === 'whatsapp' ? '_blank' : undefined} rel={item.type === 'whatsapp' ? 'noreferrer' : undefined} className="break-all underline underline-offset-2">
                               {item.value}
                             </a>
@@ -262,14 +287,14 @@ const SponsorDetails = ({ onBack }) => {
               ) : null}
 
               {data.addresses.length > 0 ? (
-                <div className="rounded-2xl border border-slate-200 bg-white p-3.5">
-                  <p className="text-[11px] uppercase tracking-[0.14em] font-bold mb-2" style={{ color: theme.primary }}>Address</p>
-                  <div className="space-y-1.5 text-sm text-slate-700">
+                <div className="rounded-2xl border p-3.5" style={{ background: toRgba(sponsorTheme.bgColor, Math.max(0.45, sponsorTheme.bgOpacity * 0.85)), borderColor: sponsorTheme.cardBorderColor }}>
+                  <p className="text-[11px] uppercase tracking-[0.14em] font-bold mb-2" style={{ color: sponsorTheme.badgeTextColor }}>Address</p>
+                  <div className="space-y-1.5 text-sm" style={{ color: sponsorTheme.descriptionColor }}>
                     {data.addresses.map((item, idx) => (
                       <div key={`${item.label}-${idx}`} className="flex items-start gap-2">
-                        <MapPin className="h-4 w-4 mt-0.5" style={{ color: theme.primary }} />
+                        <MapPin className="h-4 w-4 mt-0.5" style={{ color: sponsorTheme.badgeTextColor }} />
                         <div className="min-w-0">
-                          <p className="text-[11px] text-slate-400 font-semibold">{item.label}</p>
+                          <p className="text-[11px] font-semibold" style={{ color: sponsorTheme.subtitleColor }}>{item.label}</p>
                           <p>{item.value}</p>
                         </div>
                       </div>
@@ -279,17 +304,17 @@ const SponsorDetails = ({ onBack }) => {
               ) : null}
 
               {data.links.length > 0 ? (
-                <div className="rounded-2xl border border-slate-200 bg-white p-3.5">
-                  <p className="text-[11px] uppercase tracking-[0.14em] font-bold mb-2" style={{ color: theme.primary }}>Online Links</p>
-                  <div className="space-y-2 text-sm text-slate-700">
+                <div className="rounded-2xl border p-3.5" style={{ background: toRgba(sponsorTheme.bgColor, Math.max(0.45, sponsorTheme.bgOpacity * 0.85)), borderColor: sponsorTheme.cardBorderColor }}>
+                  <p className="text-[11px] uppercase tracking-[0.14em] font-bold mb-2" style={{ color: sponsorTheme.badgeTextColor }}>Online Links</p>
+                  <div className="space-y-2 text-sm" style={{ color: sponsorTheme.descriptionColor }}>
                     {data.links.map((item) => {
                       const href = buildHref.url(item.value);
                       if (!href) return null;
                       return (
                         <div key={item.label} className="flex items-start gap-2">
-                          <Globe className="h-4 w-4 mt-0.5" style={{ color: theme.primary }} />
+                          <Globe className="h-4 w-4 mt-0.5" style={{ color: sponsorTheme.badgeTextColor }} />
                           <div className="min-w-0">
-                            <p className="text-[11px] text-slate-400 font-semibold">{item.label}</p>
+                            <p className="text-[11px] font-semibold" style={{ color: sponsorTheme.subtitleColor }}>{item.label}</p>
                             <a href={href} target="_blank" rel="noreferrer" className="break-all underline underline-offset-2">
                               {item.value}
                             </a>
@@ -302,8 +327,8 @@ const SponsorDetails = ({ onBack }) => {
               ) : null}
 
               {data.coPartner ? (
-                <div className="rounded-2xl border border-slate-200 bg-white p-3.5">
-                  <p className="text-sm text-slate-700 font-medium">{ASSOCIATION_LABEL}: {data.coPartner}</p>
+                <div className="rounded-2xl border p-3.5" style={{ background: toRgba(sponsorTheme.bgColor, Math.max(0.45, sponsorTheme.bgOpacity * 0.85)), borderColor: sponsorTheme.cardBorderColor }}>
+                  <p className="text-sm font-medium" style={{ color: sponsorTheme.descriptionColor }}>{ASSOCIATION_LABEL}: {data.coPartner}</p>
                 </div>
               ) : null}
             </div>

@@ -22,7 +22,7 @@ const TTL_LIST_PAGE_MS = 15 * 60 * 1000;
 const TTL_DETAIL_MS = 12 * 60 * 1000;
 
 export const sponsorConfig = {
-  CAROUSEL_BATCH_SIZE: 3,
+  CAROUSEL_BATCH_SIZE: 6,
   LIST_PAGE_SIZE: 10,
   CAROUSEL_SLIDE_SECONDS: 5
 };
@@ -158,7 +158,7 @@ function readSponsorObjectsForIds(trustId, ids) {
   return (ids || []).map((id) => byId[String(id)]).filter(Boolean);
 }
 
-function mergeByIdAndAppendOrder(trustId, sponsorList) {
+export function mergeByIdAndAppendOrder(trustId, sponsorList) {
   const byId = readSponsorsByIdMap(trustId);
   const order = readSponsorOrderIds(trustId);
   const orderSet = new Set(order.map(String));
@@ -449,8 +449,11 @@ export async function getListPage({ trustId, page = 1, pageSize = sponsorConfig.
   const pageNo = Number(page) || 1;
   const limit = Number(pageSize) || sponsorConfig.LIST_PAGE_SIZE;
   const cached = getCachedListPage(trustId, pageNo);
-  if (cached.sponsors.length > 0 && cached.isFresh) {
-    return { sponsors: cached.sponsors, hasMore: cached.sponsors.length === limit };
+
+  // Only use cache if it's fresh AND has at least as many items as the page size.
+  // If cached count < limit, the cache may be stale/partial — re-fetch from API.
+  if (cached.sponsors.length >= limit && cached.isFresh) {
+    return { sponsors: cached.sponsors, hasMore: true };
   }
 
   const res = await getSponsors(trustId, null, { page: pageNo, limit, view: 'list' });

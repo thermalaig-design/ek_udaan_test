@@ -7,7 +7,7 @@ import {
 } from 'lucide-react';
 import Sidebar from './components/Sidebar';
 import { getAllElectedMembers, getProfile, saveProfile } from './services/api';
-import { useAppTheme } from './context/ThemeContext';
+import { useAppTheme, useThemeToken } from './context/ThemeContext';
 
 // Classy input field — label on top, styled bordered input
 const RowField = ({ label, type = 'text', value, onChange, placeholder, disabled = false, icon: Icon }) => (
@@ -85,6 +85,7 @@ const SectionHeader = ({ title, color = 'bg-indigo-500' }) => (
 
 const Profile = ({ onNavigate, onProfileUpdate }) => {
   const theme = useAppTheme();
+  const navbarTextColor = useThemeToken('navbar.text_color', '#f7f7f7');
   // Check if user is a registered member
   const isRegisteredMember = (() => {
     try {
@@ -129,6 +130,18 @@ const Profile = ({ onNavigate, onProfileUpdate }) => {
   const [photoPreview, setPhotoPreview] = useState(null);
 
   const set = (field) => (val) => setProfileData(prev => ({ ...prev, [field]: val }));
+
+  useEffect(() => {
+    if (!import.meta.env.DEV) return;
+    console.log('[NavbarText][Profile]', {
+      selectedTrustId: localStorage.getItem('selected_trust_id') || null,
+      templateId: theme?.templateId || null,
+      resolvedNavbarTextColor: navbarTextColor,
+      finalAppliedNavbarTextColor: navbarTextColor,
+      source: theme?.themeLoadSource || 'unknown',
+      previouslyHardcodedOverridesRemoved: ['Menu text-white', 'Title text-white', 'Home icon text-white']
+    });
+  }, [navbarTextColor, theme?.templateId, theme?.themeLoadSource]);
 
   // Detect unsaved changes
   useEffect(() => {
@@ -375,14 +388,18 @@ const Profile = ({ onNavigate, onProfileUpdate }) => {
       {/* Navbar - Brand */}
       <div
         className="px-4 py-4 flex items-center justify-between sticky top-0 z-50 shadow-md"
-        style={{ background: `linear-gradient(135deg, var(--brand-red) 0%, var(--brand-red-dark) 35%, var(--brand-navy) 100%)`, paddingTop: 'max(env(safe-area-inset-top, 0px), 16px)' }}
+        style={{
+          background: `linear-gradient(135deg, var(--brand-red) 0%, var(--brand-red-dark) 35%, var(--brand-navy) 100%)`,
+          paddingTop: 'max(env(safe-area-inset-top, 0px), 16px)',
+          color: navbarTextColor
+        }}
       >
-        <button onClick={() => setIsMenuOpen(!isMenuOpen)} className="p-2 rounded-xl hover:bg-white/10 transition-colors">
-          {isMenuOpen ? <X className="h-6 w-6 text-white" /> : <Menu className="h-6 w-6 text-white" />}
+        <button onClick={() => setIsMenuOpen(!isMenuOpen)} className="p-2 rounded-xl hover:bg-white/10 transition-colors" style={{ color: navbarTextColor }}>
+          {isMenuOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
         </button>
-        <h1 className="text-base font-bold text-white tracking-wide">Profile</h1>
-        <button onClick={() => handleNavigate('home')} className="p-2 rounded-xl hover:bg-white/10 transition-colors">
-          <HomeIcon className="h-5 w-5 text-white" />
+        <h1 className="text-base font-bold tracking-wide" style={{ color: navbarTextColor }}>Profile</h1>
+        <button onClick={() => handleNavigate('home')} className="p-2 rounded-xl hover:bg-white/10 transition-colors" style={{ color: navbarTextColor }}>
+          <HomeIcon className="h-5 w-5" />
         </button>
       </div>
 

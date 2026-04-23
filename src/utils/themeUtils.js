@@ -32,6 +32,32 @@ const readConfigToken = (config, path) => {
   return hasTokenValue(value) ? value : undefined;
 };
 
+const readRawThemeConfigToken = (theme, path) => {
+  const selectedConfig = theme?.selectedThemeConfigRaw || null;
+  const baseConfig = theme?.baseThemeConfigRaw || null;
+
+  const selectedValue = readConfigToken(selectedConfig, path);
+  if (selectedValue !== undefined) {
+    return {
+      value: selectedValue,
+      source: `selected.${path}`
+    };
+  }
+
+  const baseValue = readConfigToken(baseConfig, path);
+  if (baseValue !== undefined) {
+    return {
+      value: baseValue,
+      source: `base.${path}`
+    };
+  }
+
+  return {
+    value: undefined,
+    source: null
+  };
+};
+
 const deepMerge = (base, override) => {
   if (!isPlainObject(base)) return isPlainObject(override) ? { ...override } : base;
   if (!isPlainObject(override)) return { ...base };
@@ -108,7 +134,35 @@ export const DEFAULT_THEME_CONFIG = {
     }
   },
   app_buttons: { bg_color_1: '#4B5563', bg_color_2: null, icon_color: '#ffffff', text_color: '#ffffff', gradient_type: 'none' },
-  advertisement: { bg_color: '#EEF2F7', bg_opacity: 1, text_color: '#1F2937' },
+  advertisement: {
+    bg_color: '#EEF2F7',
+    bg_color_1: '#EEF2F7',
+    bg_color_2: '#E2E8F0',
+    bg_opacity: 1,
+    gradient_type: 'linear',
+    gradient_angle: 135,
+    text_color: '#1F2937',
+    title_color: '#1F2937',
+    subtitle_color: '#475569',
+    description_color: '#64748B',
+    border_color_1: '#4B5563',
+    border_color_2: '#1F2937',
+    card_bg_color: '#FFFFFF',
+    card_bg_opacity: 0.93,
+    badge_bg_color: '#E2E8F0',
+    badge_text_color: '#4B5563',
+    badge_dot_color: '#4B5563',
+    pattern_color: '#E2E8F0',
+    glow_color_1: '#4B5563',
+    glow_color_2: '#1F2937',
+    photo_ring_color_1: '#4B5563',
+    photo_ring_color_2: '#1F2937',
+    indicator_active_color_1: '#4B5563',
+    indicator_active_color_2: '#1F2937',
+    indicator_inactive_color: '#94A3B8',
+    empty_text_color: '#64748B',
+    skeleton_color: '#E2E8F0'
+  },
   quick_actions: { bg_color_1: '#1F2937', bg_color_2: null, text_color: '#ffffff', gradient_type: 'none', icon_bg_color: '#ffffff' }
 };
 
@@ -251,8 +305,6 @@ export const buildThemeFromTemplate = ({
   const quickActions = themeConfig.quick_actions || {};
   const appButtons = themeConfig.app_buttons || {};
   const footer = themeConfig.footer || {};
-  const advertisement = themeConfig.advertisement || {};
-
   const primary = themeConfig.primary_color
     || quickActions.bg_color_1
     || appButtons.bg_color_1
@@ -263,7 +315,6 @@ export const buildThemeFromTemplate = ({
     || footer.bg_color_1
     || DEFAULT_THEME.secondary;
   const accent = themeConfig.accent_color
-    || advertisement.bg_color
     || pageBg.bg_color_2
     || DEFAULT_THEME.accent;
   const accentBg = themeConfig.accent_bg
@@ -311,9 +362,6 @@ export const getThemeToken = (theme, path, fallback, baseTheme = DEFAULT_THEME) 
   const selectedConfigValue = readConfigToken(safeTheme?.selectedThemeConfigRaw, configPath);
   if (selectedConfigValue !== undefined) return selectedConfigValue;
 
-  const baseConfigValue = readConfigToken(safeTheme?.baseThemeConfigRaw, configPath);
-  if (baseConfigValue !== undefined) return baseConfigValue;
-
   const resolveFromTheme = (targetTheme) => {
     if (!targetTheme) return undefined;
     const configValue = readPath(targetTheme?.themeConfig, configPath);
@@ -337,6 +385,9 @@ export const getThemeToken = (theme, path, fallback, baseTheme = DEFAULT_THEME) 
 
   const currentValue = resolveFromTheme(safeTheme);
   if (currentValue !== undefined) return currentValue;
+
+  const baseConfigValue = readConfigToken(safeTheme?.baseThemeConfigRaw, configPath);
+  if (baseConfigValue !== undefined) return baseConfigValue;
 
   const baseValue = resolveFromTheme(baseTheme);
   if (baseValue !== undefined) return baseValue;
@@ -437,16 +488,11 @@ export const getNavbarThemeStyles = (theme, baseTheme = DEFAULT_THEME) => {
 };
 
 export const resolveNavbarTextColor = (theme, baseTheme = DEFAULT_THEME) => {
-  const navbarTextOverride = getThemeToken(
-    theme,
-    'typography.component_overrides.navbar_text',
-    null,
-    baseTheme
-  );
-  if (hasTokenValue(navbarTextOverride)) {
+  const explicitNavbarText = readRawThemeConfigToken(theme, 'navbar.text_color');
+  if (hasTokenValue(explicitNavbarText.value)) {
     return {
-      color: navbarTextOverride,
-      source: 'typography.component_overrides.navbar_text'
+      color: explicitNavbarText.value,
+      source: explicitNavbarText.source
     };
   }
 
@@ -582,6 +628,12 @@ export const applyThemeCssVariables = (theme, root = document.documentElement) =
   const footerTheme = getFooterThemeStyles(safeTheme, DEFAULT_THEME);
   const quickActionsTheme = getQuickActionsThemeStyles(safeTheme, DEFAULT_THEME);
   const appButtonsTheme = getAppButtonsThemeStyles(safeTheme, DEFAULT_THEME);
+  const resolvedNavbarTextToken = getThemeToken(
+    safeTheme,
+    'navbar.text_color',
+    DEFAULT_THEME_CONFIG.navbar.text_color,
+    DEFAULT_THEME
+  );
 
   const primary = safeTheme.primary || DEFAULT_THEME.primary;
   const secondary = safeTheme.secondary || DEFAULT_THEME.secondary;
@@ -634,7 +686,20 @@ export const applyThemeCssVariables = (theme, root = document.documentElement) =
   root.style.setProperty('--app-button-bg', appButtonsTheme.backgroundStyle);
   root.style.setProperty('--app-button-text', appButtonsTheme.textColor);
   root.style.setProperty('--app-button-icon', appButtonsTheme.iconColor);
-  root.style.setProperty('--advertisement-bg', withOpacity(advertisement.bg_color || accent, advertisement.bg_opacity ?? 1));
+  const advertisementBgBase = advertisement.bg_color_1 || advertisement.bg_color || accent;
+  const advertisementBg2 = advertisement.bg_color_2 || advertisementBgBase;
+  const advertisementGradientType = advertisement.gradient_type || 'none';
+  const advertisementGradientAngle = Number.isFinite(Number(advertisement.gradient_angle)) ? Number(advertisement.gradient_angle) : 135;
+  const advertisementBgStyle = advertisementGradientType !== 'none'
+    ? buildGradient({
+      bg_color_1: withOpacity(advertisementBgBase, advertisement.bg_opacity ?? 1),
+      bg_color_2: withOpacity(advertisementBg2, advertisement.bg_opacity ?? 1),
+      gradient_type: advertisementGradientType,
+      gradient_angle: advertisementGradientAngle
+    })
+    : withOpacity(advertisementBgBase, advertisement.bg_opacity ?? 1);
+
+  root.style.setProperty('--advertisement-bg', advertisementBgStyle);
   root.style.setProperty('--advertisement-text', advertisement.text_color || secondary);
 
   root.style.setProperty('--font-family', typography.font_family || DEFAULT_THEME_CONFIG.typography.font_family);
@@ -653,6 +718,7 @@ export const applyThemeCssVariables = (theme, root = document.documentElement) =
       navbar: {
         bg: navbarBg,
         bgSource: navbarTheme.backgroundSource,
+        dbNavbarTextToken: resolvedNavbarTextToken,
         text: navbarTheme.textColor,
         textSource: navbarTheme.textColorSource,
         blur: navbarTheme.blurPx,

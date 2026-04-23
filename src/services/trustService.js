@@ -105,7 +105,7 @@ export const fetchMemberTrusts = async (membersId) => {
 export const fetchAllTrusts = async () => {
   const { data, error } = await supabase
     .from('Trust')
-    .select('id,name,icon_url,remark,created_at')
+    .select('id,name,icon_url,remark,template_id,created_at')
     .order('created_at', { ascending: false });
 
   if (error) {
@@ -118,7 +118,7 @@ export const fetchAllTrusts = async () => {
 export const fetchDefaultTrust = async (preferredTrustId) => {
   let query = supabase
     .from('Trust')
-    .select('id,name,icon_url,remark,legal_name,terms_content,privacy_content,created_at')
+    .select('id,name,icon_url,remark,legal_name,terms_content,privacy_content,template_id,created_at')
     .limit(1);
 
   if (preferredTrustId) {
@@ -143,7 +143,7 @@ export const fetchTrustByName = async (name) => {
   if (!name) return null;
   const { data, error } = await supabase
     .from('Trust')
-    .select('id,name,icon_url,remark,legal_name,terms_content,privacy_content,created_at')
+    .select('id,name,icon_url,remark,legal_name,terms_content,privacy_content,template_id,created_at')
     .eq('name', name)
     .limit(1);
 
@@ -162,7 +162,7 @@ export const fetchTrustById = async (id) => {
   if (!id) return null;
   const { data, error } = await supabase
     .from('Trust')
-    .select('id,name,icon_url,remark,legal_name,terms_content,privacy_content,created_at')
+    .select('id,name,icon_url,remark,legal_name,terms_content,privacy_content,template_id,created_at')
     .eq('id', id)
     .limit(1);
 
@@ -174,5 +174,38 @@ export const fetchTrustById = async (id) => {
     return data[0] || null;
   }
 
+  return data || null;
+};
+
+export const fetchTemplatesForTrust = async (trustId, { onlyActive = true } = {}) => {
+  if (!trustId) return [];
+
+  let query = supabase
+    .from('app_templates')
+    .select('id, trust_id, name, template_key, is_active, updated_at')
+    .eq('trust_id', trustId)
+    .order('updated_at', { ascending: false });
+
+  if (onlyActive) {
+    query = query.eq('is_active', true);
+  }
+
+  const { data, error } = await query;
+  if (error) throw error;
+  return Array.isArray(data) ? data : [];
+};
+
+export const updateTrustTemplateLink = async ({ trustId, templateId }) => {
+  if (!trustId) throw new Error('trustId is required');
+  if (!templateId) throw new Error('templateId is required');
+
+  const { data, error } = await supabase
+    .from('Trust')
+    .update({ template_id: templateId })
+    .eq('id', trustId)
+    .select('id, name, template_id')
+    .maybeSingle();
+
+  if (error) throw error;
   return data || null;
 };

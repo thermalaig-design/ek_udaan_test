@@ -166,6 +166,7 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
     } catch { /* ignore */ }
     return [];
   });
+  const [trustIconErrors, setTrustIconErrors] = useState({});
 
   const [defaultTrust, setDefaultTrust] = useState(() => {
     try {
@@ -532,6 +533,67 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
       console.warn('Could not parse user trust info:', error);
     }
   }, [selectedTrustId, defaultTrust?.id]);
+
+  // Hydrate missing trust icon_url from Trust table without changing trust membership logic.
+  useEffect(() => {
+    const trustsMissingIcon = (trustList || []).filter((trust) => {
+      const id = normalizeTrustId(trust?.id);
+      const icon = String(trust?.icon_url || '').trim();
+      return Boolean(id) && !icon;
+    });
+    if (trustsMissingIcon.length === 0) return;
+
+    let active = true;
+    const hydrateTrustIcons = async () => {
+      const resolved = await Promise.all(
+        trustsMissingIcon.map(async (trust) => {
+          const trustId = normalizeTrustId(trust?.id);
+          if (!trustId) return null;
+          try {
+            const row = await fetchTrustById(trustId);
+            return row
+              ? {
+                id: trustId,
+                icon_url: row.icon_url || null,
+                name: row.name || null,
+                remark: row.remark || null
+              }
+              : null;
+          } catch {
+            return null;
+          }
+        })
+      );
+
+      if (!active) return;
+
+      const byId = {};
+      resolved.forEach((item) => {
+        if (!item?.id) return;
+        byId[item.id] = item;
+      });
+      if (Object.keys(byId).length === 0) return;
+
+      setTrustList((prev) => {
+        const next = (prev || []).map((trust) => {
+          const id = normalizeTrustId(trust?.id);
+          const hydrated = byId[id];
+          if (!hydrated) return trust;
+          return {
+            ...trust,
+            icon_url: trust.icon_url || hydrated.icon_url || null,
+            name: trust.name || hydrated.name || null,
+            remark: trust.remark || hydrated.remark || null
+          };
+        });
+        try { localStorage.setItem('trust_list_cache', JSON.stringify(next)); } catch { /* ignore */ }
+        return next;
+      });
+    };
+
+    hydrateTrustIcons();
+    return () => { active = false; };
+  }, [trustList]);
 
   // Load member trusts from API
   useEffect(() => {
@@ -1193,6 +1255,7 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
   const normalizeQuickRoute = (route) => {
     const value = String(route || '').trim().toLowerCase();
     if (value === 'noticeboard' || value === 'notices') return 'notices';
+    if (value === 'facility' || value === 'facilities') return 'facilities';
     if (value === 'event' || value === 'events') return 'events';
     if (value === 'opd' || value === 'appointment' || value === 'appointments') return 'appointment';
     if (value === 'referral' || value === 'reference' || value === 'references') return 'reference';
@@ -1207,6 +1270,7 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
     const normalized = normalizeQuickRoute(route);
     const iconByRoute = {
       notices: '/icons/quick-access/noticeboard.svg',
+      facilities: '/icons/quick-access/facilities.svg',
       events: '/icons/quick-access/events.svg',
       directory: '/icons/quick-access/directory.svg',
       appointment: '/icons/quick-access/opd.svg',
@@ -1218,7 +1282,7 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
 
   // Build Quick Access tiles from Supabase flag metadata.
   const dbQuickActions = Object.entries(flagsData)
-    .filter(([_, data]) => data?.is_enabled && data?.route)
+    .filter(([key, data]) => Boolean(key) && data?.is_enabled && data?.route)
     .map(([key, data]) => ({
       id: key,
       route: normalizeQuickRoute(data.route),
@@ -1270,6 +1334,14 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
       icon_url: '/icons/quick-access/noticeboard.svg',
       quick_order: 80,
     } : null,
+    ff('feature_facilities') ? {
+      id: 'feature_facilities_fallback',
+      route: 'facilities',
+      displayName: 'Facilities',
+      tagline: 'Trust facilities',
+      icon_url: '/icons/quick-access/facilities.svg',
+      quick_order: 85,
+    } : null,
     ff('feature_events') ? {
       id: 'feature_events_fallback',
       route: 'events',
@@ -1310,6 +1382,63 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
   const navbarTextColor = 'var(--navbar-text)';
   const subtleBorderColor = `color-mix(in srgb, ${theme.secondary} 16%, transparent)`;
   const subtleSurfaceColor = `color-mix(in srgb, ${surfaceColor} 82%, ${theme.accentBg})`;
+  const toRgba = (color, alpha = 1) => {
+    const safeAlpha = Number.isFinite(Number(alpha)) ? Math.max(0, Math.min(1, Number(alpha))) : 1;
+    const raw = String(color || '').trim();
+    const match = raw.match(/^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/);
+    if (!match) return raw || `rgba(0,0,0,${safeAlpha})`;
+    const hex = match[1].length === 3
+      ? match[1].split('').map((ch) => ch + ch).join('')
+      : match[1];
+    const r = parseInt(hex.slice(0, 2), 16);
+    const g = parseInt(hex.slice(2, 4), 16);
+    const b = parseInt(hex.slice(4, 6), 16);
+    return `rgba(${r}, ${g}, ${b}, ${safeAlpha})`;
+  };
+  const sponsorTheme = {
+    bgColor1: getThemeToken(theme, 'advertisement.bg_color_1', getThemeToken(theme, 'advertisement.bg_color', theme.accentBg || '#EEF2F7')),
+    bgColor2: getThemeToken(theme, 'advertisement.bg_color_2', getThemeToken(theme, 'advertisement.bg_color', theme.accent || theme.accentBg || '#E2E8F0')),
+    bgOpacity: Number(getThemeToken(theme, 'advertisement.bg_opacity', 1)),
+    gradientType: String(getThemeToken(theme, 'advertisement.gradient_type', 'linear') || 'linear').toLowerCase(),
+    gradientAngle: Number(getThemeToken(theme, 'advertisement.gradient_angle', 135)),
+    textColor: getThemeToken(theme, 'advertisement.text_color', headingColor),
+    titleColor: getThemeToken(theme, 'advertisement.title_color', headingColor),
+    subtitleColor: getThemeToken(theme, 'advertisement.subtitle_color', mutedTextColor),
+    descriptionColor: getThemeToken(theme, 'advertisement.description_color', mutedTextColor),
+    borderColor1: getThemeToken(theme, 'advertisement.card_border_color', getThemeToken(theme, 'advertisement.border_color_1', theme.primary)),
+    borderColor2: getThemeToken(theme, 'advertisement.card_border_color', getThemeToken(theme, 'advertisement.border_color_2', theme.secondary)),
+    shadowColor: getThemeToken(theme, 'advertisement.card_shadow_color', theme.secondary),
+    cardBgColor: getThemeToken(
+      theme,
+      'advertisement.card_bg_color',
+      getThemeToken(theme, 'advertisement.bg_color', surfaceColor)
+    ),
+    cardBgOpacity: Number(
+      getThemeToken(
+        theme,
+        'advertisement.card_bg_opacity',
+        getThemeToken(theme, 'advertisement.bg_opacity', 0.93)
+      )
+    ),
+    badgeBgColor: getThemeToken(theme, 'advertisement.badge_bg_color', theme.accent),
+    badgeTextColor: getThemeToken(theme, 'advertisement.badge_text_color', theme.primary),
+    badgeDotColor: getThemeToken(theme, 'advertisement.badge_dot_color', theme.primary),
+    patternColor: getThemeToken(theme, 'advertisement.pattern_color', theme.accentBg),
+    glowColor1: getThemeToken(theme, 'advertisement.glow_color_1', theme.primary),
+    glowColor2: getThemeToken(theme, 'advertisement.glow_color_2', theme.secondary),
+    photoRingColor1: getThemeToken(theme, 'advertisement.photo_ring_color_1', theme.primary),
+    photoRingColor2: getThemeToken(theme, 'advertisement.photo_ring_color_2', theme.secondary),
+    indicatorActive1: getThemeToken(theme, 'advertisement.indicator_active_color_1', theme.primary),
+    indicatorActive2: getThemeToken(theme, 'advertisement.indicator_active_color_2', theme.secondary),
+    indicatorInactive: getThemeToken(theme, 'advertisement.indicator_inactive_color', `${theme.primary}35`),
+    emptyTextColor: getThemeToken(theme, 'advertisement.empty_text_color', mutedTextColor),
+    skeletonColor: getThemeToken(theme, 'advertisement.skeleton_color', theme.accent || '#E2E8F0'),
+  };
+  const sponsorBgColor1 = sponsorTheme.bgColor1;
+  const sponsorBgColor2 = sponsorTheme.bgColor2 || sponsorBgColor1;
+  const sponsorOverlayBackground = sponsorTheme.gradientType === 'none'
+    ? toRgba(sponsorBgColor1, sponsorTheme.bgOpacity)
+    : `linear-gradient(${Number.isFinite(sponsorTheme.gradientAngle) ? sponsorTheme.gradientAngle : 135}deg, ${toRgba(sponsorBgColor1, sponsorTheme.bgOpacity)} 0%, ${toRgba(sponsorBgColor2, sponsorTheme.bgOpacity)} 100%)`;
   const animationMap = {
     fadeUp: 'themeFadeUp 420ms ease-out both',
     fadeSlideDown: 'themeFadeSlideDown 420ms ease-out both',
@@ -1573,30 +1702,42 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
               className="flex gap-2 overflow-x-auto overscroll-x-contain px-4 py-2"
               style={{
                 scrollbarWidth: 'none',
-                background: theme.accent + '33',
-                borderBottom: `1px solid ${theme.primary}14`,
+                background: 'transparent',
+                borderBottom: 'none',
                 animation: resolveAnimation('cards')
               }}
               key="trustList"
             >
               {trustList.map((trust) => {
                 const isActive = normalizeTrustId(trust.id) === selectedTrustId;
+                const trustId = normalizeTrustId(trust?.id);
+                const iconUrl = String(trust?.icon_url || '').trim();
+                const hasValidIcon = Boolean(iconUrl) && !trustIconErrors[trustId];
                 return (
                   <button
                     key={trust.id || trust.name}
                     onClick={() => handleTrustSelect(trust.id)}
                     className="flex-shrink-0 w-10 h-10 rounded-xl flex items-center justify-center overflow-hidden transition-all duration-200"
                     style={{
-                      border: isActive ? `2.5px solid ${theme.primary}` : `2px solid ${subtleBorderColor}`,
-                      backgroundColor: isActive ? surfaceColor : subtleSurfaceColor,
+                      border: isActive ? `2.5px solid ${theme.primary}` : '2px solid #E2E8F0',
+                      backgroundColor: '#FFFFFF',
                       transform: isActive ? 'scale(1.05)' : 'scale(1)',
-                      boxShadow: isActive ? `0 4px 14px ${theme.primary}38` : 'none',
+                      boxShadow: isActive ? '0 4px 12px rgba(15, 23, 42, 0.14)' : 'none',
                     }}
                     title={trust.name || 'Hospital'}
                   >
-                    {trust.icon_url
-                      ? <img src={trust.icon_url} alt={trust.name || 'Hospital'} className="w-7 h-7 object-contain" />
-                      : <Building2 className="h-4 w-4" style={{ color: theme.primary }} />}
+                    {hasValidIcon
+                      ? <img
+                        src={iconUrl}
+                        alt={trust.name || 'Hospital'}
+                        className="w-7 h-7 object-contain"
+                        loading="lazy"
+                        onError={() => {
+                          if (!trustId) return;
+                          setTrustIconErrors((prev) => ({ ...prev, [trustId]: true }));
+                        }}
+                      />
+                      : <Building2 className="h-4 w-4" style={{ color: '#64748B' }} />}
                   </button>
                 );
               })}
@@ -1742,10 +1883,10 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
                   <div
                     className="absolute inset-0 pointer-events-none"
                     style={{
-                      background: `linear-gradient(135deg, ${theme.accentBg}66 0%, ${surfaceColor} 38%, ${theme.accent}66 100%)`,
+                      background: sponsorOverlayBackground,
                     }}
                   />
-                  <div className="relative min-h-[168px]">
+                  <div className="relative min-h-[196px]">
                   {visibleSponsors.map((sponsor, idx) => {
                     if (!sponsor?.id) return null;
                     const isActive = idx === activeVisibleSponsorIndex;
@@ -1765,70 +1906,70 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
                         <div
                           className="relative rounded-3xl p-[1px] h-full overflow-hidden"
                           style={{
-                            background: `linear-gradient(130deg, ${theme.primary}44 0%, ${theme.secondary}33 40%, ${theme.primary}2E 100%)`,
-                            boxShadow: `0 12px 28px ${theme.secondary}1F`,
+                            background: `linear-gradient(130deg, ${sponsorTheme.borderColor1}44 0%, ${sponsorTheme.borderColor2}33 40%, ${sponsorTheme.borderColor1}2E 100%)`,
+                            boxShadow: `0 12px 28px ${sponsorTheme.shadowColor}1F`,
                           }}
                         >
                           <div
-                            className="relative rounded-3xl p-4 flex items-center gap-3.5 h-full overflow-hidden"
+                            className="relative rounded-3xl p-5 flex items-center gap-4 h-full overflow-hidden"
                             style={{
-                              background: `color-mix(in srgb, ${surfaceColor} 93%, transparent)`,
+                              background: toRgba(sponsorTheme.cardBgColor, sponsorTheme.cardBgOpacity),
                               backdropFilter: 'blur(8px)',
                             }}
                           >
                             <div
-                              className="absolute inset-0 pointer-events-none opacity-45"
-                              style={{
-                                background: `repeating-linear-gradient(135deg, transparent 0 13px, ${theme.accentBg}44 13px 14px)`,
-                              }}
-                            />
+                            className="absolute inset-0 pointer-events-none opacity-45"
+                            style={{
+                                background: `repeating-linear-gradient(135deg, transparent 0 13px, ${sponsorTheme.patternColor}44 13px 14px)`,
+                            }}
+                          />
                             <div
                               className="absolute -top-10 -right-10 h-24 w-24 rounded-full pointer-events-none"
-                              style={{ background: `radial-gradient(circle, ${theme.primary}66 0%, transparent 70%)` }}
+                              style={{ background: `radial-gradient(circle, ${sponsorTheme.glowColor1}66 0%, transparent 70%)` }}
                             />
                             <div
                               className="absolute -bottom-10 -left-8 h-20 w-20 rounded-full pointer-events-none"
-                              style={{ background: `radial-gradient(circle, ${theme.secondary}4A 0%, transparent 75%)` }}
+                              style={{ background: `radial-gradient(circle, ${sponsorTheme.glowColor2}4A 0%, transparent 75%)` }}
                             />
 
-                            <div className="w-16 h-16 rounded-[1.15rem] p-[2px] flex-shrink-0 z-10" style={{ background: `linear-gradient(145deg, ${theme.primary}55, ${theme.secondary}44)` }}>
+                            <div className="w-20 h-20 rounded-[1.2rem] p-[2px] flex-shrink-0 z-10" style={{ background: `linear-gradient(145deg, ${sponsorTheme.photoRingColor1}55, ${sponsorTheme.photoRingColor2}44)` }}>
                               <div
                                 className="w-full h-full rounded-[1rem] flex items-center justify-center overflow-hidden"
                                 style={{
                                   background: surfaceColor,
-                                  boxShadow: `0 6px 16px ${theme.primary}1A`,
+                                  boxShadow: `0 6px 16px ${sponsorTheme.photoRingColor1}1A`,
                                 }}
                               >
                                 {(sponsor.photo_thumb_url || sponsor.photo_url)
-                                  ? <img src={sponsor.photo_thumb_url || sponsor.photo_url} alt={sponsor.name || sponsor.company_name} className="w-full h-full object-cover" loading="lazy" decoding="async" />
-                                  : <Star className="h-6 w-6" style={{ color: theme.primary }} />}
+                                  ? <img src={sponsor.photo_thumb_url || sponsor.photo_url} alt={sponsor.name || sponsor.company_name} className="w-full h-full object-contain" loading="lazy" decoding="async" />
+                                  : <Star className="h-6 w-6" style={{ color: sponsorTheme.textColor }} />}
                               </div>
                             </div>
 
                             <div className="flex-1 min-w-0 z-10">
                               <div className="mb-1.5">
                                 <div
-                                  className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5"
-                                  style={{ background: `color-mix(in srgb, ${surfaceColor} 74%, ${theme.accent} 26%)`, border: `1px solid ${theme.primary}30`, boxShadow: `0 1px 5px ${theme.primary}12` }}
+                                  className="inline-flex items-center gap-1.5 rounded-full px-3 py-1"
+                                  style={{ background: sponsorTheme.badgeBgColor, border: `1px solid ${sponsorTheme.badgeTextColor}30`, boxShadow: `0 1px 5px ${sponsorTheme.badgeTextColor}12` }}
                                 >
-                                  <span className="w-1.5 h-1.5 rounded-full inline-block animate-pulse" style={{ background: theme.primary }} />
-                                  <span className="text-[9px] font-bold uppercase tracking-[0.2em]" style={{ color: theme.primary }}>
+                                  <span className="w-2 h-2 rounded-full inline-block animate-pulse" style={{ background: sponsorTheme.badgeDotColor }} />
+                                  <span className="text-[10px] font-bold uppercase tracking-[0.2em]" style={{ color: sponsorTheme.badgeTextColor }}>
                                     {sponsor.badge_label || 'Official Sponsor'}
                                   </span>
                                 </div>
                               </div>
 
-                              <div className="text-[15px] font-extrabold leading-snug truncate" style={{ color: theme.secondary }}>
+                              <div className="text-[20px] font-extrabold leading-snug truncate" style={{ color: sponsorTheme.titleColor }}>
                                 {sponsor.name || sponsor.company_name}
                               </div>
-                              <div className="mt-0.5 flex items-center gap-1.5 min-w-0">
-                                <Building2 className="h-3 w-3 flex-shrink-0" style={{ color: `${theme.secondary}80` }} />
-                                <p className="text-[11px] font-bold truncate tracking-wide" style={{ color: mutedTextColor }}>
+                              <div className="mt-1 flex items-center gap-1.5 min-w-0">
+                                <Building2 className="h-4 w-4 flex-shrink-0" style={{ color: sponsorTheme.subtitleColor }} />
+                                <p className="text-[14px] font-bold truncate tracking-wide" style={{ color: sponsorTheme.subtitleColor }}>
                                   {sponsor.company_name || sponsor.position || 'Community partner'}
                                 </p>
                               </div>
 
-                              <p className="text-[10px] font-medium mt-1.5 line-clamp-2" style={{ color: `color-mix(in srgb, ${mutedTextColor} 88%, ${theme.secondary} 12%)` }}>
+                              <p className="text-[13px] font-medium mt-2 line-clamp-3 leading-relaxed" style={{ color: sponsorTheme.descriptionColor }}>
                                 {sponsor.shortText || 'Supporting our community with care and commitment.'}
                               </p>
                             </div>
@@ -1851,8 +1992,8 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
                           className="h-1.5 rounded-full transition-all duration-300"
                           style={{
                             width: isActive ? 16 : 6,
-                            background: isActive ? `linear-gradient(90deg, ${theme.primary}, ${theme.secondary})` : `${theme.primary}35`,
-                            boxShadow: isActive ? `0 1px 5px ${theme.primary}38` : 'none',
+                            background: isActive ? `linear-gradient(90deg, ${sponsorTheme.indicatorActive1}, ${sponsorTheme.indicatorActive2})` : sponsorTheme.indicatorInactive,
+                            boxShadow: isActive ? `0 1px 5px ${sponsorTheme.indicatorActive1}38` : 'none',
                           }}
                         />
                       );
@@ -1870,35 +2011,35 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
                   <div
                     className="absolute inset-0 pointer-events-none"
                     style={{
-                      background: `linear-gradient(135deg, ${theme.accentBg}66 0%, ${surfaceColor} 38%, ${theme.accent}66 100%)`,
+                      background: sponsorOverlayBackground,
                     }}
                   />
                   <div
                     className="relative rounded-3xl p-[1px]"
                     style={{
-                      background: `linear-gradient(130deg, ${theme.primary}44 0%, ${theme.secondary}33 40%, ${theme.primary}2E 100%)`,
+                      background: `linear-gradient(130deg, ${sponsorTheme.borderColor1}44 0%, ${sponsorTheme.borderColor2}33 40%, ${sponsorTheme.borderColor1}2E 100%)`,
                     }}
                   >
                     <div
                       className="relative rounded-3xl p-4 min-h-[168px] overflow-hidden"
                       style={{
-                        background: `color-mix(in srgb, ${surfaceColor} 93%, transparent)`,
+                        background: toRgba(sponsorTheme.cardBgColor, sponsorTheme.cardBgOpacity),
                         backdropFilter: 'blur(8px)',
                       }}
                     >
                       <div
                         className="absolute inset-0 pointer-events-none opacity-45"
                         style={{
-                          background: `repeating-linear-gradient(135deg, transparent 0 13px, ${theme.accentBg}44 13px 14px)`,
+                          background: `repeating-linear-gradient(135deg, transparent 0 13px, ${sponsorTheme.patternColor}44 13px 14px)`,
                         }}
                       />
-                      <div className="relative z-10 h-full flex items-center gap-3.5">
-                        <div className="w-16 h-16 rounded-[1.15rem] bg-slate-200 animate-pulse flex-shrink-0" />
+                      <div className="relative z-10 h-full flex items-center gap-4">
+                        <div className="w-20 h-20 rounded-[1.2rem] animate-pulse flex-shrink-0" style={{ background: sponsorTheme.skeletonColor }} />
                         <div className="flex-1 min-w-0">
-                          <div className="h-3 w-24 rounded-full bg-slate-200 animate-pulse mb-2" />
-                          <div className="h-4 w-40 rounded-full bg-slate-200 animate-pulse mb-2" />
-                          <div className="h-3 w-28 rounded-full bg-slate-200 animate-pulse mb-3" />
-                          <p className="text-[12px] font-medium" style={{ color: mutedTextColor }}>
+                          <div className="h-4 w-28 rounded-full animate-pulse mb-2" style={{ background: sponsorTheme.skeletonColor }} />
+                          <div className="h-6 w-52 rounded-full animate-pulse mb-2.5" style={{ background: sponsorTheme.skeletonColor }} />
+                          <div className="h-4 w-36 rounded-full animate-pulse mb-3.5" style={{ background: sponsorTheme.skeletonColor }} />
+                          <p className="text-[12px] font-medium" style={{ color: sponsorTheme.emptyTextColor }}>
                             {isSponsorSectionLoading
                               ? 'Loading sponsors...'
                               : 'No active sponsors available right now.'}

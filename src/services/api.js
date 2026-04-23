@@ -661,20 +661,10 @@ export const getSponsors = async (
           position2
         `;
 
-    // Step A: sponsor_flash by trust_id only.
+    // Step A: Fetch ALL rows for this trust (used as fallback pool).
     const { data: trustRows, error: trustRowsError } = await supabase
       .from('sponsor_flash')
-      .select(`
-        id,
-        sponsor_id,
-        trust_id,
-        duration_seconds,
-        priority,
-        status,
-        start_date,
-        end_date,
-        created_at
-      `)
+      .select(`id, sponsor_id, trust_id, duration_seconds, priority, status, start_date, end_date, created_at`)
       .eq('trust_id', resolvedTrustId)
       .order('priority', { ascending: false })
       .order('created_at', { ascending: true })
@@ -683,41 +673,33 @@ export const getSponsors = async (
     if (trustRowsError) throw trustRowsError;
     const trustOnlyRows = Array.isArray(trustRows) ? trustRows : [];
     diagnostics.counts.trustRows = trustOnlyRows.length;
-    diagnostics.sponsorFlashTrustIds = [...new Set(trustOnlyRows.map((row) => row?.trust_id).filter(Boolean).map((id) => String(id)))];
-    diagnostics.sponsorFlashStatuses = [...new Set(trustOnlyRows.map((row) => row?.status).filter(Boolean).map((status) => String(status)))];
+    diagnostics.sponsorFlashTrustIds = [...new Set(trustOnlyRows.map((r) => r?.trust_id).filter(Boolean).map(String))];
+    diagnostics.sponsorFlashStatuses = [...new Set(trustOnlyRows.map((r) => r?.status).filter(Boolean).map(String))];
 
-    // Step B: sponsor_flash by trust_id + status='active'.
-    const { data: activeRowsRaw, error: activeRowsError } = await supabase
-      .from('sponsor_flash')
-      .select(`
-        id,
-        sponsor_id,
-        trust_id,
-        duration_seconds,
-        priority,
-        status,
-        start_date,
-        end_date,
-        created_at
-      `)
-      .eq('trust_id', resolvedTrustId)
-      .eq('status', SPONSOR_FLASH_ACTIVE_STATUS)
-      .order('priority', { ascending: false })
-      .order('created_at', { ascending: true })
-      .order('id', { ascending: true });
-
-    if (activeRowsError) throw activeRowsError;
-    const activeRows = Array.isArray(activeRowsRaw) ? activeRowsRaw : [];
+    // Step B: Filter to active rows only.
+    const activeRows = trustOnlyRows.filter((r) => String(r?.status || '').toLowerCase() === SPONSOR_FLASH_ACTIVE_STATUS);
     diagnostics.counts.activeRows = activeRows.length;
     diagnostics.counts.beforeDateFilterRows = activeRows.length;
 
-    // Step C: date filter in app (date only; timezone-safe against timestamp parts).
+    // Step C: Date filter — fallback chain for maximum sponsor visibility.
+    // Level 1: active + date-valid (strictest)
     const dateFilteredRows = activeRows.filter((row) => isFlashDateValidForToday(row, diagnostics.today));
     diagnostics.counts.afterDateFilterRows = dateFilteredRows.length;
 
-    const pagedRows = dateFilteredRows.slice(rangeFrom, rangeTo + 1);
-    const sponsorIdsForPage = [...new Set(pagedRows.map((row) => row?.sponsor_id).filter(Boolean).map((id) => String(id)))];
+    // Level 2: if date-filtered rows are fewer than pageSize, include ALL active rows (ignore expired dates).
+    // Level 3: if still not enough, include ALL trust rows (ignore status + date).
+    let candidateRows = dateFilteredRows;
+    if (candidateRows.length < pageSize) {
+      candidateRows = activeRows.length > candidateRows.length ? activeRows : candidateRows;
+    }
+    if (candidateRows.length < pageSize && trustOnlyRows.length > candidateRows.length) {
+      candidateRows = trustOnlyRows;
+    }
+
+    const pagedRows = candidateRows.slice(rangeFrom, rangeTo + 1);
+    const sponsorIdsForPage = [...new Set(pagedRows.map((row) => row?.sponsor_id).filter(Boolean).map(String))];
     diagnostics.sponsorFlashSponsorIds = sponsorIdsForPage;
+
 
     // Step D: join sponsor_flash rows with sponsors table by sponsor_id.
     let sponsorsById = {};
@@ -834,7 +816,7 @@ export const getSponsors = async (
     return {
       success: true,
       data: mapped,
-      hasMore: dateFilteredRows.length > rangeTo + 1,
+      hasMore: candidateRows.length > rangeTo + 1,
       debug: diagnostics
     };
   } catch (error) {
@@ -859,6 +841,103 @@ export const getSponsors = async (
     throw error;
   }
 };
+
+/**
+ * getAllSponsorsForTrust — fetches ALL valid sponsors in exactly 2 DB calls.
+ * Much faster than paginated getSponsors for the list page.
+ *
+ * Call 1: sponsor_flash (all rows for trust, no pagination)
+ * Call 2: sponsors JOIN (all valid IDs in one .in() call)
+ */
+export const getAllSponsorsForTrust = async (trustId) => {
+  if (!trustId) return { success: true, data: [], total: 0 };
+
+  try {
+    const today = getTodayLocalYmd();
+
+    // ── Call 1: ALL sponsor_flash rows for trust ──
+    const { data: flashRows, error: flashErr } = await supabase
+      .from('sponsor_flash')
+      .select('id, sponsor_id, trust_id, duration_seconds, priority, status, start_date, end_date, created_at')
+      .eq('trust_id', trustId)
+      .order('priority', { ascending: false })
+      .order('created_at', { ascending: true });
+
+    if (flashErr) throw flashErr;
+    const allFlash = Array.isArray(flashRows) ? flashRows : [];
+
+    // Filter: active + date-valid (fallback to any active if few results)
+    const activeFlash = allFlash.filter((r) => String(r?.status || '').toLowerCase() === SPONSOR_FLASH_ACTIVE_STATUS);
+    let validFlash = activeFlash.filter((r) => isFlashDateValidForToday(r, today));
+
+    // Fallback: if date filter removes too many, use all active rows
+    if (validFlash.length < activeFlash.length && validFlash.length < 3) {
+      validFlash = activeFlash.length > 0 ? activeFlash : allFlash;
+    }
+
+    if (validFlash.length === 0) {
+      return { success: true, data: [], total: 0 };
+    }
+
+    // Deduplicate sponsor_ids preserving flash order
+    const seen = new Set();
+    const orderedSponsorIds = [];
+    for (const row of validFlash) {
+      const sid = String(row?.sponsor_id || '').trim();
+      if (sid && !seen.has(sid)) { seen.add(sid); orderedSponsorIds.push(sid); }
+    }
+
+    // ── Call 2: ALL sponsors in one query ──
+    const { data: sponsorRows, error: sponsorErr } = await supabase
+      .from('sponsors')
+      .select(`
+        id, name, position, about, photo_url, company_name, ref_no,
+        "ContactNumber1", email_id1, address, city, state,
+        whatsapp_number, website_url, catalog_url, coPartner,
+        contactNumber2, contactNumber3, emailId2, emailId3,
+        facebook, instagram, X, linkedin, address2, address3, position2
+      `)
+      .in('id', orderedSponsorIds);
+
+    if (sponsorErr) throw sponsorErr;
+
+    const byId = {};
+    (Array.isArray(sponsorRows) ? sponsorRows : []).forEach((s) => {
+      if (s?.id) byId[String(s.id)] = s;
+    });
+
+    // Build flash metadata map for duration etc.
+    const flashById = {};
+    validFlash.forEach((r) => { if (r?.sponsor_id) flashById[String(r.sponsor_id)] = r; });
+
+    // Return in flash priority order
+    const data = orderedSponsorIds
+      .map((sid) => {
+        const sponsor = byId[sid];
+        const flash = flashById[sid];
+        if (!sponsor) return null;
+        return {
+          ...sponsor,
+          flash_id: flash?.id || null,
+          sponsor_id: sid,
+          trust_id: flash?.trust_id || trustId,
+          duration_seconds: flash?.duration_seconds || 5,
+          priority: flash?.priority || 0,
+          status: flash?.status || 'active',
+          start_date: flash?.start_date || null,
+          end_date: flash?.end_date || null,
+        };
+      })
+      .filter(Boolean);
+
+    console.log(`[getAllSponsorsForTrust] trust=${trustId} total=${data.length} (flash=${allFlash.length} valid=${validFlash.length})`);
+    return { success: true, data, total: data.length };
+  } catch (err) {
+    console.error('[getAllSponsorsForTrust] Error:', err);
+    return { success: true, data: [], total: 0 };
+  }
+};
+
 // Get specific sponsor by ID
 export const getSponsorById = async (id) => {
   try {

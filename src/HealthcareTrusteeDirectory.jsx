@@ -4,7 +4,7 @@ import Sidebar from './components/Sidebar';
 import { getAllCommitteeMembers, getAllDoctors, getAllElectedMembers, getProfilePhotos } from './services/api';
 import { getTrusteesAndPatrons } from './services/supabaseService';
 import { registerSidebarState, useAndroidBack } from './hooks';
-import { useAppTheme } from './context/ThemeContext';
+import { useAppTheme, useThemeToken } from './context/ThemeContext';
 import { fetchFeatureFlags, subscribeFeatureFlags } from './services/featureFlags';
 import { fetchSubFeatureFlags, subscribeSubFeatureFlags } from './services/subFeatureFlags';
 
@@ -83,6 +83,7 @@ const resolveDirectoryTier = () => {
 
 const HealthcareTrusteeDirectory = ({ onNavigate }) => {
   const theme = useAppTheme();
+  const navbarTextColor = useThemeToken('navbar.text_color', '#f7f7f7');
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [selectedDirectory, setSelectedDirectory] = useState(null); // null, 'healthcare', 'trustee', or 'committee'
   const [activeTab, setActiveTab] = useState(null);
@@ -870,27 +871,45 @@ const HealthcareTrusteeDirectory = ({ onNavigate }) => {
   const containerRef = useRef(null);
   const scrollRef = useRef(null);
 
+  useEffect(() => {
+    if (!import.meta.env.DEV) return;
+    console.log('[NavbarText][HealthcareTrusteeDirectory]', {
+      selectedTrustId: localStorage.getItem('selected_trust_id') || null,
+      templateId: theme?.templateId || null,
+      resolvedNavbarTextColor: navbarTextColor,
+      finalAppliedNavbarTextColor: navbarTextColor,
+      source: theme?.themeLoadSource || 'unknown',
+      previouslyHardcodedOverridesRemoved: ['Menu text-white', 'Title text-white', 'Home icon text-white']
+    });
+  }, [navbarTextColor, theme?.templateId, theme?.themeLoadSource]);
+
   return (
     <div className={`bg-white h-screen flex flex-col relative${isMenuOpen ? ' overflow-hidden' : ' overflow-hidden'}`} ref={containerRef}>
       {/* Navbar - Brand theme */}
       <div
         className="px-4 py-4 flex items-center justify-between sticky top-0 z-50 shadow-md pointer-events-auto"
-        style={{ background: `linear-gradient(135deg, ${theme.secondary} 0%, ${theme.primary} 100%)`, paddingTop: "max(env(safe-area-inset-top, 0px), 22px)" }}
+        style={{
+          background: `linear-gradient(135deg, ${theme.secondary} 0%, ${theme.primary} 100%)`,
+          paddingTop: "max(env(safe-area-inset-top, 0px), 22px)",
+          color: navbarTextColor
+        }}
       >
         <button
           onClick={() => setIsMenuOpen(!isMenuOpen)}
           className="p-2 rounded-xl hover:bg-white/10 transition-colors pointer-events-auto"
+          style={{ color: navbarTextColor }}
         >
-          {isMenuOpen ? <X className="h-6 w-6 text-white" /> : <Menu className="h-6 w-6 text-white" />}
+          {isMenuOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
         </button>
-        <h1 className="text-base font-bold text-white tracking-wide">
+        <h1 className="text-base font-bold tracking-wide" style={{ color: navbarTextColor }}>
           {getFeatureDisplayName('feature_directory', 'Directory')}
         </h1>
         <button
           onClick={() => onNavigate('home')}
           className="p-2 rounded-xl hover:bg-white/10 transition-colors flex items-center justify-center"
+          style={{ color: navbarTextColor }}
         >
-          <HomeIcon className="h-5 w-5 text-white" />
+          <HomeIcon className="h-5 w-5" />
         </button>
       </div>
 

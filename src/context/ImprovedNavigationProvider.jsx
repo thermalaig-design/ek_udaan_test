@@ -43,6 +43,7 @@ const ROUTE_HIERARCHY = {
   '/reports': { parent: '/', label: 'Reports' },
   '/reference': { parent: '/', label: 'Referrals' },
   '/notices': { parent: '/', label: 'Notices' },
+  '/facilities': { parent: '/', label: 'Facilities' },
   '/events': { parent: '/', label: 'Events' },
   '/notifications': { parent: '/', label: 'Notifications' },
   '/sponsor-details': { parent: '/', label: 'Sponsor Details' },

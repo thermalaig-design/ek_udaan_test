@@ -16,7 +16,10 @@ import Reports from './Reports';
 import Referral from './Referral';
 import Notices from './Notices';
 import NoticeDetail from './NoticeDetail';
+import Facilities from './Facilities';
+import FacilityDetail from './FacilityDetail';
 import Events from './Events';
+import EventDetail from './EventDetail';
 import Notifications from './Notifications';
 import HealthcareTrusteeDirectory from './HealthcareTrusteeDirectory';
 import MemberDetails from './MemberDetails';
@@ -632,6 +635,7 @@ const HospitalTrusteeApp = () => {
         'reports': '/reports',
         'reference': '/reference',
         'notices': '/notices',
+        'facilities': '/facilities',
         'events': '/events',
         'notifications': '/notifications',
         'committee-members': '/committee-members',
@@ -816,11 +820,41 @@ const HospitalTrusteeApp = () => {
           }
         />
         <Route
+          path="/facilities"
+          element={
+            <ProtectedRoute>
+              <FeatureGuard featureKey="feature_facilities">
+                <Facilities onNavigate={handleNavigate} />
+              </FeatureGuard>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/facilities/:facilityId"
+          element={
+            <ProtectedRoute>
+              <FeatureGuard featureKey="feature_facilities">
+                <FacilityDetail onNavigate={handleNavigate} />
+              </FeatureGuard>
+            </ProtectedRoute>
+          }
+        />
+        <Route
           path="/events"
           element={
             <ProtectedRoute>
               <FeatureGuard featureKey="feature_events">
                 <Events onNavigate={handleNavigate} />
+              </FeatureGuard>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/events/:eventId"
+          element={
+            <ProtectedRoute>
+              <FeatureGuard featureKey="feature_events">
+                <EventDetail onNavigate={handleNavigate} />
               </FeatureGuard>
             </ProtectedRoute>
           }

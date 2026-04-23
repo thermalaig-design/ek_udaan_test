@@ -101,6 +101,20 @@ const byStartDateDescCreatedAtDescIdAsc = (a, b) => {
   return idA.localeCompare(idB);
 };
 
+const byCreatedAtDescUpdatedAtDescIdAsc = (a, b) => {
+  const createdA = String(a?.created_at || '');
+  const createdB = String(b?.created_at || '');
+  if (createdA !== createdB) return createdA < createdB ? 1 : -1;
+
+  const updatedA = String(a?.updated_at || '');
+  const updatedB = String(b?.updated_at || '');
+  if (updatedA !== updatedB) return updatedA < updatedB ? 1 : -1;
+
+  const idA = String(a?.id || '');
+  const idB = String(b?.id || '');
+  return idA.localeCompare(idB);
+};
+
 export const checkVipNoticeEligibility = async ({ trustId = null, trustName = null, memberId = null } = {}) => {
   const resolvedTrustId = await resolveTrustId(trustId, trustName);
   const resolvedMemberId = memberId ? String(memberId).trim() : resolveCurrentMemberId();
@@ -383,6 +397,224 @@ export const fetchNoticeboardById = async ({
   } catch (error) {
     console.error('Error fetching noticeboard item by id:', error);
     return { success: false, data: null, message: error.message || 'Failed to fetch notice detail' };
+  }
+};
+
+export const checkVipFacilityEligibility = async ({ trustId = null, trustName = null, memberId = null } = {}) =>
+  checkVipNoticeEligibility({ trustId, trustName, memberId });
+
+export const fetchFacilitiesPage = async ({
+  trustId = null,
+  trustName = null,
+  memberId = null,
+  vipEligible = null,
+  regMemberMatch = null,
+  page = 1,
+  pageSize = 10
+} = {}) => {
+  try {
+    const resolvedTrustId = await resolveTrustId(trustId, trustName);
+    if (!resolvedTrustId) return { success: true, data: [], debug: { reason: 'No trust_id resolved' } };
+
+    const resolvedMemberId = memberId ? String(memberId).trim() : resolveCurrentMemberId();
+    let resolvedVipEligible = typeof vipEligible === 'boolean' ? vipEligible : false;
+    let resolvedRegMemberMatch = regMemberMatch || null;
+    if (typeof vipEligible !== 'boolean') {
+      const eligibility = await checkVipFacilityEligibility({
+        trustId: resolvedTrustId,
+        memberId: resolvedMemberId
+      });
+      resolvedVipEligible = Boolean(eligibility?.vipEligible);
+      resolvedRegMemberMatch = eligibility?.regMemberMatch || null;
+    }
+    const allowedTypes = resolvedVipEligible ? ['gen', 'vip'] : ['gen'];
+
+    const pageNo = Number(page) > 0 ? Number(page) : 1;
+    const limit = Number(pageSize) > 0 ? Number(pageSize) : 10;
+    const rangeFrom = (pageNo - 1) * limit;
+    const rangeTo = rangeFrom + limit - 1;
+    const shouldDebug = Boolean(import.meta.env.DEV) || String(import.meta.env.VITE_FACILITIES_DEBUG || '').toLowerCase() === 'true';
+    const shouldVerboseDebug = String(import.meta.env.VITE_FACILITIES_VERBOSE_DEBUG || '').toLowerCase() === 'true';
+
+    const debug = {
+      trustId: String(resolvedTrustId),
+      memberId: resolvedMemberId || null,
+      vipEligible: resolvedVipEligible,
+      regMemberMatch: resolvedRegMemberMatch,
+      statusFilter: 'active',
+      typeFilter: allowedTypes.join(','),
+      page: pageNo,
+      pageSize: limit,
+      counts: {
+        trustRows: null,
+        activeRows: null,
+        genRows: null,
+      },
+      finalFacilityIds: []
+    };
+
+    const { data, error } = await supabase
+      .from('facilities')
+      .select('id, trust_id, type, name, description, attachments, status, created_by, created_at, updated_at')
+      .eq('trust_id', resolvedTrustId)
+      .eq('status', 'active')
+      .in('type', allowedTypes)
+      .order('created_at', { ascending: false })
+      .order('updated_at', { ascending: false })
+      .order('id', { ascending: true })
+      .range(rangeFrom, rangeTo);
+
+    if (error) throw error;
+
+    const rows = Array.isArray(data) ? data : [];
+    const finalRows = rows
+      .map((item) => ({
+        id: item.id,
+        trust_id: item.trust_id,
+        type: item.type,
+        name: item.name || '',
+        description: item.description || null,
+        attachments: normalizeAttachments(item.attachments),
+        status: item.status,
+        created_by: item.created_by || null,
+        created_at: item.created_at || null,
+        updated_at: item.updated_at || null
+      }))
+      .sort(byCreatedAtDescUpdatedAtDescIdAsc);
+    debug.finalFacilityIds = finalRows.map((item) => item.id).filter(Boolean);
+
+    if (shouldVerboseDebug) {
+      const { count: trustRowsCount } = await supabase
+        .from('facilities')
+        .select('id', { count: 'exact', head: true })
+        .eq('trust_id', resolvedTrustId);
+      const { count: activeRowsCount } = await supabase
+        .from('facilities')
+        .select('id', { count: 'exact', head: true })
+        .eq('trust_id', resolvedTrustId)
+        .eq('status', 'active');
+      const { count: genRowsCount } = await supabase
+        .from('facilities')
+        .select('id', { count: 'exact', head: true })
+        .eq('trust_id', resolvedTrustId)
+        .eq('status', 'active')
+        .eq('type', 'gen');
+      let vipRowsCount = null;
+      if (resolvedVipEligible) {
+        const { count } = await supabase
+          .from('facilities')
+          .select('id', { count: 'exact', head: true })
+          .eq('trust_id', resolvedTrustId)
+          .eq('status', 'active')
+          .eq('type', 'vip');
+        vipRowsCount = Number.isFinite(Number(count)) ? Number(count) : null;
+      }
+      debug.counts.trustRows = Number.isFinite(Number(trustRowsCount)) ? Number(trustRowsCount) : null;
+      debug.counts.activeRows = Number.isFinite(Number(activeRowsCount)) ? Number(activeRowsCount) : null;
+      debug.counts.genRows = Number.isFinite(Number(genRowsCount)) ? Number(genRowsCount) : null;
+      debug.counts.vipRows = vipRowsCount;
+    }
+
+    if (shouldDebug) {
+      console.log('[Facilities][Debug] selected_trust_id=', debug.trustId);
+      console.log('[Facilities][Debug] logged_member_id=', debug.memberId);
+      console.log('[Facilities][Debug] vip_eligible=', debug.vipEligible);
+      console.log('[Facilities][Debug] reg_member_match=', debug.regMemberMatch ? debug.regMemberMatch.id : null);
+      console.log('[Facilities][Debug] page=', pageNo, 'pageSize=', limit);
+      console.log('[Facilities][Debug] trust_rows=', debug.counts.trustRows);
+      console.log('[Facilities][Debug] active_rows=', debug.counts.activeRows);
+      console.log('[Facilities][Debug] gen_rows=', debug.counts.genRows);
+      if (Object.prototype.hasOwnProperty.call(debug.counts, 'vipRows')) {
+        console.log('[Facilities][Debug] vip_rows=', debug.counts.vipRows);
+      }
+      console.log('[Facilities][Debug] final_facility_ids=', debug.finalFacilityIds);
+      console.log('[Facilities][Debug] final_facility_types=', finalRows.map((item) => item.type));
+    }
+
+    return {
+      success: true,
+      data: finalRows,
+      hasMore: rows.length === limit,
+      debug
+    };
+  } catch (error) {
+    console.error('Error fetching facilities:', error);
+    return { success: false, data: [], message: error.message || 'Failed to fetch facilities' };
+  }
+};
+
+export const fetchFacilityById = async ({
+  facilityId,
+  trustId = null,
+  trustName = null,
+  memberId = null,
+  vipEligible = null,
+  regMemberMatch = null
+} = {}) => {
+  try {
+    const normalizedFacilityId = String(facilityId || '').trim();
+    if (!normalizedFacilityId) {
+      return { success: false, data: null, message: 'Invalid facility id' };
+    }
+
+    const resolvedTrustId = await resolveTrustId(trustId, trustName);
+    if (!resolvedTrustId) return { success: true, data: null };
+
+    const resolvedMemberId = memberId ? String(memberId).trim() : resolveCurrentMemberId();
+    let resolvedVipEligible = typeof vipEligible === 'boolean' ? vipEligible : false;
+    let resolvedRegMemberMatch = regMemberMatch || null;
+    if (typeof vipEligible !== 'boolean') {
+      const eligibility = await checkVipFacilityEligibility({
+        trustId: resolvedTrustId,
+        memberId: resolvedMemberId
+      });
+      resolvedVipEligible = Boolean(eligibility?.vipEligible);
+      resolvedRegMemberMatch = eligibility?.regMemberMatch || null;
+    }
+    const allowedTypes = resolvedVipEligible ? ['gen', 'vip'] : ['gen'];
+
+    const { data, error } = await supabase
+      .from('facilities')
+      .select('id, trust_id, type, name, description, attachments, status, created_by, created_at, updated_at')
+      .eq('id', normalizedFacilityId)
+      .eq('trust_id', resolvedTrustId)
+      .eq('status', 'active')
+      .in('type', allowedTypes)
+      .limit(1)
+      .maybeSingle();
+
+    if (error) throw error;
+    if (!data) {
+      return {
+        success: true,
+        data: null,
+        debug: {
+          trustId: String(resolvedTrustId),
+          memberId: resolvedMemberId || null,
+          vipEligible: resolvedVipEligible,
+          regMemberMatch: resolvedRegMemberMatch
+        }
+      };
+    }
+
+    return {
+      success: true,
+      data: {
+        id: data.id,
+        trust_id: data.trust_id,
+        type: data.type,
+        name: data.name || '',
+        description: data.description || null,
+        attachments: normalizeAttachments(data.attachments),
+        status: data.status,
+        created_by: data.created_by || null,
+        created_at: data.created_at || null,
+        updated_at: data.updated_at || null
+      }
+    };
+  } catch (error) {
+    console.error('Error fetching facility detail:', error);
+    return { success: false, data: null, message: error.message || 'Failed to fetch facility detail' };
   }
 };
 
