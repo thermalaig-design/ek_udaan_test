@@ -1479,36 +1479,48 @@ export const getMemberTrustLinks = async (memberId) => {
       throw new Error('memberId is required');
     }
 
-    // Fetch member_trust_links for this member with Trust details
     const { data: links, error: linksError } = await supabase
-      .from('member_trust_links')
+      .from('reg_members')
       .select(`
         id,
-        member_id,
+        members_id,
         trust_id,
-        membership_no,
-        location,
-        remark1,
-        remark2,
+        "Membership number",
+        role,
+        joined_date,
         is_active,
-        created_at,
         Trust:trust_id (
           id,
           name,
           icon_url
         )
       `)
-      .eq('member_id', memberId)
-      .eq('is_active', true)
-      .order('created_at', { ascending: false });
+      .eq('members_id', memberId)
+      .or('is_active.is.null,is_active.eq.true')
+      .order('joined_date', { ascending: false, nullsFirst: false });
 
     if (linksError) {
       console.error('Error fetching member trust links:', linksError);
       throw linksError;
     }
 
-    console.log(`✅ Total fetched: ${(links || []).length} trust links for member ${memberId}`);
-    return links || [];
+    const mapped = (links || []).map((row) => ({
+      id: row.id,
+      member_id: row.members_id || null,
+      trust_id: row.trust_id || null,
+      membership_no: row['Membership number'] || null,
+      location: null,
+      remark1: null,
+      remark2: null,
+      role: row.role || null,
+      joined_date: row.joined_date || null,
+      is_active: row.is_active,
+      created_at: row.joined_date || null,
+      Trust: row.Trust || null
+    }));
+
+    console.log(`Total fetched: ${mapped.length} trusts for member ${memberId}`);
+    return mapped;
   } catch (error) {
     console.error('Error in getMemberTrustLinks:', error);
     throw error;

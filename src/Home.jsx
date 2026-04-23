@@ -3,7 +3,7 @@ import { User, Users, Clock, FileText, UserPlus, Bell, ChevronRight, Heart, Shie
 import Sidebar from './components/Sidebar';
 import TermsModal from './components/TermsModal';
 import ImageSlider from './components/ImageSlider';
-import { getProfile, getMarqueeUpdates, getUserNotifications, markNotificationAsRead, markAllNotificationsAsRead, deleteNotification, getMemberTrustLinks } from './services/api';
+import { getProfile, getMarqueeUpdates, getUserNotifications, markNotificationAsRead, markAllNotificationsAsRead, deleteNotification } from './services/api';
 import { useGalleryContext } from './context/GalleryContext';
 import { useAppTheme } from './context/ThemeContext';
 import { registerSidebarState } from './hooks';
@@ -723,22 +723,7 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
         
         console.log('📊 Membership trusts found:', membershipTrusts.length, membershipTrusts.map(t => t.name).join(', '));
 
-        const linkResults = await Promise.all(
-          membersIds.map((memberId) => getMemberTrustLinks(memberId).catch(() => ({ success: false, data: [] })))
-        );
-        const linkTrusts = linkResults
-          .flatMap((res) => (res?.success && Array.isArray(res?.data) ? res.data : []))
-          .map((link) => ({
-            id: link?.trust_id || link?.Trust?.id || null,
-            name: link?.Trust?.name || null,
-            icon_url: link?.Trust?.icon_url || null,
-            remark: link?.remark1 || link?.remark2 || null,
-            is_active: link?.is_active !== false
-          }));
-        
-        console.log('🔗 Link trusts found:', linkTrusts.length, linkTrusts.map(t => t.name).join(', '));
-
-        const uniqueTrusts = mergeUniqueTrusts(userDerivedTrusts, membershipTrusts, linkTrusts);
+        const uniqueTrusts = mergeUniqueTrusts(userDerivedTrusts, membershipTrusts);
         console.log('✨ Total unique trusts:', uniqueTrusts.length, uniqueTrusts.map(t => t.name).join(', '));
         
         if (uniqueTrusts.length === 0) return;
@@ -1431,7 +1416,7 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
     defaultTrust ||
     null;
 
-  const shouldShowTrustSelector = trustList.length > 1;
+  const shouldShowTrustSelector = trustList.length > 0;
   const showTrustSelector = shouldShowTrustSelector;
   const surfaceColor = getThemeToken(theme, 'accent_bg', null)
     || theme?.accentBg
@@ -1765,7 +1750,7 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
       {/* ── Dynamic Section Renderer (order from theme.homeLayout) ── */}
       {(() => {
         const SECTIONS = {
-          trustList: showTrustSelector && trustList.length > 1 ? (
+          trustList: showTrustSelector && trustList.length > 0 ? (
             <div
               className="flex gap-2 overflow-x-auto overscroll-x-contain px-4 py-2"
               style={{
@@ -2211,6 +2196,7 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
 };
 
 export default Home;
+
 
 
 

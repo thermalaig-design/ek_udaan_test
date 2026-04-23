@@ -60,7 +60,7 @@ const pickPrimaryMembership = (memberships = [], preferredTrustId = '') => {
 
 /**
  * Check phone number and send OTP
- * Membership source: reg_members + member_trust_links
+ * Membership source: reg_members
  */
 export const checkPhoneNumber = async (phoneNumber) => {
   try {
@@ -129,47 +129,28 @@ export const checkPhoneNumber = async (phoneNumber) => {
     const member = members[0];
     const membersIds = members.map((m) => m.members_id).filter(Boolean).map(String);
 
-    // 2) Membership lookup from both sources
+    // 2) Membership lookup from reg_members
     let hospitalMemberships = [];
     let isRegisteredMember = false;
     let reg_member_id = null;
     let vip_status = null;
 
     if (membersIds.length > 0) {
-      const [regResult, linksResult] = await Promise.all([
-        supabase
-          .from('reg_members')
-          .select('id, trust_id, "Membership number", role, is_active, members_id, joined_date')
-          .in('members_id', membersIds),
-        supabase
-          .from('member_trust_links')
-          .select('id, member_id, trust_id, membership_no, location, remark1, remark2, is_active, created_at')
-          .in('member_id', membersIds)
-      ]);
+      const regResult = await supabase
+        .from('reg_members')
+        .select('id, trust_id, "Membership number", role, is_active, members_id, joined_date')
+        .in('members_id', membersIds);
 
       if (regResult.error) {
         console.error('Supabase membership lookup error:', regResult.error);
         return { success: false, message: 'Unable to verify membership. Please try again.' };
       }
 
-      if (linksResult.error) {
-        console.error('Supabase member_trust_links lookup error:', linksResult.error);
-        return { success: false, message: 'Unable to verify membership links. Please try again.' };
-      }
-
       const regMemberships = (Array.isArray(regResult.data) ? regResult.data : []).filter(
         (m) => m?.trust_id && membersIds.includes(String(m.members_id))
       );
-      const trustLinks = (Array.isArray(linksResult.data) ? linksResult.data : []).filter(
-        (l) => l?.trust_id && membersIds.includes(String(l.member_id))
-      );
 
-      const trustIds = Array.from(
-        new Set([
-          ...regMemberships.map((m) => m.trust_id),
-          ...trustLinks.map((l) => l.trust_id)
-        ].filter(Boolean))
-      );
+      const trustIds = Array.from(new Set(regMemberships.map((m) => m.trust_id).filter(Boolean)));
 
       let trustsById = {};
       if (trustIds.length > 0) {
@@ -201,38 +182,6 @@ export const checkPhoneNumber = async (phoneNumber) => {
           role: m.role || null,
           members_id: m.members_id || null,
           source: 'reg_members'
-        };
-      });
-
-      trustLinks.forEach((l) => {
-        const t = trustsById[l.trust_id] || null;
-        const existing = membershipByTrust[l.trust_id];
-
-        if (existing) {
-          membershipByTrust[l.trust_id] = {
-            ...existing,
-            trust_name: existing.trust_name || t?.name || null,
-            trust_icon_url: existing.trust_icon_url || t?.icon_url || null,
-            trust_remark: existing.trust_remark || t?.remark || l.remark1 || l.remark2 || null,
-            is_active: existing.is_active !== false && l.is_active !== false,
-            membership_number: existing.membership_number || l.membership_no || null,
-            members_id: existing.members_id || l.member_id || null,
-            source: 'merged'
-          };
-          return;
-        }
-
-        membershipByTrust[l.trust_id] = {
-          id: l.id || null,
-          trust_id: l.trust_id || null,
-          trust_name: t?.name || null,
-          trust_icon_url: t?.icon_url || null,
-          trust_remark: t?.remark || l.remark1 || l.remark2 || null,
-          is_active: l.is_active !== false,
-          membership_number: l.membership_no || null,
-          role: null,
-          members_id: l.member_id || null,
-          source: 'member_trust_links'
         };
       });
 

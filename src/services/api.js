@@ -1206,34 +1206,47 @@ export const getMemberTrustLinks = async (memberId) => {
     }
     const { supabase } = await import('./supabaseClient.js');
     const { data: links, error } = await supabase
-      .from('member_trust_links')
+      .from('reg_members')
       .select(`
         id,
-        member_id,
+        members_id,
         trust_id,
-        membership_no,
-        location,
-        remark1,
-        remark2,
+        "Membership number",
+        role,
+        joined_date,
         is_active,
-        created_at,
         Trust:trust_id (
           id,
           name,
           icon_url
         )
       `)
-      .eq('member_id', memberId)
-      .order('created_at', { ascending: false });
+      .eq('members_id', memberId)
+      .order('joined_date', { ascending: false, nullsFirst: false });
 
     if (error) {
-      console.error('Error fetching member trust links from Supabase:', error);
+      console.error('Error fetching member trusts from reg_members:', error);
       throw error;
     }
 
-    return { success: true, data: links || [], count: (links || []).length };
+    const mapped = (links || []).map((row) => ({
+      id: row.id,
+      member_id: row.members_id || null,
+      trust_id: row.trust_id || null,
+      membership_no: row['Membership number'] || null,
+      location: null,
+      remark1: null,
+      remark2: null,
+      role: row.role || null,
+      joined_date: row.joined_date || null,
+      is_active: row.is_active,
+      created_at: row.joined_date || null,
+      Trust: row.Trust || null
+    }));
+
+    return { success: true, data: mapped, count: mapped.length };
   } catch (error) {
-    console.error(`Error fetching trust links for member ${memberId}:`, error);
+    console.error(`Error fetching trusts for member ${memberId}:`, error);
     return { success: false, data: [], message: error.message };
   }
 };

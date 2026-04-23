@@ -4,7 +4,6 @@ import { useBackNavigation } from './hooks';
 import { verifyOTP } from './services/authService';
 import { fetchDirectoryData } from './services/directoryService';
 import { fetchTrustById } from './services/trustService';
-import { getMemberTrustLinks } from './services/api';
 import { persistUserSession } from './utils/storageUtils';
 import { useAppTheme } from './context/ThemeContext';
 
@@ -165,18 +164,6 @@ function OTPVerification() {
       fetchDirectoryData(selectedTrustId, selectedTrustName).catch(err =>
         console.warn('[OTP] Directory pre-fetch failed:', err)
       );
-
-      // Pre-cache member trust links for sidebar (non-blocking)
-      const membersId = user?.members_id || user?.id;
-      if (membersId) {
-        getMemberTrustLinks(membersId)
-          .then(res => {
-            if (res.success && Array.isArray(res.data) && res.data.length > 0) {
-              localStorage.setItem(`memberTrustLinks_${membersId}`, JSON.stringify(res.data));
-            }
-          })
-          .catch(err => console.warn('[OTP] Trust links pre-fetch failed:', err));
-      }
 
       try { sessionStorage.removeItem('trust_selected_in_session'); } catch { /* ignore */ }
       try { sessionStorage.removeItem(OTP_FLOW_KEY); } catch { /* ignore */ }

@@ -4,7 +4,6 @@ import {
   ArrowLeft, Users, RefreshCw, Plus, X, CheckCircle,
   AlertCircle, Building2, Hash, Tag, FileText, Loader2, Save
 } from 'lucide-react';
-import { getMemberTrustLinks } from './services/api';
 import { useAppTheme } from './context/ThemeContext';
 
 // ─── Supabase helpers ──────────────────────────────────────────────────────
@@ -119,11 +118,10 @@ const OtherMemberships = ({ onNavigate }) => {
   useAppTheme();
 
   // ── state ──
-  const [trustLinks, setTrustLinks] = useState([]);     // from member_trust_links
+  const [trustLinks, setTrustLinks] = useState([]);     // from reg_members-backed user payload
   const [otherMems, setOtherMems] = useState([]);        // from other_memberships table
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [memberId, setMemberId] = useState('');
   const [memberName, setMemberName] = useState('');
   const [memberPhone, setMemberPhone] = useState('');
 
@@ -152,7 +150,6 @@ const OtherMemberships = ({ onNavigate }) => {
       const id = parsedUser?.members_id || parsedUser?.id;
       const name = parsedUser?.Name || parsedUser?.name || parsedUser?.full_name || '';
       const phone = parsedUser?.Mobile || parsedUser?.mobile || parsedUser?.phone || parsedUser?.Phone || '';
-      setMemberId(String(id || ''));
       setMemberName(name);
       setMemberPhone(phone);
 
@@ -161,55 +158,22 @@ const OtherMemberships = ({ onNavigate }) => {
         ? parsedUser.hospital_memberships
         : [];
 
-      // ── Source 2: member_trust_links from Supabase (may have extra details) ──
-      let trustLinksMap = {}; // keyed by trust_id
-      if (id) {
-        try {
-          const res = await getMemberTrustLinks(id);
-          if (res.success && Array.isArray(res.data)) {
-            res.data.forEach((l) => {
-              if (l.trust_id) trustLinksMap[l.trust_id] = l;
-            });
-          }
-        } catch { /* non-fatal */ }
-      }
-
-      // ── Merge: start from hospitalMemberships (all shown), enrich with trustLinksMap ──
       const merged = hospitalMemberships.map((hm, idx) => {
-        const extra = hm.trust_id ? trustLinksMap[hm.trust_id] : null;
         return {
           _key: hm.trust_id || `hm-${idx}`,
           trust_id: hm.trust_id || null,
-          Trust: extra?.Trust || {
+          Trust: {
             id: hm.trust_id,
             name: hm.trust_name,
             icon_url: hm.trust_icon_url,
           },
-          membership_no: extra?.membership_no || hm.membership_number || '—',
-          location: extra?.location || null,
-          remark1: extra?.remark1 || hm.trust_remark || null,
-          remark2: extra?.remark2 || null,
-          is_active: extra != null ? extra.is_active : hm.is_active !== false,
+          membership_no: hm.membership_number || '—',
+          location: null,
+          remark1: hm.trust_remark || null,
+          remark2: null,
+          is_active: hm.is_active !== false,
           role: hm.role || null,
         };
-      });
-
-      // Also add member_trust_links entries NOT in hospitalMemberships
-      const existingTrustIds = new Set(hospitalMemberships.map((hm) => hm.trust_id).filter(Boolean));
-      Object.values(trustLinksMap).forEach((l) => {
-        if (!existingTrustIds.has(l.trust_id)) {
-          merged.push({
-            _key: l.id || l.trust_id,
-            trust_id: l.trust_id,
-            Trust: l.Trust || { id: l.trust_id, name: null, icon_url: null },
-            membership_no: l.membership_no || '—',
-            location: l.location || null,
-            remark1: l.remark1 || null,
-            remark2: l.remark2 || null,
-            is_active: l.is_active !== false,
-            role: null,
-          });
-        }
       });
 
       setTrustLinks(merged);
@@ -571,7 +535,7 @@ const OtherMemberships = ({ onNavigate }) => {
               </div>
             )}
 
-            {/* ── SECTION: Trust Links (from member_trust_links) ── */}
+            {/* ── SECTION: Trust Links (from reg_members-backed user payload) ── */}
             {trustLinks.length > 0 && (
               <div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '14px' }}>

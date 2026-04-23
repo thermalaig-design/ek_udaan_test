@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Home as HomeIcon, Users, Clock, FileText, UserPlus, ChevronRight, LogOut, Image, User, Share2 } from 'lucide-react';
 import { Capacitor } from '@capacitor/core';
 import { Share } from '@capacitor/share';
-import { getProfile, getMemberTrustLinks } from '../services/api';
+import { getProfile } from '../services/api';
 import { fetchFeatureFlags, isFeatureEnabled } from '../services/featureFlags';
 import { useAppTheme } from '../context/ThemeContext';
 import { applyOpacity } from '../utils/colorUtils';
@@ -84,7 +84,7 @@ const Sidebar = ({ isOpen, onClose, onNavigate, currentPage, onLogout }) => {
     load();
   }, [isOpen]);
 
-  // Load member trust links when sidebar opens — MERGED with hospital_memberships
+  // Load member trusts when sidebar opens (reg_members based payload from login)
   useEffect(() => {
     if (!isOpen) return;
     const load = async () => {
@@ -93,64 +93,25 @@ const Sidebar = ({ isOpen, onClose, onNavigate, currentPage, onLogout }) => {
         const user = localStorage.getItem('user');
         const parsedUser = user ? JSON.parse(user) : null;
 
-        // members_id can be stored as members_id or id in the user object
-        // user.id = members_id (UUID) from Members table set in authService.js
-        const membersId = parsedUser?.members_id || parsedUser?.id;
-
-        console.log('🔑 [Sidebar] parsedUser keys:', parsedUser ? Object.keys(parsedUser) : 'null');
-        console.log('🔑 [Sidebar] membersId used for trust lookup:', membersId);
-
-        // ── Source 1: hospital_memberships from localStorage (from reg_members) ──
-        // This is the authoritative list — always has ALL trusts
         const hospitalMemberships = Array.isArray(parsedUser?.hospital_memberships)
           ? parsedUser.hospital_memberships
           : [];
 
-        // ── Source 2: member_trust_links — may have extra details ──
-        let trustLinksMap = {}; // keyed by trust_id
-        if (membersId) {
-          try {
-            const res = await getMemberTrustLinks(membersId);
-            if (res.success && Array.isArray(res.data)) {
-              res.data.forEach((l) => {
-                if (l.trust_id) trustLinksMap[l.trust_id] = l;
-              });
-            }
-          } catch { /* non-fatal */ }
-        }
+        const trusts = hospitalMemberships.map((hm, idx) => ({
+          _key: hm.trust_id || `hm-${idx}`,
+          trust_id: hm.trust_id || null,
+          Trust: {
+            id: hm.trust_id || null,
+            name: hm.trust_name || null,
+            icon_url: hm.trust_icon_url || null,
+          },
+          source: 'reg_members',
+        }));
 
-        // ── Merge: start from hospitalMemberships (all are shown) ──
-        const merged = hospitalMemberships.map((hm, idx) => {
-          const extra = hm.trust_id ? trustLinksMap[hm.trust_id] : null;
-          return {
-            _key: hm.trust_id || `hm-${idx}`,
-            trust_id: hm.trust_id || null,
-            Trust: extra?.Trust || {
-              id: hm.trust_id,
-              name: hm.trust_name,
-              icon_url: hm.trust_icon_url,
-            },
-            source: extra ? 'both' : 'reg_members',
-          };
-        });
-
-        // Also add any member_trust_links entries NOT already in hospitalMemberships
-        const existingTrustIds = new Set(hospitalMemberships.map((hm) => hm.trust_id).filter(Boolean));
-        Object.values(trustLinksMap).forEach((l) => {
-          if (!existingTrustIds.has(l.trust_id)) {
-            merged.push({
-              _key: l.id || l.trust_id,
-              trust_id: l.trust_id,
-              Trust: l.Trust || { id: l.trust_id, name: null, icon_url: null },
-              source: 'member_trust_links',
-            });
-          }
-        });
-
-        console.log(`✅ [Sidebar] Merged ${merged.length} trusts (${hospitalMemberships.length} from hospital_memberships + ${Object.keys(trustLinksMap).length} from member_trust_links)`);
-        setMemberTrustLinks(merged);
+        console.log(`[Sidebar] Loaded ${trusts.length} trusts from hospital_memberships`);
+        setMemberTrustLinks(trusts);
       } catch (error) {
-        console.error('❌ [Sidebar] Error loading member trust links:', error);
+        console.error('[Sidebar] Error loading member trusts:', error);
         setMemberTrustLinks([]);
       } finally {
         setLoadingTrustLinks(false);
@@ -544,3 +505,4 @@ const Sidebar = ({ isOpen, onClose, onNavigate, currentPage, onLogout }) => {
 };
 
 export default Sidebar;
+
