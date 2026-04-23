@@ -39,7 +39,7 @@ const RowField = ({ label, type = 'text', value, onChange, placeholder, disabled
 // Date field
 const RowDate = ({ label, value, onChange, icon: Icon }) => (
   <div className="flex flex-col gap-1">
-    <label className="text-[11px] font-bold uppercase tracking-widest ml-0.5 flex items-center gap-1" style={{ color: '#2B2F7E' }}>
+    <label className="text-[11px] font-bold uppercase tracking-widest ml-0.5 flex items-center gap-1" style={{ color: 'var(--brand-navy)' }}>
       {Icon && <Icon className="h-3 w-3" />}{label}
     </label>
     <div className="relative rounded-2xl border-2 border-gray-100 bg-white transition-all" style={{}} onFocusCapture={e => { e.currentTarget.style.borderColor = 'var(--brand-red)'; e.currentTarget.style.boxShadow = '0 0 0 3px color-mix(in srgb, var(--brand-red) 8%, transparent)'; }} onBlurCapture={e => { e.currentTarget.style.borderColor = ''; e.currentTarget.style.boxShadow = ''; }}>
@@ -56,7 +56,7 @@ const RowDate = ({ label, value, onChange, icon: Icon }) => (
 // Select field
 const RowSelect = ({ label, value, onChange, options, placeholder, icon: Icon }) => (
   <div className="flex flex-col gap-1">
-    <label className="text-[11px] font-bold uppercase tracking-widest ml-0.5 flex items-center gap-1" style={{ color: '#2B2F7E' }}>
+    <label className="text-[11px] font-bold uppercase tracking-widest ml-0.5 flex items-center gap-1" style={{ color: 'var(--brand-navy)' }}>
       {Icon && <Icon className="h-3 w-3" />}{label}
     </label>
     <div className="relative rounded-2xl border-2 border-gray-100 bg-white transition-all" onFocusCapture={e => { e.currentTarget.style.borderColor = 'var(--brand-red)'; e.currentTarget.style.boxShadow = '0 0 0 3px color-mix(in srgb, var(--brand-red) 8%, transparent)'; }} onBlurCapture={e => { e.currentTarget.style.borderColor = ''; e.currentTarget.style.boxShadow = ''; }}>
@@ -383,7 +383,7 @@ const Profile = ({ onNavigate, onProfileUpdate }) => {
   }
 
   return (
-    <div ref={mainContainerRef} className="min-h-screen font-sans" style={{ background: 'linear-gradient(135deg, #fff5f5 0%, #ffffff 40%, #f0f1fb 100%)' }}>
+    <div ref={mainContainerRef} className="min-h-screen font-sans" style={{ background: 'linear-gradient(135deg, var(--surface-color)5f5 0%, var(--surface-color) 40%, #f0f1fb 100%)' }}>
 
       {/* Navbar - Brand */}
       <div
@@ -734,7 +734,7 @@ const Profile = ({ onNavigate, onProfileUpdate }) => {
             </div>
             <h2 className="text-xl font-bold text-gray-900 mb-1">Saved!</h2>
             <p className="text-gray-500 text-sm mb-6">Profile saved successfully.</p>
-            <button onClick={() => setShowSuccessPopup(false)} className="w-full text-white py-3 rounded-xl font-semibold active:scale-95 transition-all" style={{ background: 'linear-gradient(135deg, #C0241A 0%, #2B2F7E 100%)' }}>Done</button>
+            <button onClick={() => setShowSuccessPopup(false)} className="w-full text-white py-3 rounded-xl font-semibold active:scale-95 transition-all" style={{ background: 'linear-gradient(135deg, var(--brand-red) 0%, var(--brand-navy) 100%)' }}>Done</button>
           </div>
         </div>
       )}
@@ -754,7 +754,7 @@ const Profile = ({ onNavigate, onProfileUpdate }) => {
             <button
               onClick={() => setShowUnderReviewPopup(false)}
               className="w-full text-white py-3 rounded-xl font-semibold active:scale-95 transition-all"
-              style={{ background: 'linear-gradient(135deg, #C0241A 0%, #2B2F7E 100%)' }}
+              style={{ background: 'linear-gradient(135deg, var(--brand-red) 0%, var(--brand-navy) 100%)' }}
             >
               OK, Got It
             </button>
@@ -789,3 +789,4 @@ const Profile = ({ onNavigate, onProfileUpdate }) => {
 };
 
 export default Profile;
+

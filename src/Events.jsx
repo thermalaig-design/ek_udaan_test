@@ -5,19 +5,19 @@ import Sidebar from './components/Sidebar';
 import { useAppTheme } from './context/ThemeContext';
 import {
   CATEGORIES,
-  clearEventsCache,
   getEventsCounts,
   getEventsSnapshot,
   loadEventsPage,
 } from './services/eventsStore';
 import { formatEventDate, formatTimeRange } from './services/eventsService';
+import { applyOpacity } from './utils/colorUtils';
 
 const EVENTS_SCROLL_KEY = 'events_scroll_y';
 
 const CATEGORY_META = {
-  current: { label: 'Current', icon: Zap, badge: 'bg-emerald-100 text-emerald-700 border-emerald-200' },
-  upcoming: { label: 'Upcoming', icon: Clock3, badge: 'bg-blue-100 text-blue-700 border-blue-200' },
-  past: { label: 'Past', icon: CheckCircle2, badge: 'bg-slate-100 text-slate-500 border-slate-200' },
+  current: { label: 'Current', icon: Zap },
+  upcoming: { label: 'Upcoming', icon: Clock3 },
+  past: { label: 'Past', icon: CheckCircle2 },
 };
 
 const Events = ({ onNavigate }) => {
@@ -32,7 +32,6 @@ const Events = ({ onNavigate }) => {
   const [counts, setCounts] = useState({ current: 0, upcoming: 0, past: 0 });
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
-  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
   const [selectedTrustId, setSelectedTrustId] = useState(() => localStorage.getItem('selected_trust_id') || '');
 
@@ -182,20 +181,6 @@ const Events = ({ onNavigate }) => {
     });
   };
 
-  const handleRefresh = async () => {
-    if (refreshing || !selectedTrustId) return;
-    setRefreshing(true);
-    clearEventsCache(selectedTrustId);
-    setPageByCategory({ current: 1, upcoming: 1, past: 1 });
-    await loadCategoryPage({
-      trustId: selectedTrustId,
-      category: activeTabRef.current,
-      pageNo: 1,
-      forceRefresh: true
-    });
-    setRefreshing(false);
-  };
-
   const openEventDetail = (eventId) => {
     sessionStorage.setItem(EVENTS_SCROLL_KEY, String(window.scrollY || 0));
     navigate(`/events/${encodeURIComponent(eventId)}`);
@@ -207,37 +192,20 @@ const Events = ({ onNavigate }) => {
   return (
     <div className={`min-h-screen pb-10 relative${isMenuOpen ? ' overflow-hidden max-h-screen' : ''}`} style={{ background: 'var(--page-bg, var(--app-page-bg))' }}>
       <div className="theme-navbar border-b px-6 py-5 flex items-center justify-between sticky top-0 z-50 shadow-sm" style={{ paddingTop: 'max(env(safe-area-inset-top, 0px), 20px)' }}>
-        <button onClick={() => setIsMenuOpen(!isMenuOpen)} className="p-2 rounded-xl hover:bg-gray-100 transition-colors">
+        <button onClick={() => setIsMenuOpen(!isMenuOpen)} className="p-2 rounded-xl transition-colors" style={{ background: 'color-mix(in srgb, var(--surface-color) 88%, var(--app-accent-bg))' }}>
           {isMenuOpen ? <X className="h-6 w-6" style={{ color: 'var(--navbar-text)' }} /> : <Menu className="h-6 w-6" style={{ color: 'var(--navbar-text)' }} />}
         </button>
         <h1 className="text-lg font-bold" style={{ color: 'var(--navbar-text)' }}>Events</h1>
-        <button onClick={() => onNavigate('home')} className="p-2 rounded-xl hover:bg-gray-100 transition-colors" style={{ color: 'var(--navbar-text)' }}>
+        <button onClick={() => onNavigate('home')} className="p-2 rounded-xl transition-colors" style={{ color: 'var(--navbar-text)', background: 'color-mix(in srgb, var(--surface-color) 88%, var(--app-accent-bg))' }}>
           <HomeIcon className="h-5 w-5" />
         </button>
       </div>
 
-      {isMenuOpen && <div className="fixed inset-0 bg-black bg-opacity-0 z-25" onClick={() => setIsMenuOpen(false)} />}
+      {isMenuOpen && <div className="fixed inset-0 z-25" style={{ background: applyOpacity('var(--brand-navy-dark)', 0.01) }} onClick={() => setIsMenuOpen(false)} />}
       <Sidebar isOpen={isMenuOpen} onClose={() => setIsMenuOpen(false)} onNavigate={onNavigate} currentPage="events" />
 
-      <div className="px-6 pt-7 pb-4">
-        <div className="rounded-2xl p-4 shadow-sm" style={{ border: '1px solid color-mix(in srgb, var(--brand-navy) 10%, transparent)', background: 'color-mix(in srgb, var(--app-accent-bg) 32%, #ffffff)' }}>
-          <div className="flex items-start gap-3">
-            <div className="h-11 w-11 rounded-xl flex items-center justify-center shrink-0" style={{ border: '1px solid color-mix(in srgb, var(--brand-navy) 10%, transparent)', background: 'color-mix(in srgb, #ffffff 95%, var(--app-accent-bg))' }}>
-              <Calendar className="h-5 w-5" style={{ color: theme.secondary }} />
-            </div>
-            <div className="flex-1 min-w-0">
-              <h1 className="text-xl font-bold leading-tight" style={{ color: 'var(--heading-color)' }}>Events</h1>
-              <p className="text-xs sm:text-sm mt-1" style={{ color: 'var(--body-text-color)' }}>Trust events - current, upcoming, and past</p>
-            </div>
-            <button onClick={handleRefresh} disabled={refreshing} className="h-9 w-9 rounded-xl disabled:opacity-60 flex items-center justify-center shrink-0" style={{ border: '1px solid color-mix(in srgb, var(--brand-navy) 10%, transparent)', background: 'color-mix(in srgb, #ffffff 88%, var(--app-accent-bg))' }} title="Refresh events">
-              <RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} style={{ color: theme.primary }} />
-            </button>
-          </div>
-        </div>
-      </div>
-
       <div className="px-6 pb-3">
-        <div className="flex gap-2 p-1 rounded-2xl" style={{ background: 'color-mix(in srgb, var(--app-accent-bg) 20%, #ffffff)', border: '1px solid color-mix(in srgb, var(--brand-navy) 8%, transparent)' }}>
+        <div className="flex gap-2 p-1 rounded-2xl" style={{ background: 'color-mix(in srgb, var(--app-accent-bg) 20%, var(--surface-color))', border: '1px solid color-mix(in srgb, var(--brand-navy) 8%, transparent)' }}>
           {CATEGORIES.map((cat) => {
             const m = CATEGORY_META[cat];
             const isActive = activeTab === cat;
@@ -249,8 +217,8 @@ const Events = ({ onNavigate }) => {
                 className="flex-1 flex items-center justify-center gap-1.5 py-2 px-2 rounded-xl text-xs font-bold transition-all duration-200"
                 style={isActive ? {
                   background: `linear-gradient(135deg, ${theme.primary} 0%, ${theme.secondary} 100%)`,
-                  color: '#ffffff',
-                  boxShadow: `0 4px 12px ${theme.primary}30`,
+                  color: 'var(--surface-color)',
+                  boxShadow: `0 4px 12px ${applyOpacity(theme.primary, 0.19)}`,
                 } : {
                   color: 'var(--body-text-color)',
                 }}
@@ -258,7 +226,13 @@ const Events = ({ onNavigate }) => {
                 <m.icon className="h-3.5 w-3.5 shrink-0" />
                 <span className="truncate">{m.label}</span>
                 {count > 0 && (
-                  <span className={`text-[9px] font-bold px-1 py-0.5 rounded-full min-w-[16px] text-center ${isActive ? 'bg-white/20 text-white' : m.badge}`}>
+                  <span
+                    className="text-[9px] font-bold px-1 py-0.5 rounded-full min-w-[16px] text-center"
+                    style={isActive
+                      ? { background: applyOpacity('var(--surface-color)', 0.22), color: 'var(--surface-color)' }
+                      : { background: 'color-mix(in srgb, var(--surface-color) 76%, var(--app-accent-bg))', color: 'var(--body-text-color)', border: '1px solid color-mix(in srgb, var(--brand-navy) 12%, transparent)' }
+                    }
+                  >
                     {count}
                   </span>
                 )}
@@ -270,7 +244,7 @@ const Events = ({ onNavigate }) => {
 
       {!loading && !error && events.length > 0 && (
         <div className="px-6 pb-2">
-          <p className="text-[11px] font-semibold text-gray-500">
+          <p className="text-[11px] font-semibold" style={{ color: 'var(--body-text-color)' }}>
             {events.length} of {counts[activeTab]} {activeTab} event{counts[activeTab] === 1 ? '' : 's'}
           </p>
         </div>
@@ -279,10 +253,10 @@ const Events = ({ onNavigate }) => {
       {loading && (
         <div className="px-6 py-4 space-y-4 animate-pulse">
           {[1, 2, 3].map((i) => (
-            <div key={i} className="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm">
-              <div className="h-3 bg-gray-200 rounded w-1/4 mb-3" />
-              <div className="h-4 bg-gray-200 rounded w-2/3 mb-2" />
-              <div className="h-3 bg-gray-200 rounded w-full" />
+            <div key={i} className="rounded-2xl p-5 border shadow-sm" style={{ background: 'var(--surface-color)', borderColor: 'color-mix(in srgb, var(--brand-navy) 10%, transparent)' }}>
+              <div className="h-3 rounded w-1/4 mb-3" style={{ background: 'color-mix(in srgb, var(--surface-color) 60%, var(--app-accent-bg))' }} />
+              <div className="h-4 rounded w-2/3 mb-2" style={{ background: 'color-mix(in srgb, var(--surface-color) 60%, var(--app-accent-bg))' }} />
+              <div className="h-3 rounded w-full" style={{ background: 'color-mix(in srgb, var(--surface-color) 60%, var(--app-accent-bg))' }} />
             </div>
           ))}
         </div>
@@ -290,9 +264,9 @@ const Events = ({ onNavigate }) => {
 
       {!loading && error && (
         <div className="px-6 py-10">
-          <div className="bg-red-50 border border-red-200 rounded-2xl p-6 text-center">
-            <h3 className="font-bold text-red-800">Unable to load events</h3>
-            <p className="text-sm text-red-600 mt-1">{error}</p>
+          <div className="rounded-2xl p-6 text-center" style={{ background: 'color-mix(in srgb, var(--brand-red-light) 72%, var(--surface-color))', border: '1px solid color-mix(in srgb, var(--brand-red) 25%, transparent)' }}>
+            <h3 className="font-bold" style={{ color: 'var(--brand-red-dark)' }}>Unable to load events</h3>
+            <p className="text-sm mt-1" style={{ color: 'var(--brand-red)' }}>{error}</p>
             <button
               onClick={() => loadCategoryPage({ trustId: selectedTrustId, category: activeTabRef.current, pageNo: 1, forceRefresh: true })}
               className="mt-4 px-4 py-2 rounded-xl text-sm font-semibold"
@@ -317,9 +291,10 @@ const Events = ({ onNavigate }) => {
               <button
                 key={event.id}
                 onClick={() => openEventDetail(event.id)}
-                className="w-full text-left bg-white rounded-2xl p-4 sm:p-5 border transition-all hover:shadow-md active:scale-[0.995] border-l-4 shadow-sm"
+                className="w-full text-left rounded-2xl p-4 sm:p-5 border transition-all hover:shadow-md active:scale-[0.995] border-l-4 shadow-sm"
                 style={{
-                  borderLeftColor: isPast ? '#94a3b8' : theme.primary,
+                  background: 'var(--surface-color)',
+                  borderLeftColor: isPast ? applyOpacity(theme.secondary, 0.55) : theme.primary,
                   borderColor: 'color-mix(in srgb, var(--brand-navy) 10%, transparent)',
                   opacity: isPast ? 0.88 : 1,
                 }}
@@ -327,30 +302,30 @@ const Events = ({ onNavigate }) => {
                 <div className="flex items-center justify-between gap-3 mb-3">
                   <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded-full inline-flex items-center gap-1"
                     style={isPast
-                      ? { color: '#64748b', background: '#f1f5f9' }
+                      ? { color: 'var(--body-text-color)', background: 'color-mix(in srgb, var(--surface-color) 70%, var(--app-accent-bg))' }
                       : isOngoing
-                        ? { color: '#065f46', background: '#d1fae5' }
-                        : { color: theme.primary, background: `color-mix(in srgb, ${theme.primary} 12%, white)` }
+                        ? { color: theme.secondary, background: 'color-mix(in srgb, var(--app-accent) 55%, var(--surface-color))' }
+                        : { color: theme.primary, background: `color-mix(in srgb, ${theme.primary} 12%, var(--surface-color))` }
                     }
                   >
                     <TabIcon className="h-3 w-3" />
                     {isPast ? 'Completed' : isOngoing ? 'Ongoing' : event.type || 'Upcoming'}
                   </span>
                   {dateLabel && (
-                    <div className="flex items-center gap-1.5 text-gray-400 text-[10px] font-bold whitespace-nowrap">
+                    <div className="flex items-center gap-1.5 text-[10px] font-bold whitespace-nowrap" style={{ color: 'color-mix(in srgb, var(--body-text-color) 72%, var(--surface-color))' }}>
                       <Calendar className="h-3 w-3" />
                       {dateLabel}
                     </div>
                   )}
                 </div>
 
-                <h3 className="font-bold text-gray-800 text-lg mb-2 leading-tight">{event.title}</h3>
+                <h3 className="font-bold text-lg mb-2 leading-tight" style={{ color: 'var(--heading-color)' }}>{event.title}</h3>
 
                 {event.description && (
-                  <p className="text-gray-600 text-sm leading-relaxed line-clamp-2 mb-3">{event.description}</p>
+                  <p className="text-sm leading-relaxed line-clamp-2 mb-3" style={{ color: 'var(--body-text-color)' }}>{event.description}</p>
                 )}
 
-                <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-gray-500 font-medium mb-3">
+                <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] font-medium mb-3" style={{ color: 'var(--body-text-color)' }}>
                   {timeLabel && (
                     <div className="flex items-center gap-1"><Clock3 className="h-3 w-3" style={{ color: theme.primary }} />{timeLabel}</div>
                   )}
@@ -359,8 +334,8 @@ const Events = ({ onNavigate }) => {
                   )}
                 </div>
 
-                <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-3">
-                  <div className="flex items-center gap-1.5 text-xs font-medium text-slate-500">
+                <div className="pt-3 flex items-center justify-between gap-3" style={{ borderTop: '1px solid color-mix(in srgb, var(--brand-navy) 10%, transparent)' }}>
+                  <div className="flex items-center gap-1.5 text-xs font-medium" style={{ color: 'var(--body-text-color)' }}>
                     {attachCount > 0 && <><Paperclip className="h-3.5 w-3.5" />{attachCount} Attachment{attachCount === 1 ? '' : 's'}</>}
                   </div>
                   <div className="inline-flex items-center gap-1 text-xs font-semibold" style={{ color: theme.primary }}>
@@ -373,19 +348,19 @@ const Events = ({ onNavigate }) => {
 
           {events.length === 0 && (
             <div className="text-center py-20">
-              <div className="bg-white h-20 w-20 rounded-full flex items-center justify-center mx-auto mb-4 border border-slate-200 shadow-sm">
-                <Calendar className="h-8 w-8 text-slate-300" />
+              <div className="h-20 w-20 rounded-full flex items-center justify-center mx-auto mb-4 border shadow-sm" style={{ background: 'var(--surface-color)', borderColor: 'color-mix(in srgb, var(--brand-navy) 12%, transparent)' }}>
+                <Calendar className="h-8 w-8" style={{ color: 'color-mix(in srgb, var(--body-text-color) 42%, var(--surface-color))' }} />
               </div>
-              <h3 className="text-gray-800 font-bold">
+              <h3 className="font-bold" style={{ color: 'var(--heading-color)' }}>
                 {activeTab === 'current' ? 'No current events right now.' : activeTab === 'upcoming' ? 'No upcoming events.' : 'No past events available.'}
               </h3>
-              <p className="text-gray-500 text-sm mt-1">Check back later.</p>
+              <p className="text-sm mt-1" style={{ color: 'var(--body-text-color)' }}>Check back later.</p>
             </div>
           )}
 
           {events.length > 0 && hasMore && (
             <div className="pt-2">
-              <button onClick={handleLoadMore} disabled={loadingMore} className="w-full py-3 rounded-xl border border-gray-200 bg-white text-sm font-semibold disabled:opacity-60" style={{ color: theme.primary }}>
+              <button onClick={handleLoadMore} disabled={loadingMore} className="w-full py-3 rounded-xl border text-sm font-semibold disabled:opacity-60" style={{ color: theme.primary, background: 'var(--surface-color)', borderColor: 'color-mix(in srgb, var(--brand-navy) 12%, transparent)' }}>
                 {loadingMore ? 'Loading more events...' : 'Load more events'}
               </button>
             </div>

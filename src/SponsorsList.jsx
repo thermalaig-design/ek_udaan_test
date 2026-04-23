@@ -4,6 +4,7 @@ import { fetchTrustById } from './services/trustService';
 import { useAppTheme } from './context/ThemeContext';
 import { getAllSponsorsForTrust } from './services/api';
 import { mergeByIdAndAppendOrder, setPinnedSponsor, setSelectedSponsorId } from './services/sponsorStore';
+import { applyOpacity } from './utils/colorUtils';
 
 const CACHE_KEY = (trustId) => `sp_all_v1_${trustId}`;
 const CACHE_TTL_MS = 15 * 60 * 1000; // 15 min
@@ -89,7 +90,7 @@ const SponsorsList = ({ onNavigate, onBack }) => {
   };
 
   return (
-    <div className="min-h-screen" style={{ background: '#FFFFFF' }}>
+    <div className="min-h-screen" style={{ background: 'var(--surface-color)' }}>
       <div className="theme-navbar backdrop-blur border-b px-5 py-4 flex items-center gap-3 sticky top-0 z-10">
         <button onClick={onBack} className="p-2 rounded-xl transition-colors" style={{ background: 'color-mix(in srgb, var(--app-accent-bg) 45%, transparent)' }}>
           <ArrowLeft className="h-5 w-5" style={{ color: 'var(--navbar-text)' }} />
@@ -105,12 +106,12 @@ const SponsorsList = ({ onNavigate, onBack }) => {
 
       <div className="px-4 py-4">
         {isLoading ? (
-          <div className="rounded-2xl p-8 text-center" style={{ background: 'color-mix(in srgb, #ffffff 88%, var(--app-accent-bg))', border: '1px solid color-mix(in srgb, var(--brand-navy) 10%, transparent)' }}>
+          <div className="rounded-2xl p-8 text-center" style={{ background: 'color-mix(in srgb, var(--surface-color) 88%, var(--app-accent-bg))', border: '1px solid color-mix(in srgb, var(--brand-navy) 10%, transparent)' }}>
             <div className="w-8 h-8 rounded-full border-2 border-t-transparent animate-spin mx-auto" style={{ borderColor: theme.primary, borderTopColor: 'transparent' }} />
             <p className="text-xs font-semibold mt-2" style={{ color: theme.secondary }}>Loading sponsors...</p>
           </div>
         ) : list.length === 0 ? (
-          <div className="rounded-2xl p-8 text-center" style={{ background: 'color-mix(in srgb, #ffffff 88%, var(--app-accent-bg))', border: '1px solid color-mix(in srgb, var(--brand-navy) 10%, transparent)' }}>
+          <div className="rounded-2xl p-8 text-center" style={{ background: 'color-mix(in srgb, var(--surface-color) 88%, var(--app-accent-bg))', border: '1px solid color-mix(in srgb, var(--brand-navy) 10%, transparent)' }}>
             <p className="text-sm font-semibold" style={{ color: 'var(--body-text-color)' }}>No active sponsors available</p>
           </div>
         ) : (
@@ -121,8 +122,8 @@ const SponsorsList = ({ onNavigate, onBack }) => {
                 onClick={() => openSponsor(sponsor)}
                 className="w-full flex items-center gap-3 rounded-2xl px-3.5 py-3 text-left transition-all active:scale-[0.985]"
                 style={{
-                  background: `linear-gradient(135deg, #ffffff 0%, ${theme.accentBg || '#f8fafc'} 100%)`,
-                  border: `1px solid ${theme.primary}1F`,
+                  background: `linear-gradient(135deg, var(--surface-color) 0%, ${theme.accentBg || 'var(--app-accent-bg)'} 100%)`,
+                  border: `1px solid ${applyOpacity(theme.primary, 0.12)}`,
                 }}
               >
                 <div className="w-12 h-12 rounded-xl overflow-hidden flex items-center justify-center bg-slate-50 border border-slate-100 shadow-sm flex-shrink-0">

@@ -72,11 +72,11 @@ const colors = {
   bg:        'var(--app-page-bg)',
   card: 'color-mix(in srgb, #ffffff 92%, var(--app-accent-bg))',
   border: 'color-mix(in srgb, var(--brand-navy) 14%, transparent)',
-  muted: 'var(--body-text-color, #64748b)',
+  muted: 'var(--body-text-color)',
   success: 'color-mix(in srgb, var(--brand-red) 35%, #16a34a)',
   successBg: 'color-mix(in srgb, var(--app-accent-bg) 65%, #DCFCE7)',
-  error: 'var(--brand-red-dark, #EF4444)',
-  errorBg: 'var(--brand-red-light, #FEF2F2)',
+  error: 'var(--brand-red-dark)',
+  errorBg: 'var(--brand-red-light)',
 };
 
 // ─── Small reusable components ─────────────────────────────────────────────
@@ -95,7 +95,7 @@ const inputStyle = {
   borderRadius: '12px',
   fontSize: '14px',
   fontFamily: "var(--font-family, 'Inter', sans-serif)",
-  color: 'var(--body-text-color, #1e293b)',
+  color: 'var(--body-text-color)',
   background: 'color-mix(in srgb, var(--app-accent-bg) 72%, #ffffff)',
   outline: 'none',
   boxSizing: 'border-box',
@@ -342,7 +342,7 @@ const OtherMemberships = ({ onNavigate }) => {
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '14px' }}>
             <TrustAvatar trust={m.Trust || { name: trustName, icon_url: null }} />
             <div style={{ flex: 1, minWidth: 0 }}>
-              <h3 style={{ fontSize: '15px', fontWeight: 800, color: '#1e293b', margin: '0 0 5px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              <h3 style={{ fontSize: '15px', fontWeight: 800, color: 'var(--heading-color)', margin: '0 0 5px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {trustName}
               </h3>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
@@ -378,7 +378,7 @@ const OtherMemberships = ({ onNavigate }) => {
             {m.organisation_name && m.organisation_name !== trustName && (
               <div style={{ gridColumn: '1/-1' }}>
                 <Label>Organisation</Label>
-                <p style={{ fontSize: '13px', fontWeight: 600, color: '#1e293b', margin: 0 }}>{m.organisation_name}</p>
+                <p style={{ fontSize: '13px', fontWeight: 600, color: 'var(--heading-color)', margin: 0 }}>{m.organisation_name}</p>
               </div>
             )}
             {m.remark && (
@@ -542,7 +542,7 @@ const OtherMemberships = ({ onNavigate }) => {
                       Cancel
                     </button>
                     <button type="submit" disabled={submitting}
-                      style={{ flex: 2, padding: '12px', background: submitting ? '#94a3b8' : `linear-gradient(135deg, ${colors.primary}, ${colors.secondary})`, color: '#fff', border: 'none', borderRadius: '12px', fontSize: '14px', fontWeight: 700, cursor: submitting ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', boxShadow: submitting ? 'none' : `0 4px 14px ${colors.primary}35` }}>
+                      style={{ flex: 2, padding: '12px', background: submitting ? 'var(--body-text-color)' : `linear-gradient(135deg, ${colors.primary}, ${colors.secondary})`, color: '#fff', border: 'none', borderRadius: '12px', fontSize: '14px', fontWeight: 700, cursor: submitting ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', boxShadow: submitting ? 'none' : `0 4px 14px ${colors.primary}35` }}>
                       {submitting
                         ? <><Loader2 size={16} style={{ animation: 'spin 0.8s linear infinite' }} /> Saving…</>
                         : <><Save size={16} /> Save Membership</>}
@@ -590,7 +590,7 @@ const OtherMemberships = ({ onNavigate }) => {
                         <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '12px' }}>
                           <TrustAvatar trust={link.Trust || { name: 'Trust', icon_url: null }} />
                           <div style={{ flex: 1 }}>
-                            <h3 style={{ fontSize: '15px', fontWeight: 800, color: '#1e293b', margin: '0 0 5px', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
+                            <h3 style={{ fontSize: '15px', fontWeight: 800, color: 'var(--heading-color)', margin: '0 0 5px', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
                               {link.Trust?.name || 'Trust'}
                             </h3>
                             {link.is_active && (
@@ -619,7 +619,7 @@ const OtherMemberships = ({ onNavigate }) => {
                 <div style={{ width: 72, height: 72, borderRadius: '20px', background: 'linear-gradient(135deg, #EEF1FF, #E0E7FF)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px' }}>
                   <Building2 size={32} color={colors.primary} />
                 </div>
-                <h3 style={{ fontSize: '16px', fontWeight: 700, color: '#1e293b', margin: '0 0 8px' }}>No Memberships Yet</h3>
+                <h3 style={{ fontSize: '16px', fontWeight: 700, color: 'var(--heading-color)', margin: '0 0 8px' }}>No Memberships Yet</h3>
                 <p style={{ fontSize: '13px', color: colors.muted, margin: 0, lineHeight: 1.5 }}>
                   Tap <strong>"Add New Membership"</strong> to add your first trust membership.
                 </p>
@@ -642,3 +642,4 @@ const OtherMemberships = ({ onNavigate }) => {
 };
 
 export default OtherMemberships;
+

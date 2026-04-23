@@ -147,7 +147,9 @@ export function formatTimeRange(startTime, endTime) {
   return null;
 }
 
+
 // ── API fetch ───────────────────────────────────────────────────────────────
+
 
 /**
  * Fetch all active events for a trust from DB (2 columns only for list).

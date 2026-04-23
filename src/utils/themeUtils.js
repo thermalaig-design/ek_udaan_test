@@ -261,6 +261,22 @@ export const buildGradient = ({
   gradient_type,
   gradient_angle
 } = {}) => {
+  if (typeof bg_color_1 === 'string' && bg_color_1.trim().startsWith('linear-gradient(')) {
+    return bg_color_1.trim();
+  }
+  if (typeof bg_color_1 === 'string' && bg_color_1.trim().startsWith('radial-gradient(')) {
+    return bg_color_1.trim();
+  }
+  if (typeof bg_color_1 === 'string' && bg_color_1.trim().startsWith('conic-gradient(')) {
+    return bg_color_1.trim();
+  }
+
+  // Support legacy/simple direct string shape:
+  // page_bg: "linear-gradient(...)"
+  if (typeof bg_color_1 === 'string' && !bg_color_2 && !gradient_type && !gradient_angle && bg_color_1.trim()) {
+    return bg_color_1.trim();
+  }
+
   const color1 = bg_color_1 || bg_color_2 || '#ffffff';
   const color2 = bg_color_2 || bg_color_1 || color1;
   const type = String(gradient_type || 'none').trim().toLowerCase();
@@ -329,13 +345,17 @@ export const buildThemeFromTemplate = ({
     ? templateRow.animations
     : DEFAULT_THEME.animations;
 
+  const resolvedPageBg = typeof pageBg === 'string'
+    ? pageBg
+    : buildGradient(pageBg);
+
   return {
     primary,
     secondary,
     accent,
     accentBg,
     navbarBg: buildSurfaceBackground(navbar, DEFAULT_THEME.navbarBg),
-    pageBg: buildGradient(pageBg),
+    pageBg: resolvedPageBg,
     sidebarBg: buildSurfaceBackground(sidebar, DEFAULT_THEME.sidebarBg),
     marqueeBg: buildGradient(marquee),
     homeLayout: resolvedHomeLayout,
@@ -640,7 +660,8 @@ export const applyThemeCssVariables = (theme, root = document.documentElement) =
   const accent = safeTheme.accent || DEFAULT_THEME.accent;
   const accentBg = safeTheme.accentBg || DEFAULT_THEME.accentBg;
   const navbarBg = navbarTheme.backgroundStyle || safeTheme.navbarBg || DEFAULT_THEME.navbarBg;
-  const pageBackground = safeTheme.pageBg || buildGradient(pageBg);
+  const pageBackground = safeTheme.pageBg
+    || (typeof pageBg === 'string' ? pageBg : buildGradient(pageBg));
   const sidebarBg = safeTheme.sidebarBg || buildSurfaceBackground(sidebar, DEFAULT_THEME.sidebarBg);
   const marqueeBg = safeTheme.marqueeBg || buildGradient(marquee);
 
@@ -701,6 +722,15 @@ export const applyThemeCssVariables = (theme, root = document.documentElement) =
 
   root.style.setProperty('--advertisement-bg', advertisementBgStyle);
   root.style.setProperty('--advertisement-text', advertisement.text_color || secondary);
+  root.style.setProperty('--advertisement-title', advertisement.title_color || advertisement.text_color || secondary);
+  root.style.setProperty('--advertisement-subtitle', advertisement.subtitle_color || advertisement.text_color || secondary);
+  root.style.setProperty('--advertisement-description', advertisement.description_color || advertisement.text_color || secondary);
+  root.style.setProperty('--advertisement-badge-bg', advertisement.badge_bg_color || accentBg);
+  root.style.setProperty('--advertisement-badge-text', advertisement.badge_text_color || primary);
+  root.style.setProperty('--advertisement-badge-dot', advertisement.badge_dot_color || primary);
+  root.style.setProperty('--advertisement-card-bg', advertisement.card_bg_color || '#FFFFFF');
+  root.style.setProperty('--advertisement-card-border', advertisement.card_border_color || advertisement.border_color_1 || primary);
+  root.style.setProperty('--advertisement-card-shadow', advertisement.card_shadow_color || secondary);
 
   root.style.setProperty('--font-family', typography.font_family || DEFAULT_THEME_CONFIG.typography.font_family);
   root.style.setProperty('--heading-color', typography.heading_color || '#111827');
@@ -734,10 +764,19 @@ export const applyThemeCssVariables = (theme, root = document.documentElement) =
         bg: quickActionsTheme.backgroundStyle,
         text: quickActionsTheme.textColor
       },
+      page: {
+        background: pageBackground
+      },
       appButtons: {
         bg: appButtonsTheme.backgroundStyle,
         text: appButtonsTheme.textColor,
         icon: appButtonsTheme.iconColor
+      },
+      advertisement: {
+        background: advertisementBgStyle,
+        title: advertisement.title_color || null,
+        subtitle: advertisement.subtitle_color || null,
+        description: advertisement.description_color || null
       },
       typography: {
         fontFamily: typography.font_family || DEFAULT_THEME_CONFIG.typography.font_family,

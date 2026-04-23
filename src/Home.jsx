@@ -25,6 +25,7 @@ import {
   sponsorConfig
 } from './services/sponsorStore';
 import { getFooterThemeStyles, getNavbarThemeStyles, getThemeToken } from './utils/themeUtils';
+import { applyOpacity } from './utils/colorUtils';
 
 const DEFAULT_TRUST_NAME = import.meta.env.VITE_DEFAULT_TRUST_NAME || 'Mahila Mandal';
 const DEFAULT_TRUST_LOGO = '/new_logo.png';
@@ -96,17 +97,13 @@ const mergeTrustsWithExistingVisuals = (incomingTrusts = [], existingTrusts = []
 };
 
 const TrustChipIcon = ({ iconUrl, altText }) => {
-  const [imgError, setImgError] = useState(false);
-
-  useEffect(() => {
-    setImgError(false);
-  }, [iconUrl]);
+  const [failedSrc, setFailedSrc] = useState('');
 
   const src = String(iconUrl || '').trim();
-  const hasValidIcon = Boolean(src) && !imgError;
+  const hasValidIcon = Boolean(src) && failedSrc !== src;
 
   if (!hasValidIcon) {
-    return <Building2 className="h-4 w-4" style={{ color: '#64748B' }} />;
+    return <Building2 className="h-4 w-4" style={{ color: 'var(--body-text-color)' }} />;
   }
 
   return (
@@ -116,7 +113,7 @@ const TrustChipIcon = ({ iconUrl, altText }) => {
       className="w-7 h-7 object-contain"
       loading="eager"
       decoding="async"
-      onError={() => setImgError(true)}
+      onError={() => setFailedSrc(src)}
     />
   );
 };
@@ -1436,10 +1433,12 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
 
   const shouldShowTrustSelector = trustList.length > 1;
   const showTrustSelector = shouldShowTrustSelector;
-  const surfaceColor = theme?.themeConfig?.page_bg?.bg_color_1 || theme?.accentBg || '#ffffff';
-  const mutedTextColor = getThemeToken(theme, 'typography.body_text_color', 'var(--body-text-color, #64748b)');
-  const headingColor = getThemeToken(theme, 'typography.heading_color', 'var(--heading-color, #111827)');
-  const onPrimaryText = getThemeToken(theme, 'app_buttons.text_color', 'var(--app-button-text, #ffffff)');
+  const surfaceColor = getThemeToken(theme, 'accent_bg', null)
+    || theme?.accentBg
+    || 'var(--surface-color)';
+  const mutedTextColor = getThemeToken(theme, 'typography.body_text_color', 'var(--body-text-color)');
+  const headingColor = getThemeToken(theme, 'typography.heading_color', 'var(--heading-color)');
+  const onPrimaryText = getThemeToken(theme, 'app_buttons.text_color', 'var(--app-button-text)');
   const appButtonBg = 'var(--app-button-bg)';
   const quickActionsBg = 'var(--quick-actions-bg)';
   const quickActionsText = 'var(--quick-actions-text)';
@@ -1447,22 +1446,9 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
   const navbarTextColor = 'var(--navbar-text)';
   const subtleBorderColor = `color-mix(in srgb, ${theme.secondary} 16%, transparent)`;
   const subtleSurfaceColor = `color-mix(in srgb, ${surfaceColor} 82%, ${theme.accentBg})`;
-  const toRgba = (color, alpha = 1) => {
-    const safeAlpha = Number.isFinite(Number(alpha)) ? Math.max(0, Math.min(1, Number(alpha))) : 1;
-    const raw = String(color || '').trim();
-    const match = raw.match(/^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/);
-    if (!match) return raw || `rgba(0,0,0,${safeAlpha})`;
-    const hex = match[1].length === 3
-      ? match[1].split('').map((ch) => ch + ch).join('')
-      : match[1];
-    const r = parseInt(hex.slice(0, 2), 16);
-    const g = parseInt(hex.slice(2, 4), 16);
-    const b = parseInt(hex.slice(4, 6), 16);
-    return `rgba(${r}, ${g}, ${b}, ${safeAlpha})`;
-  };
   const sponsorTheme = {
-    bgColor1: getThemeToken(theme, 'advertisement.bg_color_1', getThemeToken(theme, 'advertisement.bg_color', theme.accentBg || '#EEF2F7')),
-    bgColor2: getThemeToken(theme, 'advertisement.bg_color_2', getThemeToken(theme, 'advertisement.bg_color', theme.accent || theme.accentBg || '#E2E8F0')),
+    bgColor1: getThemeToken(theme, 'advertisement.bg_color_1', getThemeToken(theme, 'advertisement.bg_color', theme.accentBg || 'var(--app-accent-bg)')),
+    bgColor2: getThemeToken(theme, 'advertisement.bg_color_2', getThemeToken(theme, 'advertisement.bg_color', theme.accent || theme.accentBg || 'var(--app-accent)')),
     bgOpacity: Number(getThemeToken(theme, 'advertisement.bg_opacity', 1)),
     gradientType: String(getThemeToken(theme, 'advertisement.gradient_type', 'linear') || 'linear').toLowerCase(),
     gradientAngle: Number(getThemeToken(theme, 'advertisement.gradient_angle', 135)),
@@ -1495,15 +1481,15 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
     photoRingColor2: getThemeToken(theme, 'advertisement.photo_ring_color_2', theme.secondary),
     indicatorActive1: getThemeToken(theme, 'advertisement.indicator_active_color_1', theme.primary),
     indicatorActive2: getThemeToken(theme, 'advertisement.indicator_active_color_2', theme.secondary),
-    indicatorInactive: getThemeToken(theme, 'advertisement.indicator_inactive_color', `${theme.primary}35`),
+    indicatorInactive: getThemeToken(theme, 'advertisement.indicator_inactive_color', applyOpacity(theme.primary, 0.21)),
     emptyTextColor: getThemeToken(theme, 'advertisement.empty_text_color', mutedTextColor),
-    skeletonColor: getThemeToken(theme, 'advertisement.skeleton_color', theme.accent || '#E2E8F0'),
+    skeletonColor: getThemeToken(theme, 'advertisement.skeleton_color', theme.accent || 'var(--app-accent)'),
   };
   const sponsorBgColor1 = sponsorTheme.bgColor1;
   const sponsorBgColor2 = sponsorTheme.bgColor2 || sponsorBgColor1;
   const sponsorOverlayBackground = sponsorTheme.gradientType === 'none'
-    ? toRgba(sponsorBgColor1, sponsorTheme.bgOpacity)
-    : `linear-gradient(${Number.isFinite(sponsorTheme.gradientAngle) ? sponsorTheme.gradientAngle : 135}deg, ${toRgba(sponsorBgColor1, sponsorTheme.bgOpacity)} 0%, ${toRgba(sponsorBgColor2, sponsorTheme.bgOpacity)} 100%)`;
+    ? applyOpacity(sponsorBgColor1, sponsorTheme.bgOpacity)
+    : `linear-gradient(${Number.isFinite(sponsorTheme.gradientAngle) ? sponsorTheme.gradientAngle : 135}deg, ${applyOpacity(sponsorBgColor1, sponsorTheme.bgOpacity)} 0%, ${applyOpacity(sponsorBgColor2, sponsorTheme.bgOpacity)} 100%)`;
   const animationMap = {
     fadeUp: 'themeFadeUp 420ms ease-out both',
     fadeSlideDown: 'themeFadeSlideDown 420ms ease-out both',
@@ -1531,7 +1517,7 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
           width: '320px',
           height: '320px',
           borderRadius: '9999px',
-          background: `radial-gradient(circle, ${theme.primary}1F 0%, transparent 70%)`,
+          background: `radial-gradient(circle, ${applyOpacity(theme.primary, 0.12)} 0%, transparent 70%)`,
           animation: 'homeFloat1 7s ease-in-out infinite',
         }}
       />
@@ -1544,7 +1530,7 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
           width: '360px',
           height: '360px',
           borderRadius: '9999px',
-          background: `radial-gradient(circle, ${theme.secondary}1F 0%, transparent 70%)`,
+          background: `radial-gradient(circle, ${applyOpacity(theme.secondary, 0.12)} 0%, transparent 70%)`,
           animation: 'homeFloat2 9s ease-in-out infinite',
         }}
       />
@@ -1557,7 +1543,7 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
           width: '220px',
           height: '220px',
           borderRadius: '9999px',
-          background: `radial-gradient(circle, ${theme.primary}12 0%, transparent 70%)`,
+          background: `radial-gradient(circle, ${applyOpacity(theme.primary, 0.07)} 0%, transparent 70%)`,
           animation: 'homeFloat3 6s ease-in-out infinite',
         }}
       />
@@ -1570,7 +1556,7 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
           background: 'var(--navbar-bg, var(--app-navbar-bg))',
           backdropFilter: 'blur(var(--navbar-blur, 12px))',
           WebkitBackdropFilter: 'blur(var(--navbar-blur, 12px))',
-          boxShadow: `0 2px 16px ${theme.secondary}22`,
+          boxShadow: `0 2px 16px ${applyOpacity(theme.secondary, 0.13)}`,
           borderBottom: '1px solid var(--navbar-border)',
           animation: resolveAnimation('navbar', 'fadeSlideDown')
         }}
@@ -1596,8 +1582,8 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
               style={{
                 background: isMenuOpen
                   ? appButtonBg
-                  : 'color-mix(in srgb, var(--navbar-bg) 72%, #ffffff)',
-                boxShadow: isMenuOpen ? `0 4px 12px ${theme.primary}40` : 'none',
+                  : 'color-mix(in srgb, var(--navbar-bg) 72%, var(--surface-color))',
+                boxShadow: isMenuOpen ? `0 4px 12px ${applyOpacity(theme.primary, 0.25)}` : 'none',
               }}
           >
             {isMenuOpen
@@ -1610,7 +1596,7 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
             <div
               className="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 p-0.5"
               style={{
-                boxShadow: `0 0 0 2px ${theme.primary}, 0 3px 10px ${theme.primary}30`,
+                boxShadow: `0 0 0 2px ${theme.primary}, 0 3px 10px ${applyOpacity(theme.primary, 0.19)}`,
                 background: surfaceColor,
               }}
             >
@@ -1638,8 +1624,8 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
                   style={{
                     background: isNotificationsOpen
                       ? appButtonBg
-                      : 'color-mix(in srgb, var(--navbar-bg) 72%, #ffffff)',
-                    boxShadow: isNotificationsOpen ? `0 4px 12px ${theme.primary}40` : 'none',
+                      : 'color-mix(in srgb, var(--navbar-bg) 72%, var(--surface-color))',
+                    boxShadow: isNotificationsOpen ? `0 4px 12px ${applyOpacity(theme.primary, 0.25)}` : 'none',
                   }}
                 >
                   <Bell
@@ -1660,11 +1646,14 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
                   <>
                     <div className="fixed inset-0 z-[90]" onClick={() => setIsNotificationsOpen(false)} />
                     <div
-                      className="notification-dropdown fixed right-3 top-[72px] w-80 bg-white rounded-2xl shadow-2xl z-[100] overflow-hidden"
-                      style={{ border: `1px solid ${theme.primary}1F` }}
+                      className="notification-dropdown fixed right-3 top-[72px] w-80 rounded-2xl shadow-2xl z-[100] overflow-hidden"
+                      style={{
+                        border: `1px solid ${applyOpacity(theme.primary, 0.12)}`,
+                        background: 'color-mix(in srgb, var(--app-page-bg) 88%, var(--surface-color))'
+                      }}
                     >
                       <div className="p-4 flex items-center justify-between"
-                        style={{ borderBottom: `1px solid ${theme.primary}14`, background: `linear-gradient(135deg,${theme.accent},${surfaceColor})` }}>
+                        style={{ borderBottom: `1px solid ${applyOpacity(theme.primary, 0.08)}`, background: `linear-gradient(135deg,${theme.accent},${surfaceColor})` }}>
                         <h3 className="font-bold text-sm" style={{ color: navbarTextColor }}>Notifications ({notifications.length})</h3>
                         <div className="flex items-center gap-3">
                           {unreadCount > 0 && (
@@ -1680,21 +1669,33 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
                       <div className="max-h-[360px] overflow-y-auto">
                         {notifications.length > 0 ? notifications.slice(0, 4).map((notification) => (
                           <div key={notification.id}
-                            className={`p-4 relative cursor-pointer transition-colors ${!notification.is_read ? 'bg-red-50/30' : 'hover:bg-gray-50'}`}
-                            style={{ borderBottom: `1px solid ${subtleBorderColor}` }}
+                            className="p-4 relative cursor-pointer transition-colors"
+                            style={{
+                              borderBottom: `1px solid ${subtleBorderColor}`,
+                              background: notification.is_read
+                                ? 'transparent'
+                                : `color-mix(in srgb, ${theme.primary} 10%, transparent)`
+                            }}
                           >
                             <div onClick={() => { handleMarkAsRead(notification.id); sessionStorage.setItem('initialNotification', JSON.stringify(notification)); setIsNotificationsOpen(false); onNavigate('notifications'); }}>
                               {!notification.is_read && <div className="absolute left-2 top-1/2 -translate-y-1/2 w-1.5 h-1.5 rounded-full" style={{ background: theme.primary }} />}
-                              <h4 className={`text-sm font-semibold text-slate-800 mb-0.5 ${!notification.is_read ? 'pl-3' : ''}`}>
+                              <h4
+                                className={`text-sm font-semibold mb-0.5 ${!notification.is_read ? 'pl-3' : ''}`}
+                                style={{ color: 'var(--heading-color)' }}
+                              >
                                 {formatNotificationTitle(notification.title, notification.message)}
                               </h4>
-                              <p className="text-xs text-slate-500 leading-relaxed mb-1">{formatNotificationMessage(notification.message)}</p>
-                              <span className="text-[10px] text-slate-400 font-medium">
+                              <p className="text-xs leading-relaxed mb-1" style={{ color: 'var(--body-text-color)' }}>
+                                {formatNotificationMessage(notification.message)}
+                              </p>
+                              <span className="text-[10px] font-medium" style={{ color: 'color-mix(in srgb, var(--body-text-color) 72%, var(--surface-color))' }}>
                                 {new Date(notification.created_at).toLocaleDateString()} at {new Date(notification.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                               </span>
                             </div>
                             <button onClick={(e) => { e.stopPropagation(); handleDismissNotification(notification.id); }}
-                              className="absolute top-2.5 right-2.5 p-1 rounded-full text-slate-400 transition-colors">
+                              className="absolute top-2.5 right-2.5 p-1 rounded-full transition-colors"
+                              style={{ color: 'color-mix(in srgb, var(--body-text-color) 70%, var(--surface-color))' }}
+                            >
                               <X className="w-3.5 h-3.5" />
                             </button>
                           </div>
@@ -1703,7 +1704,9 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
                             <div className="w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-3" style={{ background: theme.accent }}>
                               <Bell className="h-5 w-5" style={{ color: navbarTextColor }} />
                             </div>
-                            <p className="text-sm text-slate-400 font-medium">No notifications yet</p>
+                            <p className="text-sm font-medium" style={{ color: 'color-mix(in srgb, var(--body-text-color) 70%, var(--surface-color))' }}>
+                              No notifications yet
+                            </p>
                           </div>
                         )}
                       </div>
@@ -1729,8 +1732,8 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
             <div
               className="flex items-center gap-2.5 rounded-2xl px-3.5 py-2"
               style={{
-                background: `linear-gradient(135deg, ${theme.accent}99, ${theme.accentBg})`,
-                border: `1px solid ${theme.primary}14`,
+                background: `linear-gradient(135deg, ${applyOpacity(theme.accent, 0.6)}, ${theme.accentBg})`,
+                border: `1px solid ${applyOpacity(theme.primary, 0.08)}`,
               }}
             >
               {userProfile.profilePhotoUrl ? (
@@ -1781,10 +1784,14 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
                     onClick={() => handleTrustSelect(trust.id)}
                     className="flex-shrink-0 w-10 h-10 rounded-xl flex items-center justify-center overflow-hidden transition-all duration-200"
                     style={{
-                      border: isActive ? `2.5px solid ${theme.primary}` : '2px solid #E2E8F0',
-                      backgroundColor: '#FFFFFF',
+                      border: isActive
+                        ? `2.5px solid ${theme.primary}`
+                        : '2px solid color-mix(in srgb, var(--body-text-color) 18%, var(--surface-color))',
+                      backgroundColor: 'color-mix(in srgb, var(--app-page-bg) 86%, var(--surface-color))',
                       transform: isActive ? 'scale(1.05)' : 'scale(1)',
-                      boxShadow: isActive ? '0 4px 12px rgba(15, 23, 42, 0.14)' : 'none',
+                      boxShadow: isActive
+                        ? '0 4px 12px color-mix(in srgb, var(--brand-navy) 22%, transparent)'
+                        : 'none',
                     }}
                     title={trust.name || 'Hospital'}
                   >
@@ -1802,7 +1809,7 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
               className="mt-0 mb-2 w-full overflow-hidden"
               style={{
                 background: 'var(--marquee-bg)',
-                boxShadow: `0 2px 12px ${theme.primary}4D`,
+                boxShadow: `0 2px 12px ${applyOpacity(theme.primary, 0.3)}`,
                 animation: resolveAnimation('cards')
               }}
               key="marquee"
@@ -1834,8 +1841,8 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
               <div
                 className="rounded-3xl overflow-hidden"
                 style={{
-                  boxShadow: `0 10px 32px ${theme.secondary}28, 0 2px 8px ${theme.primary}14`,
-                  border: `1px solid ${theme.primary}18`,
+                  boxShadow: `0 10px 32px ${applyOpacity(theme.secondary, 0.16)}, 0 2px 8px ${applyOpacity(theme.primary, 0.08)}`,
+                  border: `1px solid ${applyOpacity(theme.primary, 0.1)}`,
                 }}
               >
                 <div className="h-[3px]" style={{ background: `linear-gradient(90deg, ${theme.primary}, ${theme.secondary})` }} />
@@ -1851,7 +1858,10 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
                 ) : (
                   <button
                     onClick={() => onNavigate('gallery')}
-                    className="w-full h-[200px] bg-white flex flex-col items-center justify-center gap-3"
+                    className="w-full h-[200px] flex flex-col items-center justify-center gap-3"
+                    style={{
+                      background: 'color-mix(in srgb, var(--app-page-bg) 80%, var(--surface-color))'
+                    }}
                   >
                     <div
                       className="w-14 h-14 rounded-2xl flex items-center justify-center"
@@ -1863,7 +1873,12 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
                       <p className="text-sm font-bold text-center" style={{ color: theme.secondary }}>
                         {(activeTrust?.name || defaultTrust?.name || DEFAULT_TRUST_NAME)} Gallery
                       </p>
-                      <p className="text-xs text-gray-400 text-center mt-0.5">{galleryError || 'Tap to open gallery'}</p>
+                      <p
+                        className="text-xs text-center mt-0.5"
+                        style={{ color: 'color-mix(in srgb, var(--body-text-color) 72%, var(--surface-color))' }}
+                      >
+                        {galleryError || 'Tap to open gallery'}
+                      </p>
                     </div>
                   </button>
                 )}
@@ -1889,7 +1904,7 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
                     >
                       <div
                         className="h-[4px]"
-                        style={{ background: `linear-gradient(90deg, ${quickActionsText} 0%, color-mix(in srgb, ${quickActionsText} 60%, #ffffff) 100%)` }}
+                        style={{ background: `linear-gradient(90deg, ${quickActionsText} 0%, color-mix(in srgb, ${quickActionsText} 60%, var(--surface-color)) 100%)` }}
                       />
                       <div className="p-3.5">
                         <div
@@ -1910,7 +1925,7 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
                             <h3 className="text-[12px] font-extrabold leading-snug" style={{ color: quickActionsText }}>
                               {action.displayName}
                             </h3>
-                            <p className="text-[10px] font-medium mt-0.5 leading-snug" style={{ color: `color-mix(in srgb, ${quickActionsText} 80%, #ffffff)` }}>
+                            <p className="text-[10px] font-medium mt-0.5 leading-snug" style={{ color: `color-mix(in srgb, ${quickActionsText} 80%, var(--surface-color))` }}>
                               {action.tagline}
                             </p>
                           </div>
@@ -1967,7 +1982,7 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
                           <div
                             className="relative rounded-3xl p-5 flex items-center gap-4 h-full overflow-hidden"
                             style={{
-                              background: toRgba(sponsorTheme.cardBgColor, sponsorTheme.cardBgOpacity),
+                              background: applyOpacity(sponsorTheme.cardBgColor, sponsorTheme.cardBgOpacity),
                               backdropFilter: 'blur(8px)',
                             }}
                           >
@@ -2059,7 +2074,7 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
                 <div
                   className="relative overflow-hidden rounded-3xl"
                   style={{
-                    boxShadow: `0 8px 24px ${theme.secondary}12`
+                    boxShadow: `0 8px 24px ${applyOpacity(theme.secondary, 0.07)}`
                   }}
                 >
                   <div
@@ -2077,7 +2092,7 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
                     <div
                       className="relative rounded-3xl p-4 min-h-[168px] overflow-hidden"
                       style={{
-                        background: toRgba(sponsorTheme.cardBgColor, sponsorTheme.cardBgOpacity),
+                        background: applyOpacity(sponsorTheme.cardBgColor, sponsorTheme.cardBgOpacity),
                         backdropFilter: 'blur(8px)',
                       }}
                     >
@@ -2173,13 +2188,13 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
       <footer
         className="mt-auto py-3 px-6"
         style={{
-          borderTop: '1px solid var(--footer-border, rgba(255, 255, 255, 0.24))',
+          borderTop: '1px solid var(--footer-border)',
           background: 'var(--footer-bg)',
           color: 'var(--footer-text)'
         }}
       >
         <div className="flex items-center justify-center gap-2">
-          <div className="w-8 h-px" style={{ background: 'linear-gradient(to right, transparent, var(--footer-accent, rgba(255, 255, 255, 0.45)))' }} />
+          <div className="w-8 h-px" style={{ background: 'linear-gradient(to right, transparent, var(--footer-accent))' }} />
           <button
             onClick={() => onNavigate('developers')}
             className="text-[11px] font-medium transition-colors"
@@ -2187,7 +2202,7 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
           >
             Powered by Developers
           </button>
-          <div className="w-8 h-px" style={{ background: 'linear-gradient(to left, transparent, var(--footer-accent, rgba(255, 255, 255, 0.45)))' }} />
+          <div className="w-8 h-px" style={{ background: 'linear-gradient(to left, transparent, var(--footer-accent))' }} />
         </div>
       </footer>
       <TermsModal isOpen={showTermsModal} onAccept={handleAcceptTerms} />

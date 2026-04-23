@@ -1,10 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import { Building2, Calendar, Home as HomeIcon, Menu, X, Paperclip, RefreshCw, Star, ChevronRight, FileText } from 'lucide-react';
+import { Calendar, Home as HomeIcon, Menu, X, Paperclip, Star, ChevronRight, FileText } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import Sidebar from './components/Sidebar';
 import { useAppTheme } from './context/ThemeContext';
 import {
-  clearFacilitiesCache,
   facilitiesConfig,
   getFacilitiesSnapshot,
   loadFacilitiesPage,
@@ -36,7 +35,6 @@ const Facilities = ({ onNavigate }) => {
   const [selectedTrustId, setSelectedTrustId] = useState(() => localStorage.getItem('selected_trust_id') || '');
   const [hasMoreFacilities, setHasMoreFacilities] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
-  const [refreshing, setRefreshing] = useState(false);
 
   const syncFromStore = (trustId) => {
     const snapshot = getFacilitiesSnapshot(trustId);
@@ -58,6 +56,16 @@ const Facilities = ({ onNavigate }) => {
       forceRefresh
     });
     syncFromStore(trustId);
+    // Defensive fallback: if scoped cache read misses for any transient key mismatch,
+    // still render the API payload so UI never appears blank.
+    if (Array.isArray(res?.facilities) && res.facilities.length > 0) {
+      const latestSnapshot = getFacilitiesSnapshot(trustId);
+      const snapshotRows = Array.isArray(latestSnapshot?.facilities) ? latestSnapshot.facilities : [];
+      if (snapshotRows.length === 0) {
+        setFacilities(res.facilities);
+        if (typeof res?.hasMore === 'boolean') setHasMoreFacilities(res.hasMore);
+      }
+    }
     const progress = readFacilitiesProgress(trustId);
     console.log(
       '[Facilities][Debug] page=',
@@ -176,17 +184,6 @@ const Facilities = ({ onNavigate }) => {
     }
   };
 
-  const handleRefresh = async () => {
-    if (!selectedTrustId || refreshing) return;
-    try {
-      setRefreshing(true);
-      clearFacilitiesCache(selectedTrustId);
-      await loadFacilities({ forceRefresh: true });
-    } finally {
-      setRefreshing(false);
-    }
-  };
-
   const openFacilityDetail = (facilityId) => {
     const id = String(facilityId || '').trim();
     if (!id) return;
@@ -227,29 +224,6 @@ const Facilities = ({ onNavigate }) => {
         onNavigate={onNavigate}
         currentPage="facilities"
       />
-
-      <div className="px-6 pt-7 pb-4">
-        <div className="rounded-2xl p-4 shadow-sm" style={{ border: '1px solid color-mix(in srgb, var(--brand-navy) 10%, transparent)', background: 'color-mix(in srgb, var(--app-accent-bg) 32%, #ffffff)' }}>
-          <div className="flex items-start gap-3">
-            <div className="h-11 w-11 rounded-xl flex items-center justify-center shrink-0" style={{ border: '1px solid color-mix(in srgb, var(--brand-navy) 10%, transparent)', background: 'color-mix(in srgb, #ffffff 95%, var(--app-accent-bg))' }}>
-              <Building2 className="h-5 w-5" style={{ color: theme.secondary }} />
-            </div>
-            <div className="flex-1 min-w-0">
-              <h1 className="text-xl font-bold leading-tight" style={{ color: 'var(--heading-color)' }}>Facilities</h1>
-              <p className="text-xs sm:text-sm mt-1" style={{ color: 'var(--body-text-color)' }}>Available active facilities for your selected trust</p>
-            </div>
-            <button
-              onClick={handleRefresh}
-              disabled={refreshing}
-              className="h-9 w-9 rounded-xl disabled:opacity-60 flex items-center justify-center shrink-0"
-              style={{ border: '1px solid color-mix(in srgb, var(--brand-navy) 10%, transparent)', background: 'color-mix(in srgb, #ffffff 88%, var(--app-accent-bg))' }}
-              title="Refresh facilities"
-            >
-              <RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} style={{ color: theme.primary }} />
-            </button>
-          </div>
-        </div>
-      </div>
 
       {!loading && !error && facilities.length > 0 && (
         <div className="px-6 pb-2">

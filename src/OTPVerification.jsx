@@ -9,21 +9,44 @@ import { persistUserSession } from './utils/storageUtils';
 import { useAppTheme } from './context/ThemeContext';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
-const TRUST_ID = import.meta.env.VITE_DEFAULT_TRUST_ID || 'b353d2ff-ec3b-4b90-a896-69f40662084e';
+const TRUST_ID = import.meta.env.VITE_DEFAULT_TRUST_ID || '';
 // Separate cache key for Login/OTP screens — never polluted by Home page trust switching
 const LOGIN_TRUST_CACHE_KEY = 'cached_base_trust_info';
 const TRUST_CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
 // No static fallback image — show monogram placeholder instead of Mah-Setu logo
 const OTP_FLOW_KEY = 'otp_flow_allowed';
 
+const resolveAuthDefaultTrust = () => {
+  const defaultName = import.meta.env.VITE_DEFAULT_TRUST_NAME || 'Mahila Mandal';
+  try {
+    const cachedDefault = localStorage.getItem('default_trust_cache');
+    if (cachedDefault) {
+      const parsed = JSON.parse(cachedDefault);
+      const id = parsed?.id ? String(parsed.id).trim() : '';
+      const name = parsed?.name ? String(parsed.name).trim() : '';
+      if (id) return { id, name: name || defaultName };
+    }
+  } catch {
+    // ignore malformed cache
+  }
+
+  const selectedId = String(localStorage.getItem('selected_trust_id') || '').trim();
+  const selectedName = String(localStorage.getItem('selected_trust_name') || '').trim();
+  if (selectedId) return { id: selectedId, name: selectedName || defaultName };
+
+  if (TRUST_ID) return { id: TRUST_ID, name: defaultName };
+  return { id: '', name: defaultName };
+};
+
 // ─── Cache helpers ─────────────────────────────────────────────────────────────
-const getCachedBaseTrust = () => {
+const getCachedBaseTrust = (expectedTrustId) => {
+  if (!expectedTrustId) return null;
   try {
     const raw = localStorage.getItem(LOGIN_TRUST_CACHE_KEY);
     if (!raw) return null;
     const { data, ts, trustId } = JSON.parse(raw);
     // Reject stale or wrong-trust cache
-    if (trustId && trustId !== TRUST_ID) {
+    if (trustId && trustId !== expectedTrustId) {
       localStorage.removeItem(LOGIN_TRUST_CACHE_KEY);
       return null;
     }
@@ -37,11 +60,12 @@ const getCachedBaseTrust = () => {
   }
 };
 
-const setCachedBaseTrust = (trust) => {
+const setCachedBaseTrust = (trust, trustId) => {
+  if (!trustId) return;
   try {
     localStorage.setItem(
       LOGIN_TRUST_CACHE_KEY,
-      JSON.stringify({ data: trust, ts: Date.now(), trustId: TRUST_ID })
+      JSON.stringify({ data: trust, ts: Date.now(), trustId })
     );
   } catch { /* ignore */ }
 };
@@ -52,6 +76,7 @@ function OTPVerification() {
   const location = useLocation();
   useBackNavigation(() => navigate('/login'));
   const theme = useAppTheme();
+  const authDefaultTrust = resolveAuthDefaultTrust();
 
   const [otp, setOtp] = useState('');
   const [loading, setLoading] = useState(false);
@@ -59,7 +84,7 @@ function OTPVerification() {
   const [focused, setFocused] = useState(false);
 
   // Serve from BASE-trust-specific cache instantly — no wrong logo flash
-  const [trustInfo, setTrustInfo] = useState(() => getCachedBaseTrust() || null);
+  const [trustInfo, setTrustInfo] = useState(() => getCachedBaseTrust(authDefaultTrust.id) || null);
 
   const user = location.state?.user || null;
   const phoneNumber = location.state?.phoneNumber || '';
@@ -88,10 +113,11 @@ function OTPVerification() {
 
     const refresh = async () => {
       try {
-        const trust = await fetchTrustById(TRUST_ID);
+        if (!authDefaultTrust.id) return;
+        const trust = await fetchTrustById(authDefaultTrust.id);
         if (!active || !trust) return;
         setTrustInfo(trust);
-        setCachedBaseTrust(trust);
+        setCachedBaseTrust(trust, authDefaultTrust.id);
       } catch (err) {
         console.warn('[OTP] Trust refresh failed:', err?.message || err);
       }
@@ -99,7 +125,7 @@ function OTPVerification() {
 
     refresh();
     return () => { active = false; };
-  }, []);
+  }, [authDefaultTrust.id]);
 
   // ─── OTP Submit ─────────────────────────────────────────────────────────────
   const handleSubmit = async (e) => {
@@ -130,7 +156,7 @@ function OTPVerification() {
       }
 
       // Keep app context pinned to base trust on login.
-      const selectedTrustId = TRUST_ID;
+      const selectedTrustId = authDefaultTrust.id || TRUST_ID;
       const selectedTrustName = trustInfo?.name || localStorage.getItem('selected_trust_name') || '';
       localStorage.setItem('selected_trust_id', String(selectedTrustId));
       if (selectedTrustName) localStorage.setItem('selected_trust_name', String(selectedTrustName));
@@ -310,8 +336,8 @@ function OTPVerification() {
           50%      { transform: translateY(16px) scale(0.97); }
         }
         @keyframes pulseRing {
-          0%,100% { box-shadow: 0 0 0 0   color-mix(in srgb, var(--brand-red, #C0241A) 20%, transparent); }
-          50%      { box-shadow: 0 0 0 12px color-mix(in srgb, var(--brand-red, #C0241A) 0%, transparent); }
+          0%,100% { box-shadow: 0 0 0 0   color-mix(in srgb, var(--brand-red) 20%, transparent); }
+          50%      { box-shadow: 0 0 0 12px color-mix(in srgb, var(--brand-red) 0%, transparent); }
         }
         @keyframes spin {
           to { transform: rotate(360deg); }
@@ -322,12 +348,12 @@ function OTPVerification() {
 }
 
 // ─── Design tokens ─────────────────────────────────────────────────────────────
-const RED      = 'var(--brand-red, #C0241A)';
-const RED_DARK = 'var(--brand-red-dark, #9B1A13)';
-const NAVY     = 'var(--brand-navy, #2B2F7E)';
-const WHITE    = 'var(--app-button-text, #FFFFFF)';
-const GRAY     = 'var(--body-text-color, #64748b)';
-const BORDER   = 'color-mix(in srgb, var(--brand-navy, #2B2F7E) 22%, transparent)';
+const RED      = 'var(--brand-red)';
+const RED_DARK = 'var(--brand-red-dark)';
+const NAVY     = 'var(--brand-navy)';
+const WHITE    = 'var(--surface-color)';
+const GRAY     = 'var(--body-text-color)';
+const BORDER   = 'color-mix(in srgb, var(--brand-navy) 22%, transparent)';
 
 const styles = {
   page: {
@@ -341,13 +367,13 @@ const styles = {
   blobTL: {
     position: 'absolute', top: '-80px', left: '-80px',
     width: '300px', height: '300px', borderRadius: '50%',
-    background: 'radial-gradient(circle, color-mix(in srgb, var(--brand-red, #C0241A) 16%, transparent) 0%, transparent 70%)',
+    background: 'radial-gradient(circle, color-mix(in srgb, var(--brand-red) 16%, transparent) 0%, transparent 70%)',
     animation: 'float1 7s ease-in-out infinite', pointerEvents: 'none',
   },
   blobBR: {
     position: 'absolute', bottom: '-100px', right: '-80px',
     width: '340px', height: '340px', borderRadius: '50%',
-    background: 'radial-gradient(circle, color-mix(in srgb, var(--brand-navy, #2B2F7E) 14%, transparent) 0%, transparent 70%)',
+    background: 'radial-gradient(circle, color-mix(in srgb, var(--brand-navy) 14%, transparent) 0%, transparent 70%)',
     animation: 'float2 9s ease-in-out infinite', pointerEvents: 'none',
   },
   wrapper: {
@@ -356,8 +382,8 @@ const styles = {
   },
   card: {
     background: WHITE, borderRadius: '28px',
-    boxShadow: '0 24px 60px color-mix(in srgb, var(--brand-red, #C0241A) 11%, transparent), 0 8px 24px color-mix(in srgb, var(--brand-navy, #2B2F7E) 8%, transparent)',
-    border: '1px solid color-mix(in srgb, var(--brand-red, #C0241A) 10%, transparent)',
+    boxShadow: '0 24px 60px color-mix(in srgb, var(--brand-red) 11%, transparent), 0 8px 24px color-mix(in srgb, var(--brand-navy) 8%, transparent)',
+    border: '1px solid color-mix(in srgb, var(--brand-red) 10%, transparent)',
     overflow: 'hidden', padding: '0 0 28px 0',
   },
   topBar: {
@@ -372,7 +398,7 @@ const styles = {
     width: '80px', height: '80px', borderRadius: '50%',
     background: WHITE,
     display: 'flex', alignItems: 'center', justifyContent: 'center',
-    boxShadow: '0 0 0 4px var(--brand-red-light, #FDECEA), 0 6px 20px color-mix(in srgb, var(--brand-red, #C0241A) 20%, transparent)',
+    boxShadow: '0 0 0 4px var(--brand-red-light), 0 6px 20px color-mix(in srgb, var(--brand-red) 20%, transparent)',
     animation: 'pulseRing 3s ease-in-out infinite',
     padding: '6px',
   },
@@ -383,7 +409,7 @@ const styles = {
   logoMonogram: {
     width: '100%', height: '100%', borderRadius: '50%',
     display: 'flex', alignItems: 'center', justifyContent: 'center',
-    background: 'linear-gradient(135deg, var(--brand-red-light, #FDECEA) 0%, var(--brand-navy-light, #EAEBF8) 100%)',
+    background: 'linear-gradient(135deg, var(--brand-red-light) 0%, var(--brand-navy-light) 100%)',
     color: NAVY, fontWeight: 800, fontSize: '24px', letterSpacing: '1px',
   },
 
@@ -408,20 +434,20 @@ const styles = {
     width: '100%', boxSizing: 'border-box',
     padding: '16px 12px', fontSize: '28px',
     textAlign: 'center', letterSpacing: '0.5em',
-    fontWeight: 700, color: 'var(--body-text-color, #1e293b)',
+    fontWeight: 700, color: 'var(--body-text-color)',
     border: `2px solid ${BORDER}`, borderRadius: '16px',
-    background: 'color-mix(in srgb, var(--app-accent-bg, #F8FAFC) 72%, #ffffff)', outline: 'none',
+    background: 'color-mix(in srgb, var(--app-accent-bg) 72%, var(--surface-color))', outline: 'none',
     fontFamily: "var(--font-family, 'Inter', monospace)",
     transition: 'all 0.22s ease',
   },
   otpInputFocus: {
-    borderColor: RED, background: 'color-mix(in srgb, #ffffff 85%, var(--brand-red-light, #FDECEA))',
-    boxShadow: '0 0 0 4px color-mix(in srgb, var(--brand-red, #C0241A) 11%, transparent)',
+    borderColor: RED, background: 'color-mix(in srgb, var(--surface-color) 85%, var(--brand-red-light))',
+    boxShadow: '0 0 0 4px color-mix(in srgb, var(--brand-red) 11%, transparent)',
   },
 
   errorBox: {
     display: 'flex', alignItems: 'center', gap: '8px',
-    background: 'var(--brand-red-light, #FDECEA)', border: '1.5px solid color-mix(in srgb, var(--brand-red, #C0241A) 28%, transparent)',
+    background: 'var(--brand-red-light)', border: '1.5px solid color-mix(in srgb, var(--brand-red) 28%, transparent)',
     borderRadius: '12px', padding: '12px 14px',
     fontSize: '13px', fontWeight: 500, color: RED_DARK,
   },
@@ -430,7 +456,7 @@ const styles = {
   backBtn: {
     flex: 1, padding: '14px', borderRadius: '16px',
     border: 'none', cursor: 'pointer',
-    background: 'var(--brand-navy-light, #EAEBF8)', color: NAVY,
+    background: 'var(--brand-navy-light)', color: NAVY,
     fontSize: '15px', fontWeight: 700,
     fontFamily: "var(--font-family, 'Inter', sans-serif)",
     transition: 'all 0.2s ease',
@@ -441,15 +467,15 @@ const styles = {
     background: `linear-gradient(135deg, ${RED} 0%, ${RED_DARK} 50%, ${NAVY} 100%)`,
     color: WHITE, fontSize: '15px', fontWeight: 700,
     fontFamily: "var(--font-family, 'Inter', sans-serif)",
-    boxShadow: '0 8px 24px color-mix(in srgb, var(--brand-red, #C0241A) 32%, transparent)',
+    boxShadow: '0 8px 24px color-mix(in srgb, var(--brand-red) 32%, transparent)',
     transition: 'all 0.2s ease',
   },
   verifyBtnDisabled: { opacity: 0.52, cursor: 'not-allowed', boxShadow: 'none' },
   btnInner: { display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' },
   spinner: {
     width: '16px', height: '16px',
-    border: '2.5px solid color-mix(in srgb, #ffffff 35%, transparent)',
-    borderTop: '2.5px solid #fff',
+    border: '2.5px solid color-mix(in srgb, var(--surface-color) 35%, transparent)',
+    borderTop: '2.5px solid var(--surface-color)',
     borderRadius: '50%', display: 'inline-block',
     animation: 'spin 0.75s linear infinite',
   },
@@ -468,3 +494,4 @@ const styles = {
 };
 
 export default OTPVerification;
+

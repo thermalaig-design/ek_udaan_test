@@ -6,7 +6,7 @@ import { fetchTrustById } from './services/trustService';
 import { useAppTheme } from './context/ThemeContext';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
-const TRUST_ID = import.meta.env.VITE_DEFAULT_TRUST_ID || 'b353d2ff-ec3b-4b90-a896-69f40662084e';
+const TRUST_ID = import.meta.env.VITE_DEFAULT_TRUST_ID || '';
 // Cache key specifically for the BASE/LOGIN trust — separate from session trust
 const LOGIN_TRUST_CACHE_KEY = 'cached_base_trust_info';
 const TRUST_CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
@@ -14,17 +14,39 @@ const TRUST_CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
 const DEFAULT_TRUST_NAME = import.meta.env.VITE_DEFAULT_TRUST_NAME || 'Mahila Mandal';
 const OTP_FLOW_KEY = 'otp_flow_allowed';
 
+const resolveAuthDefaultTrust = () => {
+  try {
+    const cachedDefault = localStorage.getItem('default_trust_cache');
+    if (cachedDefault) {
+      const parsed = JSON.parse(cachedDefault);
+      const id = parsed?.id ? String(parsed.id).trim() : '';
+      const name = parsed?.name ? String(parsed.name).trim() : '';
+      if (id) return { id, name: name || DEFAULT_TRUST_NAME };
+    }
+  } catch {
+    // ignore malformed cache
+  }
+
+  const selectedId = String(localStorage.getItem('selected_trust_id') || '').trim();
+  const selectedName = String(localStorage.getItem('selected_trust_name') || '').trim();
+  if (selectedId) return { id: selectedId, name: selectedName || DEFAULT_TRUST_NAME };
+
+  if (TRUST_ID) return { id: TRUST_ID, name: DEFAULT_TRUST_NAME };
+  return { id: '', name: DEFAULT_TRUST_NAME };
+};
+
 // ─── Cache helpers ─────────────────────────────────────────────────────────────
 // IMPORTANT: Login page uses its own cache key (cached_base_trust_info) that is
 // ALWAYS tied to the BASE trust ID. This prevents the Home page's trust-switching
 // (which writes to selected_trust_id) from ever bleeding wrong logos into Login.
-const getCachedBaseTrust = () => {
+const getCachedBaseTrust = (expectedTrustId) => {
+  if (!expectedTrustId) return null;
   try {
     const raw = localStorage.getItem(LOGIN_TRUST_CACHE_KEY);
     if (!raw) return null;
     const { data, ts, trustId } = JSON.parse(raw);
     // Reject cache if it belongs to a different trust
-    if (trustId && trustId !== TRUST_ID) {
+    if (trustId && trustId !== expectedTrustId) {
       localStorage.removeItem(LOGIN_TRUST_CACHE_KEY);
       return null;
     }
@@ -38,11 +60,12 @@ const getCachedBaseTrust = () => {
   }
 };
 
-const setCachedBaseTrust = (trust) => {
+const setCachedBaseTrust = (trust, trustId) => {
+  if (!trustId) return;
   try {
     localStorage.setItem(
       LOGIN_TRUST_CACHE_KEY,
-      JSON.stringify({ data: trust, ts: Date.now(), trustId: TRUST_ID })
+      JSON.stringify({ data: trust, ts: Date.now(), trustId })
     );
   } catch { /* ignore */ }
 };
@@ -52,6 +75,7 @@ function Login() {
   const navigate = useNavigate();
   useBackNavigation();
   const theme = useAppTheme();
+  const authDefaultTrust = resolveAuthDefaultTrust();
 
   const [phoneNumber, setPhoneNumber] = useState('');
   const [loading, setLoading] = useState(false);
@@ -59,7 +83,7 @@ function Login() {
   const [focused, setFocused] = useState(false);
 
   // Initialize immediately from BASE-trust-specific cache — prevents wrong logo on refresh
-  const [trustInfo, setTrustInfo] = useState(() => getCachedBaseTrust() || null);
+  const [trustInfo, setTrustInfo] = useState(() => getCachedBaseTrust(authDefaultTrust.id) || null);
 
   // Logged-in users should not see login/OTP UI again on refresh.
   useEffect(() => {
@@ -84,12 +108,13 @@ function Login() {
     const loadTrust = async () => {
       try {
         // Force fetch by the hardcoded BASE trust ID
-        const trust = await fetchTrustById(TRUST_ID);
+        if (!authDefaultTrust.id) return;
+        const trust = await fetchTrustById(authDefaultTrust.id);
         if (!active || !trust) return;
 
         setTrustInfo(trust);
         // Write to LOGIN-specific cache (isolated from Home page trust switching)
-        setCachedBaseTrust(trust);
+        setCachedBaseTrust(trust, authDefaultTrust.id);
       } catch (err) {
         console.warn('[Login] Failed to refresh base trust info:', err?.message || err);
       }
@@ -97,7 +122,7 @@ function Login() {
 
     loadTrust();
     return () => { active = false; };
-  }, []);
+  }, [authDefaultTrust.id]);
 
   // ─── Handlers ───────────────────────────────────────────────────────────────
   const handleCheckPhone = async (e) => {
@@ -291,8 +316,8 @@ function Login() {
           to { transform: rotate(360deg); }
         }
         @keyframes pulseRing {
-          0%,100% { box-shadow: 0 0 0 0   color-mix(in srgb, var(--brand-red, #C0241A) 20%, transparent); }
-          50%      { box-shadow: 0 0 0 12px color-mix(in srgb, var(--brand-red, #C0241A) 0%, transparent); }
+          0%,100% { box-shadow: 0 0 0 0   color-mix(in srgb, var(--brand-red) 20%, transparent); }
+          50%      { box-shadow: 0 0 0 12px color-mix(in srgb, var(--brand-red) 0%, transparent); }
         }
         @keyframes pulse2 {
           0%,100% { opacity: 1; transform: scale(1); }
@@ -308,14 +333,14 @@ function Login() {
 }
 
 // ─── Design Tokens ─────────────────────────────────────────────────────────────
-const RED      = 'var(--brand-red, #C0241A)';
-const RED_DARK = 'var(--brand-red-dark, #9B1A13)';
-const NAVY     = 'var(--brand-navy, #2B2F7E)';
-const NAVY_LIGHT = 'var(--brand-navy-light, #EAEBF8)';
-const RED_LIGHT = 'var(--brand-red-light, #FDECEA)';
-const WHITE    = 'var(--login-surface, #FFFFFF)';
-const GRAY     = 'var(--body-text-color, #64748b)';
-const BORDER   = 'color-mix(in srgb, var(--brand-navy, #2B2F7E) 18%, transparent)';
+const RED      = 'var(--brand-red)';
+const RED_DARK = 'var(--brand-red-dark)';
+const NAVY     = 'var(--brand-navy)';
+const NAVY_LIGHT = 'var(--brand-navy-light)';
+const RED_LIGHT = 'var(--brand-red-light)';
+const WHITE    = 'var(--surface-color)';
+const GRAY     = 'var(--body-text-color)';
+const BORDER   = 'color-mix(in srgb, var(--brand-navy) 18%, transparent)';
 
 const styles = {
   page: {
@@ -399,7 +424,7 @@ const styles = {
   },
   nameSkeleton: {
     height: '28px', borderRadius: '6px', margin: '0 auto 4px auto', width: '180px',
-    background: 'linear-gradient(90deg, color-mix(in srgb, var(--app-accent-bg, #F8FAFC) 70%, #ffffff) 25%, color-mix(in srgb, var(--brand-navy-light, #EAEBF8) 55%, #ffffff) 50%, color-mix(in srgb, var(--app-accent-bg, #F8FAFC) 70%, #ffffff) 75%)',
+    background: 'linear-gradient(90deg, color-mix(in srgb, var(--app-accent-bg) 70%, var(--surface-color)) 25%, color-mix(in srgb, var(--brand-navy-light) 55%, var(--surface-color)) 50%, color-mix(in srgb, var(--app-accent-bg) 70%, var(--surface-color)) 75%)',
     backgroundSize: '400px 100%',
     animation: 'shimmer 1.4s ease-in-out infinite',
   },
@@ -447,11 +472,11 @@ const styles = {
   inputRow: {
     display: 'flex', alignItems: 'center',
     border: `2px solid ${BORDER}`, borderRadius: '16px',
-    background: 'color-mix(in srgb, var(--app-accent-bg, #F8FAFC) 70%, #ffffff)', transition: 'all 0.22s ease',
+    background: 'color-mix(in srgb, var(--app-accent-bg) 70%, var(--surface-color))', transition: 'all 0.22s ease',
     overflow: 'hidden',
   },
   inputRowFocus: {
-    borderColor: RED, background: 'color-mix(in srgb, #ffffff 82%, var(--brand-red-light, #FDECEA))',
+    borderColor: RED, background: 'color-mix(in srgb, var(--surface-color) 82%, var(--brand-red-light))',
     boxShadow: `0 0 0 4px color-mix(in srgb, ${RED} 10%, transparent)`,
   },
   prefix: {
@@ -466,7 +491,7 @@ const styles = {
   },
   input: {
     flex: 1, border: 'none', background: 'transparent',
-    padding: '14px 14px', fontSize: '16px', color: 'var(--body-text-color, #1e293b)',
+    padding: '14px 14px', fontSize: '16px', color: 'var(--body-text-color)',
     fontFamily: "var(--font-family, 'Inter', sans-serif)", fontWeight: 500,
     outline: 'none', letterSpacing: '0.02em',
   },
@@ -495,8 +520,8 @@ const styles = {
   arrow: { fontSize: '20px', fontWeight: 400 },
   spinner: {
     width: '18px', height: '18px',
-    border: '2.5px solid color-mix(in srgb, #ffffff 35%, transparent)',
-    borderTop: '2.5px solid #ffffff',
+    border: '2.5px solid color-mix(in srgb, var(--surface-color) 35%, transparent)',
+    borderTop: '2.5px solid var(--surface-color)',
     borderRadius: '50%', display: 'inline-block',
     animation: 'spin 0.75s linear infinite',
   },
@@ -518,3 +543,4 @@ const styles = {
 };
 
 export default Login;
+

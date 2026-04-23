@@ -1,7 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Routes, Route, useNavigate, useLocation, Navigate } from 'react-router-dom';
 import { LocalNotifications } from '@capacitor/local-notifications';
-import { initPushNotifications } from './services/pushNotificationService';
 import { ThemeContext } from './context/ThemeContext';
 import { GalleryProvider } from './context/GalleryContext';
 import Login from './Login';
@@ -37,6 +36,7 @@ import OtherMemberships from './OtherMemberships';
 import AdminUserProfiles from './admin/AdminUserProfiles';
 import { getCurrentNotificationContext, matchesNotificationForContext } from './services/notificationAudience';
 import { applyThemeCssVariables, sanitizeCustomCss } from './utils/themeUtils';
+import { colorToHex } from './utils/colorUtils';
 
 import {
   useAndroidBackHandler,
@@ -49,7 +49,7 @@ import {
 } from './hooks';
 
 const HospitalTrusteeApp = () => {
-  const BASE_TRUST_ID = import.meta.env.VITE_DEFAULT_TRUST_ID || 'b353d2ff-ec3b-4b90-a896-69f40662084e';
+  const BASE_TRUST_ID = import.meta.env.VITE_DEFAULT_TRUST_ID || '';
   const BASE_TRUST_NAME = import.meta.env.VITE_DEFAULT_TRUST_NAME || 'Mahila Mandal';
   const LAST_VISITED_ROUTE_KEY = 'lastVisitedRoute';
   const PUBLIC_ROUTES = ['/login', '/otp-verification', '/special-otp-verification', '/terms-and-conditions', '/privacy-policy', '/developers', '/vip-login'];
@@ -73,10 +73,49 @@ const HospitalTrusteeApp = () => {
     }
     return '';
   });
+  const resolveDefaultThemeTrust = () => {
+    try {
+      const cachedDefault = localStorage.getItem('default_trust_cache');
+      if (cachedDefault) {
+        const parsed = JSON.parse(cachedDefault);
+        const id = parsed?.id ? String(parsed.id).trim() : '';
+        const name = parsed?.name ? String(parsed.name).trim() : '';
+        if (id) {
+          return { id, name: name || BASE_TRUST_NAME };
+        }
+      }
+    } catch {
+      // ignore malformed default cache
+    }
+
+    const selectedId = String(localStorage.getItem('selected_trust_id') || '').trim();
+    const selectedName = String(localStorage.getItem('selected_trust_name') || '').trim();
+    if (selectedId) {
+      return { id: selectedId, name: selectedName || BASE_TRUST_NAME };
+    }
+
+    if (BASE_TRUST_ID) {
+      return { id: BASE_TRUST_ID, name: BASE_TRUST_NAME };
+    }
+
+    return { id: '', name: BASE_TRUST_NAME };
+  };
   const authThemeRoutes = ['/login', '/otp-verification', '/special-otp-verification', '/vip-login', '/terms-and-conditions', '/privacy-policy'];
   const shouldUseBaseTheme = authThemeRoutes.includes(location.pathname);
-  const resolvedThemeTrustId = shouldUseBaseTheme ? BASE_TRUST_ID : (activeTrustId || BASE_TRUST_ID);
+  const defaultThemeTrust = resolveDefaultThemeTrust();
+  const resolvedThemeTrustId = shouldUseBaseTheme
+    ? defaultThemeTrust.id
+    : (activeTrustId || defaultThemeTrust.id);
   const { theme: appTheme, refreshTheme } = useTheme(resolvedThemeTrustId);
+  const notificationLightColorRef = useRef('');
+
+  useEffect(() => {
+    const rootBrand = typeof window !== 'undefined'
+      ? window.getComputedStyle(document.documentElement).getPropertyValue('--brand-red').trim()
+      : '';
+    const baseColor = appTheme?.primary || rootBrand || 'var(--brand-red)';
+    notificationLightColorRef.current = `${colorToHex(baseColor)}E5`;
+  }, [appTheme?.primary]);
 
   // Initialize Android features
   useAndroidBackHandler();
@@ -86,25 +125,25 @@ const HospitalTrusteeApp = () => {
   useAndroidScreenOrientation('PORTRAIT');
   useAndroidKeyboard();
 
-  const isAuthenticated = () => {
-    const user = localStorage.getItem('user');
-    const isLoggedIn = localStorage.getItem('isLoggedIn') === 'true';
-    return !!user && user !== 'null' && user !== 'undefined' && isLoggedIn;
-  };
-
   const clearAuthAndRedirectToLogin = () => {
+    const resetTrust = resolveDefaultThemeTrust();
     localStorage.removeItem('isLoggedIn');
     localStorage.removeItem('user');
     localStorage.removeItem(LAST_VISITED_ROUTE_KEY);
-    localStorage.setItem('selected_trust_id', BASE_TRUST_ID);
-    localStorage.setItem('selected_trust_name', BASE_TRUST_NAME);
+    if (resetTrust.id) {
+      localStorage.setItem('selected_trust_id', resetTrust.id);
+      localStorage.setItem('selected_trust_name', resetTrust.name || BASE_TRUST_NAME);
+    } else {
+      localStorage.removeItem('selected_trust_id');
+      localStorage.removeItem('selected_trust_name');
+    }
     sessionStorage.removeItem('selectedMember');
     sessionStorage.removeItem('previousScreen');
     sessionStorage.removeItem('previousScreenName');
     sessionStorage.removeItem('trust_selected_in_session');
-    setActiveTrustId(BASE_TRUST_ID);
+    setActiveTrustId(resetTrust.id || '');
     window.dispatchEvent(new CustomEvent('trust-changed', {
-      detail: { trustId: BASE_TRUST_ID, trustName: BASE_TRUST_NAME }
+      detail: { trustId: resetTrust.id || null, trustName: resetTrust.name || BASE_TRUST_NAME }
     }));
     navigate('/login', { replace: true });
   };
@@ -136,14 +175,12 @@ const HospitalTrusteeApp = () => {
     window.addEventListener('focus', syncTrustId);
     window.addEventListener('storage', syncTrustId);
     document.addEventListener('visibilitychange', syncTrustId);
-    const intervalId = window.setInterval(syncTrustId, 1000);
 
     return () => {
       window.removeEventListener('trust-changed', onTrustChanged);
       window.removeEventListener('focus', syncTrustId);
       window.removeEventListener('storage', syncTrustId);
       document.removeEventListener('visibilitychange', syncTrustId);
-      window.clearInterval(intervalId);
     };
   }, []);
 
@@ -302,7 +339,7 @@ const HospitalTrusteeApp = () => {
             sound: 'default',
             vibration: true,
             lights: true,
-            lightColor: '#FF4F46E5',
+            lightColor: notificationLightColorRef.current,
           });
 
           const permResult = await LocalNotifications.requestPermissions();
@@ -438,7 +475,7 @@ const HospitalTrusteeApp = () => {
               sound: 'default',
               vibration: true,
               lights: true,
-              lightColor: '#FF4F46E5',
+              lightColor: notificationLightColorRef.current,
             });
 
             const permResult = await LocalNotifications.requestPermissions();
@@ -685,9 +722,16 @@ const HospitalTrusteeApp = () => {
   return (
     <GalleryProvider>
       <ThemeContext.Provider value={appTheme}>
-        <div className="min-h-screen w-full flex justify-center overflow-x-hidden">
-          <div className={`bg-white min-h-screen relative shadow-2xl overflow-x-hidden ${(location.pathname === '/login' || location.pathname === '/otp-verification' || location.pathname === '/profile' || location.pathname === '/vip-login') ? 'overflow-hidden' : 'overflow-y-auto'
-            } w-full max-w-[430px]`}>
+        <div className="min-h-screen w-full flex justify-center overflow-x-hidden app-root-shell">
+          <div
+            className={`min-h-screen relative shadow-2xl overflow-x-hidden app-route-shell ${(location.pathname === '/login' || location.pathname === '/otp-verification' || location.pathname === '/profile' || location.pathname === '/vip-login') ? 'overflow-hidden' : 'overflow-y-auto'
+              } w-full max-w-[430px]`}
+            style={{
+              background: 'var(--page-bg, var(--app-page-bg))',
+              color: 'var(--body-text-color)',
+              fontFamily: "var(--font-family, 'Inter', sans-serif)",
+            }}
+          >
             <Routes>
         <Route
           path="/login"

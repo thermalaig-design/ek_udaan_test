@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { ChevronLeft, ChevronRight, Image as ImageIcon } from 'lucide-react';
+import { Image as ImageIcon } from 'lucide-react';
 
 const ImageSlider = ({ images, onNavigate }) => {
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -7,6 +7,10 @@ const ImageSlider = ({ images, onNavigate }) => {
   const [progress, setProgress] = useState(0);
 
   const touchStartXRef = useRef(null);
+  const touchStartYRef = useRef(null);
+  const touchMovedRef = useRef(false);
+  const restoreAutoPlayRef = useRef(true);
+  const suppressClickRef = useRef(false);
   const autoPlayEnabledRef = useRef(isAutoPlaying);
 
   useEffect(() => {
@@ -56,33 +60,58 @@ const ImageSlider = ({ images, onNavigate }) => {
   const handleTouchStart = (e) => {
     if (!e?.touches?.length) return;
     touchStartXRef.current = e.touches[0].clientX;
+    touchStartYRef.current = e.touches[0].clientY;
+    touchMovedRef.current = false;
+    restoreAutoPlayRef.current = isAutoPlaying;
     // Pause auto-play during interaction.
     setIsAutoPlaying(false);
+  };
+
+  const handleTouchMove = (e) => {
+    if (touchStartXRef.current === null || touchStartYRef.current === null) return;
+    const x = e?.touches?.[0]?.clientX;
+    const y = e?.touches?.[0]?.clientY;
+    if (typeof x !== 'number' || typeof y !== 'number') return;
+    if (Math.abs(x - touchStartXRef.current) > 8 || Math.abs(y - touchStartYRef.current) > 8) {
+      touchMovedRef.current = true;
+    }
   };
 
   const handleTouchEnd = (e) => {
     if (touchStartXRef.current === null) return;
     const endX = e?.changedTouches?.[0]?.clientX;
+    const endY = e?.changedTouches?.[0]?.clientY;
     const startX = touchStartXRef.current;
+    const startY = touchStartYRef.current;
     touchStartXRef.current = null;
+    touchStartYRef.current = null;
 
     if (typeof endX !== 'number' || typeof startX !== 'number') return;
     const dx = endX - startX;
+    const dy = typeof endY === 'number' && typeof startY === 'number' ? endY - startY : 0;
 
     const threshold = 45;
-    if (Math.abs(dx) < threshold) {
-      setIsAutoPlaying(autoPlayEnabledRef.current);
-      return;
+    const horizontalSwipe = Math.abs(dx) >= threshold && Math.abs(dx) > Math.abs(dy);
+
+    if (horizontalSwipe) {
+      if (dx < 0) goToNext();
+      else goToPrevious();
+    } else if (!touchMovedRef.current && Math.abs(dx) < 10 && Math.abs(dy) < 10) {
+      handleOpenGallery();
     }
 
-    if (dx < 0) goToNext();
-    else goToPrevious();
-
-    setIsAutoPlaying(autoPlayEnabledRef.current);
+    suppressClickRef.current = true;
+    setTimeout(() => { suppressClickRef.current = false; }, 250);
+    setIsAutoPlaying(restoreAutoPlayRef.current);
   };
 
   const handleOpenGallery = () => {
     if (typeof onNavigate === 'function') onNavigate('gallery');
+  };
+
+  const handleSliderClick = () => {
+    if (suppressClickRef.current) return;
+    handleOpenGallery();
   };
 
   return (
@@ -90,10 +119,12 @@ const ImageSlider = ({ images, onNavigate }) => {
 
       {/* Slider container */}
       <div
-        className="relative w-full h-full bg-slate-900 touch-pan-x"
+        className="relative w-full h-full bg-slate-900"
         onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
-        onClick={handleOpenGallery}
+        onClick={handleSliderClick}
+        style={{ touchAction: 'pan-y' }}
         role="button"
         aria-label="Open gallery"
       >
@@ -159,30 +190,6 @@ const ImageSlider = ({ images, onNavigate }) => {
             ></div>
           </div>
         ))}
-      </div>
-
-      {/* Navigation arrows - always visible on mobile */}
-      <div className="absolute inset-y-0 left-0 right-0 flex items-center justify-between px-2 z-20 pointer-events-none">
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            goToPrevious();
-          }}
-          className="pointer-events-auto p-2 bg-black/35 backdrop-blur-md text-white rounded-xl transition-all duration-200 hover:bg-white hover:text-indigo-600 hover:scale-105 shadow-lg border border-white/20 active:scale-95"
-          aria-label="Previous image"
-        >
-          <ChevronLeft className="h-4 w-4" />
-        </button>
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            goToNext();
-          }}
-          className="pointer-events-auto p-2 bg-black/35 backdrop-blur-md text-white rounded-xl transition-all duration-200 hover:bg-white hover:text-indigo-600 hover:scale-105 shadow-lg border border-white/20 active:scale-95"
-          aria-label="Next image"
-        >
-          <ChevronRight className="h-4 w-4" />
-        </button>
       </div>
 
       {/* Slide Counter — always visible */}

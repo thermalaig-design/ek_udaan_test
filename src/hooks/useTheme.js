@@ -14,9 +14,6 @@ const BASE_TRUST_ID = import.meta.env.VITE_DEFAULT_TRUST_ID || 'b353d2ff-ec3b-4b
 const THEME_CACHE_TTL_MS = Number(import.meta.env.VITE_THEME_CACHE_TTL_MS) > 0
   ? Number(import.meta.env.VITE_THEME_CACHE_TTL_MS)
   : (import.meta.env.DEV ? 5 * 60 * 1000 : 20 * 60 * 1000);
-const THEME_CACHE_VALIDATE_INTERVAL_MS = Number(import.meta.env.VITE_THEME_CACHE_VALIDATE_INTERVAL_MS) > 0
-  ? Number(import.meta.env.VITE_THEME_CACHE_VALIDATE_INTERVAL_MS)
-  : (import.meta.env.DEV ? 30 * 1000 : 2 * 60 * 1000);
 
 const safeParse = (value) => {
   try {
@@ -222,6 +219,16 @@ const fetchTrustThemeLink = async (targetTrustId) => {
 
   const linkedTemplateId = trust.template_id || null;
   if (!linkedTemplateId) {
+    if (import.meta.env.DEV) {
+      console.log('[useTheme][TemplateLink][Fetch]', {
+        trustId: targetTrustId,
+        trustTemplateId: null,
+        fetchedTemplateId: null,
+        fetchedTemplateUpdatedAt: null,
+        fetchedTemplateIsActive: null,
+        linkSource: 'no_template_link'
+      });
+    }
     return {
       trust,
       template: null,
@@ -247,11 +254,26 @@ const fetchTrustThemeLink = async (targetTrustId) => {
   }
 
   const template = templateResult?.data || null;
+  const isTemplateActive = template?.is_active === true;
+  if (import.meta.env.DEV) {
+    console.log('[useTheme][TemplateLink][Fetch]', {
+      trustId: targetTrustId,
+      trustTemplateId: linkedTemplateId,
+      fetchedTemplateId: template?.id || null,
+      fetchedTemplateUpdatedAt: template?.updated_at || null,
+      fetchedTemplateIsActive: template?.is_active ?? null,
+      linkSource: !template
+        ? 'invalid_template_link'
+        : (isTemplateActive ? 'linked_template' : 'inactive_template_link')
+    });
+  }
   return {
     trust,
-    template,
+    template: isTemplateActive ? template : null,
     overrides: trust.theme_overrides || {},
-    linkSource: template ? 'linked_template' : 'invalid_template_link'
+    linkSource: !template
+      ? 'invalid_template_link'
+      : (isTemplateActive ? 'linked_template' : 'inactive_template_link')
   };
 };
 
@@ -290,25 +312,16 @@ const fetchTrustTemplateMeta = async (targetTrustId) => {
     .maybeSingle();
 
   if (trustResult?.error) {
-    const legacyMeta = await supabase
-      .from('app_templates')
-      .select('id, name, updated_at')
-      .eq('trust_id', targetTrustId)
-      .eq('is_active', true)
-      .order('updated_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
     return {
       trustId: targetTrustId,
       trustName: null,
       trustTemplateId: null,
       trustUpdatedAt: null,
-      linkedTemplateId: legacyMeta?.data?.id || null,
-      linkedTemplateUpdatedAt: legacyMeta?.data?.updated_at || null,
-      linkedTemplateName: legacyMeta?.data?.name || null,
-      templateExists: Boolean(legacyMeta?.data?.id),
-      source: 'legacy_meta_fallback'
+      linkedTemplateId: null,
+      linkedTemplateUpdatedAt: null,
+      linkedTemplateName: null,
+      templateExists: false,
+      source: 'trust_meta_error'
     };
   }
 
@@ -364,6 +377,7 @@ export const useTheme = (trustId) => {
   const [refreshTick, setRefreshTick] = useState(0);
   const isCacheValidationInFlightRef = useRef(false);
   const hasQueuedRefreshRef = useRef(false);
+  const previousTrustIdRef = useRef(null);
   const [theme, setTheme] = useState(() => {
     try {
       const resolvedTrustId = String(trustId || '').trim() || resolveStoredTrustId();
@@ -376,10 +390,18 @@ export const useTheme = (trustId) => {
 
   useEffect(() => {
     const resolvedTrustId = String(trustId || '').trim() || resolveStoredTrustId();
-    let validationIntervalId = null;
+    const previousTrustId = previousTrustIdRef.current;
+    previousTrustIdRef.current = resolvedTrustId || null;
     if (!resolvedTrustId) {
       setIsThemeLoading(false);
       return undefined;
+    }
+
+    if (import.meta.env.DEV) {
+      console.log('[useTheme][TemplateLink] Trust context resolved:', {
+        previousTrustId: previousTrustId || null,
+        selectedTrustId: resolvedTrustId
+      });
     }
 
     const validateCacheInBackground = async (cachedTheme) => {
@@ -502,11 +524,6 @@ export const useTheme = (trustId) => {
 
               setIsThemeLoading(false);
               void validateCacheInBackground(cachedTheme);
-              validationIntervalId = window.setInterval(() => {
-                const latestCachedRaw = readCachedThemeEntry(resolvedTrustId)?.theme || cachedTheme;
-                const latestCached = tagThemeSource(latestCachedRaw, 'cache');
-                void validateCacheInBackground(latestCached);
-              }, THEME_CACHE_VALIDATE_INTERVAL_MS);
             } catch (err) {
               console.warn('[useTheme][TemplateLink] Trust template verification failed:', err);
               hasQueuedRefreshRef.current = true;
@@ -515,10 +532,13 @@ export const useTheme = (trustId) => {
           };
 
           void verifyTemplateLink();
-          return () => {
-            if (validationIntervalId) window.clearInterval(validationIntervalId);
-          };
+          return undefined;
         }
+      } else if (import.meta.env.DEV) {
+        console.log('[useTheme][TemplateLink] Cache miss:', {
+          selectedTrustId: resolvedTrustId,
+          cacheKey: null
+        });
       }
     } catch {
       // no-op
@@ -536,8 +556,11 @@ export const useTheme = (trustId) => {
             : fetchTrustThemeLink(resolvedTrustId)
         ]);
 
-        const shouldUseLegacyBaseFallback = !baseLink?.template;
-        const shouldUseLegacySelectedFallback = !isBaseTrustSelected && !selectedLink?.template;
+        const shouldUseLegacyBaseFallback = !baseLink?.template && baseLink?.linkSource === 'no_template_link';
+        const shouldUseLegacySelectedFallback =
+          !isBaseTrustSelected
+          && !selectedLink?.template
+          && selectedLink?.linkSource === 'no_template_link';
         const [baseLegacyFallback, selectedLegacyFallback] = await Promise.all([
           shouldUseLegacyBaseFallback ? fetchLatestActiveTemplateForTrust(BASE_TRUST_ID) : Promise.resolve(null),
           shouldUseLegacySelectedFallback ? fetchLatestActiveTemplateForTrust(resolvedTrustId) : Promise.resolve(null)
@@ -597,7 +620,11 @@ export const useTheme = (trustId) => {
 
         if (import.meta.env.DEV) {
           console.log('[useTheme][TemplateLink] Loaded theme:', {
+            previousTrustId: previousTrustId || null,
             selectedTrustId: resolvedTrustId,
+            selectedTrustTemplateIdFromTrust: isBaseTrustSelected
+              ? (baseLink?.trust?.template_id || null)
+              : (selectedLink?.trust?.template_id || null),
             selectedTrustTemplateId: resolved.selectedTrustTemplateId,
             selectedLinkedTemplateId: isBaseTrustSelected
               ? (effectiveBaseTemplate?.id || null)
@@ -614,6 +641,8 @@ export const useTheme = (trustId) => {
             selectedLegacyFallbackSource: selectedLegacyFallback?.source || null,
             source: resolved.themeLoadSource,
             cacheUsed: false,
+            selectedTemplateUpdatedAt: resolved.selectedTemplateUpdatedAt,
+            baseTemplateUpdatedAt: resolved.baseTemplateUpdatedAt,
             navbarTextColor: getThemeToken(resolved, 'navbar.text_color', null),
             homeLayout: resolved.homeLayout,
             animations: resolved.animations
@@ -631,11 +660,44 @@ export const useTheme = (trustId) => {
     };
 
     void load();
+    return undefined;
+  }, [trustId, refreshTick]);
+
+  useEffect(() => {
+    const queueRefreshFromEvent = () => {
+      const targetTrustId = String(trustId || '').trim() || resolveStoredTrustId();
+      if (!targetTrustId || hasQueuedRefreshRef.current) return;
+      const cachedEntry = readCachedThemeEntry(targetTrustId);
+      const shouldRefresh = !cachedEntry?.theme || isStale(cachedEntry?.ts);
+      if (!shouldRefresh) return;
+      hasQueuedRefreshRef.current = true;
+      clearThemeCacheForTrust(targetTrustId);
+      setRefreshTick((prev) => prev + 1);
+    };
+
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        queueRefreshFromEvent();
+      }
+    };
+    const onTemplateApplied = () => {
+      const targetTrustId = String(trustId || '').trim() || resolveStoredTrustId();
+      if (!targetTrustId || hasQueuedRefreshRef.current) return;
+      hasQueuedRefreshRef.current = true;
+      clearThemeCacheForTrust(targetTrustId);
+      setRefreshTick((prev) => prev + 1);
+    };
+
+    window.addEventListener('focus', queueRefreshFromEvent);
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    window.addEventListener('theme-template-applied', onTemplateApplied);
 
     return () => {
-      if (validationIntervalId) window.clearInterval(validationIntervalId);
+      window.removeEventListener('focus', queueRefreshFromEvent);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+      window.removeEventListener('theme-template-applied', onTemplateApplied);
     };
-  }, [trustId, refreshTick]);
+  }, [trustId]);
 
   const clearThemeCache = (tid) => {
     try {

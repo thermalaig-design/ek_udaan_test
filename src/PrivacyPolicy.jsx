@@ -8,11 +8,11 @@ const TRUST_ID = import.meta.env.VITE_DEFAULT_TRUST_ID || 'b353d2ff-ec3b-4b90-a8
 const LOGIN_TRUST_CACHE_KEY = 'cached_base_trust_info';
 
 // ─── Design Tokens ────────────────────────────────────────────────────────────────
-const RED      = 'var(--brand-red, #C0241A)';
-const RED_DARK = 'var(--brand-red-dark, #9B1A13)';
-const NAVY     = 'var(--brand-navy, #2B2F7E)';
+const RED      = 'var(--brand-red)';
+const RED_DARK = 'var(--brand-red-dark)';
+const NAVY     = 'var(--brand-navy)';
 const WHITE    = '#FFFFFF';
-const GRAY     = 'var(--body-text-color, #64748b)';
+const GRAY     = 'var(--body-text-color)';
 const BORDER   = 'rgba(148, 163, 184, 0.35)';
 
 const getCachedTrust = () => {
@@ -144,7 +144,7 @@ const PrivacyPolicy = () => {
             <span style={{ fontSize: '24px' }}>⚠️</span>
             <div>
               <p style={{ fontWeight: 700, margin: '0 0 4px 0', color: '#9B1A13' }}>Unable to load</p>
-              <p style={{ margin: 0, fontSize: '13px', color: '#C0241A' }}>{error}</p>
+              <p style={{ margin: 0, fontSize: '13px', color: 'var(--brand-red)' }}>{error}</p>
             </div>
           </div>
         )}
@@ -152,7 +152,7 @@ const PrivacyPolicy = () => {
         {!loading && !error && !content && (
           <div style={s.emptyBox}>
             <span style={{ fontSize: '40px', display: 'block', marginBottom: '12px' }}>🔒</span>
-            <p style={{ color: '#64748b', fontSize: '15px', margin: 0 }}>Privacy Policy not available yet.</p>
+            <p style={{ color: 'var(--body-text-color)', fontSize: '15px', margin: 0 }}>Privacy Policy not available yet.</p>
           </div>
         )}
 
@@ -245,7 +245,7 @@ const s = {
   page: {
     fontFamily: "'Inter', sans-serif",
     minHeight: '100vh',
-    background: 'var(--page-bg, linear-gradient(135deg, #fff5f5 0%, #ffffff 40%, #f0f1fb 100%))',
+    background: 'var(--page-bg, linear-gradient(135deg, var(--surface-color)5f5 0%, var(--surface-color) 40%, #f0f1fb 100%))',
     position: 'relative',
     overflow: 'hidden',
     display: 'flex',
@@ -278,7 +278,7 @@ const s = {
     gap: '14px',
     padding: '16px 18px',
     background: `linear-gradient(135deg, ${RED} 0%, ${NAVY} 100%)`,
-    color: '#fff',
+    color: 'var(--surface-color)',
     position: 'relative',
     zIndex: 10,
     boxShadow: `0 8px 24px ${RED}33`,
@@ -286,7 +286,7 @@ const s = {
   backBtn: {
     width: '40px', height: '40px', borderRadius: '12px',
     border: 'none', background: 'rgba(255,255,255,0.18)',
-    color: '#fff', cursor: 'pointer', flexShrink: 0,
+    color: 'var(--surface-color)', cursor: 'pointer', flexShrink: 0,
     display: 'flex', alignItems: 'center', justifyContent: 'center',
     transition: 'background 0.2s ease',
   },
@@ -295,7 +295,7 @@ const s = {
   },
   headerLogo: {
     width: '40px', height: '40px', borderRadius: '50%',
-    objectFit: 'contain', backgroundColor: '#fff',
+    objectFit: 'contain', backgroundColor: 'var(--surface-color)',
     padding: '3px', flexShrink: 0,
   },
   headerTitle: {
@@ -347,7 +347,7 @@ const s = {
   sectionNum: {
     width: '30px', height: '30px', borderRadius: '8px', flexShrink: 0,
     background: `linear-gradient(135deg, ${RED}, ${NAVY})`,
-    color: '#fff', fontSize: '13px', fontWeight: 800,
+    color: 'var(--surface-color)', fontSize: '13px', fontWeight: 800,
     display: 'flex', alignItems: 'center', justifyContent: 'center',
   },
   sectionTitle: {
@@ -375,12 +375,12 @@ const s = {
     fontSize: '13px', fontWeight: 600, color: NAVY, opacity: 0.75,
   },
   lastUpdated: {
-    fontSize: '12px', color: '#94a3b8', margin: 0, fontStyle: 'italic',
+    fontSize: '12px', color: 'var(--body-text-color)', margin: 0, fontStyle: 'italic',
   },
 
   errorBox: {
     display: 'flex', gap: '14px', alignItems: 'flex-start',
-    background: '#FDECEA', border: `1.5px solid ${RED}40`,
+    background: 'var(--brand-red-light)', border: `1.5px solid ${RED}40`,
     borderRadius: '16px', padding: '18px', marginTop: '8px',
   },
   emptyBox: {
@@ -389,3 +389,5 @@ const s = {
 };
 
 export default PrivacyPolicy;
+
+

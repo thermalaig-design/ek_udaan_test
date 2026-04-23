@@ -39,6 +39,23 @@ const normalizeId = (value) => {
   return id || null;
 };
 
+const readActiveScope = (trustId, memberId) => {
+  const normalizedTrustId = normalizeId(trustId);
+  if (!normalizedTrustId) return null;
+
+  // Primary key format (normalized trust id).
+  const normalizedKey = KEY_ACTIVE_SCOPE(normalizedTrustId, memberId);
+  const normalizedScope = readJson(normalizedKey, null);
+  if (normalizedScope) return normalizedScope;
+
+  // Backward compatibility for any legacy/raw trust-id key writes.
+  const rawTrustId = String(trustId || '');
+  if (rawTrustId && rawTrustId !== normalizedTrustId) {
+    return readJson(KEY_ACTIVE_SCOPE(rawTrustId, memberId), null);
+  }
+  return null;
+};
+
 const resolveCurrentMemberId = () => {
   try {
     const raw = localStorage.getItem('user');
@@ -77,28 +94,28 @@ const writeState = (scopeKey, partial) => {
 
 export function readFacilitiesById(trustId) {
   const memberId = resolveCurrentMemberId();
-  const activeScope = readJson(KEY_ACTIVE_SCOPE(trustId, memberId), null);
-  if (!trustId || !activeScope) return {};
+  const activeScope = readActiveScope(trustId, memberId);
+  if (!activeScope) return {};
   return readJson(KEY_BY_ID(activeScope), {});
 }
 
 export function readFacilityOrder(trustId) {
   const memberId = resolveCurrentMemberId();
-  const activeScope = readJson(KEY_ACTIVE_SCOPE(trustId, memberId), null);
-  if (!trustId || !activeScope) return [];
+  const activeScope = readActiveScope(trustId, memberId);
+  if (!activeScope) return [];
   return readJson(KEY_ORDER(activeScope), []);
 }
 
 export function readFacilityPages(trustId) {
   const memberId = resolveCurrentMemberId();
-  const activeScope = readJson(KEY_ACTIVE_SCOPE(trustId, memberId), null);
-  if (!trustId || !activeScope) return {};
+  const activeScope = readActiveScope(trustId, memberId);
+  if (!activeScope) return {};
   return readJson(KEY_PAGES(activeScope), {});
 }
 
 export function readFacilitiesProgress(trustId) {
   const memberId = resolveCurrentMemberId();
-  const activeScope = readJson(KEY_ACTIVE_SCOPE(trustId, memberId), null);
+  const activeScope = readActiveScope(trustId, memberId);
   if (!activeScope) {
     return { hasMoreFacilities: true, isFacilitiesLoading: false, nextPage: 1, pageTs: {}, loadedPages: [] };
   }
@@ -237,6 +254,7 @@ async function resolveFacilitiesContext(trustId, trustName = null, forceRefresh 
 
 export async function loadFacilitiesPage({ trustId, trustName = null, page = 1, pageSize = facilitiesConfig.PAGE_SIZE, forceRefresh = false }) {
   const normalizedTrustId = normalizeId(trustId);
+  const rawTrustId = String(trustId || '');
   const pageNo = Number(page) > 0 ? Number(page) : 1;
   const limit = Number(pageSize) > 0 ? Number(pageSize) : facilitiesConfig.PAGE_SIZE;
   if (!normalizedTrustId) return { facilities: [], hasMore: false, fromCache: true };
@@ -244,6 +262,10 @@ export async function loadFacilitiesPage({ trustId, trustName = null, page = 1, 
   const context = await resolveFacilitiesContext(normalizedTrustId, trustName, forceRefresh);
   const scopeKey = context?.scopeKey;
   if (!scopeKey) return { facilities: [], hasMore: false, fromCache: true };
+  if (rawTrustId && rawTrustId !== normalizedTrustId) {
+    // Keep active scope mirrored for any non-normalized caller keys.
+    writeJson(KEY_ACTIVE_SCOPE(rawTrustId, context.memberId), scopeKey);
+  }
 
   const cache = getCachedPage(scopeKey, pageNo);
   if (!forceRefresh && cache.isFresh && cache.facilities.length > 0) {
@@ -335,9 +357,10 @@ export async function loadFacilityDetail({ trustId, trustName = null, facilityId
 export function clearFacilitiesCache(trustId) {
   const normalizedTrustId = normalizeId(trustId);
   if (!normalizedTrustId) return;
+  const rawTrustId = String(trustId || '');
   const memberId = resolveCurrentMemberId();
   try {
-    const cachedScope = readJson(KEY_ACTIVE_SCOPE(normalizedTrustId, memberId), null);
+    const cachedScope = readActiveScope(normalizedTrustId, memberId) || readActiveScope(rawTrustId, memberId);
     if (cachedScope) {
       localStorage.removeItem(KEY_BY_ID(cachedScope));
       localStorage.removeItem(KEY_ORDER(cachedScope));
@@ -347,6 +370,9 @@ export function clearFacilitiesCache(trustId) {
     }
     localStorage.removeItem(KEY_CONTEXT(normalizedTrustId, memberId));
     localStorage.removeItem(KEY_ACTIVE_SCOPE(normalizedTrustId, memberId));
+    if (rawTrustId && rawTrustId !== normalizedTrustId) {
+      localStorage.removeItem(KEY_ACTIVE_SCOPE(rawTrustId, memberId));
+    }
   } catch {
     // ignore
   }
