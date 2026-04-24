@@ -14,13 +14,13 @@ const RowField = ({ label, type = 'text', value, onChange, placeholder, disabled
   <div className={`flex flex-col gap-1 ${disabled ? 'opacity-70' : ''}`}>
     <label className="text-[11px] font-bold uppercase tracking-widest ml-0.5 flex items-center gap-1" style={{ color: 'var(--brand-navy)' }}>
       {Icon && <Icon className="h-3 w-3" />}{label}
-      {disabled && <span className="text-[9px] bg-gray-100 text-gray-400 px-1.5 py-0.5 rounded-full ml-1 font-semibold">AUTO</span>}
+      {disabled && <span className="text-[9px] px-1.5 py-0.5 rounded-full ml-1 font-semibold" style={{ background: 'color-mix(in srgb, var(--surface-color) 78%, var(--app-accent-bg))', color: 'color-mix(in srgb, var(--body-text-color) 60%, var(--surface-color))' }}>AUTO</span>}
     </label>
     <div className={`relative rounded-2xl border-2 transition-all ${disabled
-        ? 'bg-gray-50 border-gray-100'
-        : 'bg-white border-gray-100'
+        ? 'border-gray-100'
+        : 'border-gray-100'
       }`}
-      style={{ boxShadow: 'none' }}
+      style={{ boxShadow: 'none', background: disabled ? 'color-mix(in srgb, var(--surface-color) 76%, var(--app-accent-bg))' : 'var(--surface-color)' }}
       onFocusCapture={e => { if (!disabled) e.currentTarget.style.borderColor = 'var(--brand-red)'; e.currentTarget.style.boxShadow = '0 0 0 3px color-mix(in srgb, var(--brand-red) 8%, transparent)'; }}
       onBlurCapture={e => { e.currentTarget.style.borderColor = ''; e.currentTarget.style.boxShadow = ''; }}
     >
@@ -42,7 +42,7 @@ const RowDate = ({ label, value, onChange, icon: Icon }) => (
     <label className="text-[11px] font-bold uppercase tracking-widest ml-0.5 flex items-center gap-1" style={{ color: 'var(--brand-navy)' }}>
       {Icon && <Icon className="h-3 w-3" />}{label}
     </label>
-    <div className="relative rounded-2xl border-2 border-gray-100 bg-white transition-all" style={{}} onFocusCapture={e => { e.currentTarget.style.borderColor = 'var(--brand-red)'; e.currentTarget.style.boxShadow = '0 0 0 3px color-mix(in srgb, var(--brand-red) 8%, transparent)'; }} onBlurCapture={e => { e.currentTarget.style.borderColor = ''; e.currentTarget.style.boxShadow = ''; }}>
+    <div className="relative rounded-2xl border-2 border-gray-100 transition-all" style={{ background: 'var(--surface-color)' }} onFocusCapture={e => { e.currentTarget.style.borderColor = 'var(--brand-red)'; e.currentTarget.style.boxShadow = '0 0 0 3px color-mix(in srgb, var(--brand-red) 8%, transparent)'; }} onBlurCapture={e => { e.currentTarget.style.borderColor = ''; e.currentTarget.style.boxShadow = ''; }}>
       <input
         type="date"
         value={value || ''}
@@ -59,7 +59,7 @@ const RowSelect = ({ label, value, onChange, options, placeholder, icon: Icon })
     <label className="text-[11px] font-bold uppercase tracking-widest ml-0.5 flex items-center gap-1" style={{ color: 'var(--brand-navy)' }}>
       {Icon && <Icon className="h-3 w-3" />}{label}
     </label>
-    <div className="relative rounded-2xl border-2 border-gray-100 bg-white transition-all" onFocusCapture={e => { e.currentTarget.style.borderColor = 'var(--brand-red)'; e.currentTarget.style.boxShadow = '0 0 0 3px color-mix(in srgb, var(--brand-red) 8%, transparent)'; }} onBlurCapture={e => { e.currentTarget.style.borderColor = ''; e.currentTarget.style.boxShadow = ''; }}>
+    <div className="relative rounded-2xl border-2 border-gray-100 transition-all" style={{ background: 'var(--surface-color)' }} onFocusCapture={e => { e.currentTarget.style.borderColor = 'var(--brand-red)'; e.currentTarget.style.boxShadow = '0 0 0 3px color-mix(in srgb, var(--brand-red) 8%, transparent)'; }} onBlurCapture={e => { e.currentTarget.style.borderColor = ''; e.currentTarget.style.boxShadow = ''; }}>
       <select
         value={value || ''}
         onChange={(e) => onChange(e.target.value)}
@@ -76,10 +76,10 @@ const RowSelect = ({ label, value, onChange, options, placeholder, icon: Icon })
 );
 
 // Section header with colored left pill
-const SectionHeader = ({ title, color = 'bg-indigo-500' }) => (
+const SectionHeader = ({ title, color = 'var(--brand-red)' }) => (
   <div className="flex items-center gap-2.5 pt-7 pb-3">
-    <div className={`w-1 h-5 rounded-full ${color}`} />
-    <span className="text-xs font-extrabold text-gray-500 uppercase tracking-widest">{title}</span>
+    <div className="w-1 h-5 rounded-full" style={{ background: color }} />
+    <span className="text-xs font-extrabold uppercase tracking-widest" style={{ color: 'color-mix(in srgb, var(--body-text-color) 58%, var(--surface-color))' }}>{title}</span>
   </div>
 );
 
@@ -373,23 +373,23 @@ const Profile = ({ onNavigate, onProfileUpdate }) => {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-white">
+      <div className="min-h-screen flex items-center justify-center" style={{ background: 'var(--page-bg, var(--app-page-bg))' }}>
         <div className="text-center">
-          <div className="animate-spin rounded-full h-10 w-10 border-4 border-gray-300 border-t-gray-700 mx-auto" />
-          <p className="text-gray-500 mt-4 text-sm">Loading profile...</p>
+          <div className="animate-spin rounded-full h-10 w-10 border-4 mx-auto" style={{ borderColor: 'color-mix(in srgb, var(--brand-navy) 18%, transparent)', borderTopColor: 'var(--brand-red)' }} />
+          <p className="mt-4 text-sm" style={{ color: 'color-mix(in srgb, var(--body-text-color) 70%, var(--surface-color))' }}>Loading profile...</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div ref={mainContainerRef} className="min-h-screen font-sans" style={{ background: 'linear-gradient(135deg, var(--surface-color)5f5 0%, var(--surface-color) 40%, #f0f1fb 100%)' }}>
+    <div ref={mainContainerRef} className="min-h-screen font-sans" style={{ background: 'linear-gradient(135deg, color-mix(in srgb, var(--surface-color) 88%, var(--app-accent-bg)) 0%, var(--surface-color) 40%, color-mix(in srgb, var(--brand-navy-light) 55%, var(--surface-color)) 100%)' }}>
 
       {/* Navbar - Brand */}
       <div
         className="px-4 py-4 flex items-center justify-between sticky top-0 z-50 shadow-md"
         style={{
-          background: `linear-gradient(135deg, var(--brand-red) 0%, var(--brand-red-dark) 35%, var(--brand-navy) 100%)`,
+          background: `linear-gradient(135deg, ${theme.secondary} 0%, ${theme.primary} 100%)`,
           paddingTop: 'max(env(safe-area-inset-top, 0px), 16px)',
           color: navbarTextColor
         }}
@@ -407,33 +407,38 @@ const Profile = ({ onNavigate, onProfileUpdate }) => {
 
       {/* Error/success banner */}
       {message.text && (
-        <div className={`mx-4 mt-3 rounded-xl p-3 flex items-center gap-2 ${message.type === 'error' ? 'bg-red-50 border border-red-200' : 'bg-green-50 border border-green-200'}`}>
-          {message.type === 'error' ? <AlertCircle className="h-4 w-4 text-red-500 flex-shrink-0" /> : <CheckCircle className="h-4 w-4 text-green-500 flex-shrink-0" />}
-          <p className={`text-sm ${message.type === 'error' ? 'text-red-700' : 'text-green-700'}`}>{message.text}</p>
+        <div className="mx-4 mt-3 rounded-xl p-3 flex items-center gap-2" style={message.type === 'error'
+          ? { background: 'var(--brand-red-light)', border: '1px solid color-mix(in srgb, var(--brand-red) 20%, transparent)' }
+          : { background: 'color-mix(in srgb, var(--brand-navy-light) 68%, var(--surface-color))', border: '1px solid color-mix(in srgb, var(--brand-navy) 16%, transparent)' }}>
+          {message.type === 'error'
+            ? <AlertCircle className="h-4 w-4 flex-shrink-0" style={{ color: 'var(--brand-red)' }} />
+            : <CheckCircle className="h-4 w-4 flex-shrink-0" style={{ color: 'var(--brand-navy)' }} />}
+          <p className="text-sm" style={{ color: message.type === 'error' ? 'var(--brand-red-dark)' : 'var(--brand-navy)' }}>{message.text}</p>
         </div>
       )}
 
       {/* Profile Header */}
-      <div className="px-5 pt-6 pb-4 flex items-center gap-4 border-b border-gray-100">
+      <div className="px-5 pt-6 pb-4 flex items-center gap-4 border-b" style={{ borderColor: 'color-mix(in srgb, var(--brand-navy) 10%, transparent)' }}>
         {/* Avatar */}
         <div className="relative flex-shrink-0">
-          <div className="w-20 h-20 rounded-full border-2 border-gray-200 overflow-hidden bg-gray-100">
+          <div className="w-20 h-20 rounded-full border-2 overflow-hidden" style={{ borderColor: 'color-mix(in srgb, var(--brand-navy) 12%, transparent)', background: 'color-mix(in srgb, var(--surface-color) 78%, var(--app-accent-bg))' }}>
             {photoPreview ? (
               <img src={photoPreview} alt="Profile" className="w-full h-full object-cover"
                 onError={(e) => { e.target.src = `https://ui-avatars.com/api/?name=${profileData.name || 'U'}&background=e5e7eb&color=374151&size=80`; }} />
             ) : profileData.name ? (
-              <div className="w-full h-full flex items-center justify-center text-2xl font-bold text-gray-600">
+              <div className="w-full h-full flex items-center justify-center text-2xl font-bold" style={{ color: 'var(--brand-navy)' }}>
                 {profileData.name.charAt(0).toUpperCase()}
               </div>
             ) : (
               <div className="w-full h-full flex items-center justify-center">
-                <UserCircle className="h-12 w-12 text-gray-400" />
+                <UserCircle className="h-12 w-12" style={{ color: 'color-mix(in srgb, var(--body-text-color) 42%, var(--surface-color))' }} />
               </div>
             )}
           </div>
           <button onClick={() => document.getElementById('photo-upload').click()}
-            className="absolute -bottom-1 -right-1 bg-white border border-gray-300 p-1.5 rounded-full shadow-sm active:scale-95 transition-all">
-            <Camera className="h-3.5 w-3.5 text-gray-600" />
+            className="absolute -bottom-1 -right-1 p-1.5 rounded-full shadow-sm active:scale-95 transition-all"
+            style={{ background: 'var(--surface-color)', border: '1px solid color-mix(in srgb, var(--brand-navy) 14%, transparent)' }}>
+            <Camera className="h-3.5 w-3.5" style={{ color: 'var(--brand-navy)' }} />
           </button>
           <input id="photo-upload" type="file" accept="image/*" className="hidden" onChange={handlePhotoChange} />
         </div>
@@ -450,22 +455,22 @@ const Profile = ({ onNavigate, onProfileUpdate }) => {
                 : roleRaw;
           return (
         <div className="flex-1 min-w-0">
-          <h2 className="text-xl font-bold text-gray-900 leading-tight">{profileData.name || 'Your Name'}</h2>
-          <p className="text-sm text-gray-500 mt-0.5">{role}</p>
-          {profileData.memberId && <p className="text-xs text-gray-400 mt-0.5">ID: {profileData.memberId}</p>}
+          <h2 className="text-xl font-bold leading-tight" style={{ color: 'var(--heading-color)' }}>{profileData.name || 'Your Name'}</h2>
+          <p className="text-sm mt-0.5" style={{ color: 'color-mix(in srgb, var(--body-text-color) 72%, var(--surface-color))' }}>{role}</p>
+          {profileData.memberId && <p className="text-xs mt-0.5" style={{ color: 'color-mix(in srgb, var(--body-text-color) 55%, var(--surface-color))' }}>ID: {profileData.memberId}</p>}
         </div>
           );
         })()}
       </div>
 
       {/* Tabs */}
-      <div className="flex border-b border-gray-100 bg-white sticky top-[64px] z-40">
+      <div className="flex border-b sticky top-[64px] z-40" style={{ borderColor: 'color-mix(in srgb, var(--brand-navy) 10%, transparent)', background: 'var(--surface-color)' }}>
         {TABS.map(tab => (
           <button key={tab} onClick={() => setActiveTab(tab)}
             className="flex-1 py-4 text-sm font-bold transition-all border-b-2"
             style={activeTab === tab
               ? { borderColor: 'var(--brand-red)', color: 'var(--brand-red)' }
-              : { borderColor: 'transparent', color: '#94a3b8' }}
+              : { borderColor: 'transparent', color: 'color-mix(in srgb, var(--body-text-color) 48%, var(--surface-color))' }}
           >
             {tab}
           </button>
@@ -476,7 +481,7 @@ const Profile = ({ onNavigate, onProfileUpdate }) => {
       {activeTab === 'Details' && (
         <div className="px-4 pb-32">
           {/* Basic — locked fields */}
-          <SectionHeader title="Basic Info" color="bg-gray-400" />
+          <SectionHeader title="Basic Info" color="color-mix(in srgb, var(--body-text-color) 45%, var(--surface-color))" />
           <div className="space-y-3">
             <RowField label="Name" value={profileData.name} onChange={set('name')} disabled />
             <RowField label="Contact Number" value={profileData.mobile} onChange={set('mobile')} disabled />
@@ -484,7 +489,7 @@ const Profile = ({ onNavigate, onProfileUpdate }) => {
           </div>
 
           {/* Personal */}
-          <SectionHeader title="Personal" color="bg-indigo-500" />
+          <SectionHeader title="Personal" color="var(--brand-red)" />
           <div className="space-y-3">
             <RowField label="Email Address" type="email" value={profileData.email} onChange={set('email')} placeholder="Add your email" />
             <RowSelect label="Gender" value={profileData.gender} onChange={set('gender')} placeholder="Select gender"
@@ -498,14 +503,14 @@ const Profile = ({ onNavigate, onProfileUpdate }) => {
           </div>
 
           {/* Address */}
-          <SectionHeader title="Address" color="bg-emerald-500" />
+          <SectionHeader title="Address" color="var(--brand-navy)" />
           <div className="space-y-3">
             <RowField label="Home Address" value={profileData.address_home} onChange={set('address_home')} placeholder="Enter home address" />
             <RowField label="Office Address" value={profileData.address_office} onChange={set('address_office')} placeholder="Enter office address" />
           </div>
 
           {/* Work */}
-          <SectionHeader title="Work" color="bg-amber-500" />
+          <SectionHeader title="Work" color="color-mix(in srgb, var(--brand-red) 55%, var(--brand-navy))" />
           <div className="space-y-3">
             <RowField label="Company Name" value={profileData.company_name} onChange={set('company_name')} placeholder="Enter company name" />
             <RowField label="Resident Landline" value={profileData.resident_landline} onChange={set('resident_landline')} placeholder="Enter landline" />
@@ -513,7 +518,7 @@ const Profile = ({ onNavigate, onProfileUpdate }) => {
           </div>
 
           {/* Identity */}
-          <SectionHeader title="Identity" color="bg-violet-500" />
+          <SectionHeader title="Identity" color="color-mix(in srgb, var(--brand-navy) 72%, var(--brand-red))" />
           <div className="space-y-3">
             <RowField label="Aadhaar ID" value={profileData.aadhaar_id} onChange={(val) => {
               const d = val.replace(/\D/g, '').slice(0, 16);
@@ -522,14 +527,14 @@ const Profile = ({ onNavigate, onProfileUpdate }) => {
           </div>
 
           {/* Emergency */}
-          <SectionHeader title="Emergency Contact" color="bg-red-500" />
+          <SectionHeader title="Emergency Contact" color="var(--brand-red-dark)" />
           <div className="space-y-3">
             <RowField label="Contact Name" value={profileData.emergency_contact_name} onChange={set('emergency_contact_name')} placeholder="Full name" />
             <RowField label="Contact Number" value={profileData.emergency_contact_number} onChange={set('emergency_contact_number')} placeholder="Phone number" />
           </div>
 
           {/* Spouse */}
-          <SectionHeader title="Spouse & Family" color="bg-pink-500" />
+          <SectionHeader title="Spouse & Family" color="color-mix(in srgb, var(--brand-red) 68%, var(--brand-red-dark))" />
           <div className="space-y-3">
             <RowField label="Spouse Name" value={profileData.spouse_name} onChange={set('spouse_name')} placeholder="Enter spouse name" />
             <RowField label="Spouse Contact" value={profileData.spouse_contact_number} onChange={set('spouse_contact_number')} placeholder="Enter contact number" />
@@ -537,7 +542,7 @@ const Profile = ({ onNavigate, onProfileUpdate }) => {
           </div>
 
           {/* Social */}
-          <SectionHeader title="Social Media" color="bg-sky-500" />
+          <SectionHeader title="Social Media" color="color-mix(in srgb, var(--brand-navy) 82%, var(--surface-color))" />
           <div className="space-y-3">
             <RowField label="Facebook" value={profileData.facebook} onChange={set('facebook')} placeholder="Facebook URL or username" />
             <RowField label="Twitter / X" value={profileData.twitter} onChange={set('twitter')} placeholder="Twitter handle" />
@@ -549,7 +554,7 @@ const Profile = ({ onNavigate, onProfileUpdate }) => {
           {/* Elected position (show only if applicable) */}
           {(profileData.position || profileData.location || profileData.isElectedMember) && (
             <>
-              <SectionHeader title="Elected Position" color="bg-teal-500" />
+              <SectionHeader title="Elected Position" color="color-mix(in srgb, var(--brand-navy) 60%, var(--brand-red))" />
               <div className="space-y-3">
                 <RowField label="Position" value={profileData.position} onChange={set('position')} placeholder="Enter position" />
                 <RowField label="Location" value={profileData.location} onChange={set('location')} placeholder="Enter location" />
@@ -565,8 +570,8 @@ const Profile = ({ onNavigate, onProfileUpdate }) => {
           {/* Add member button */}
           <div className="flex items-center justify-between mb-4">
             <div>
-              <p className="text-base font-bold text-gray-900">Members</p>
-              <p className="text-xs text-gray-400">Add to book appointments for them</p>
+              <p className="text-base font-bold" style={{ color: 'var(--heading-color)' }}>Members</p>
+              <p className="text-xs" style={{ color: 'color-mix(in srgb, var(--body-text-color) 55%, var(--surface-color))' }}>Add to book appointments for them</p>
             </div>
             <button onClick={addMember}
               className="flex items-center gap-1.5 text-white px-4 py-2.5 rounded-xl text-sm font-semibold active:scale-95 transition-all"
@@ -577,9 +582,9 @@ const Profile = ({ onNavigate, onProfileUpdate }) => {
 
           {profileData.family_members.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-20 gap-3 text-center">
-              <Users className="h-12 w-12 text-gray-300" />
-              <p className="text-gray-600 font-semibold">No family members yet</p>
-              <p className="text-gray-400 text-sm px-8">Add members so you can book appointments for them</p>
+              <Users className="h-12 w-12" style={{ color: 'color-mix(in srgb, var(--body-text-color) 30%, var(--surface-color))' }} />
+              <p className="font-semibold" style={{ color: 'var(--body-text-color)' }}>No family members yet</p>
+              <p className="text-sm px-8" style={{ color: 'color-mix(in srgb, var(--body-text-color) 55%, var(--surface-color))' }}>Add members so you can book appointments for them</p>
               <button onClick={addMember}
                 className="mt-2 px-6 py-3 text-white rounded-xl text-sm font-semibold flex items-center gap-2 active:scale-95 transition-all"
                 style={{ background: 'linear-gradient(135deg, var(--brand-red) 0%, var(--brand-red-dark) 40%, var(--brand-navy) 100%)' }}>
@@ -592,35 +597,39 @@ const Profile = ({ onNavigate, onProfileUpdate }) => {
                 const isOpen = expandedMember === idx;
                 const initials = (member.name || '?').charAt(0).toUpperCase();
                 return (
-                  <div key={member.id || idx} className="border border-gray-200 rounded-2xl overflow-hidden">
+                  <div key={member.id || idx} className="border rounded-2xl overflow-hidden" style={{ borderColor: 'color-mix(in srgb, var(--brand-navy) 12%, transparent)', background: 'var(--surface-color)' }}>
                     {/* Member row header */}
                     <div className="flex items-center gap-3 px-4 py-3.5 cursor-pointer" onClick={() => setExpandedMember(isOpen ? null : idx)}>
-                      <div className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center text-gray-700 font-bold text-base flex-shrink-0">
+                      <div className="w-10 h-10 rounded-full flex items-center justify-center font-bold text-base flex-shrink-0" style={{ background: 'color-mix(in srgb, var(--surface-color) 76%, var(--app-accent-bg))', color: 'var(--brand-navy)' }}>
                         {initials}
                       </div>
                       <div className="flex-1 min-w-0">
-                        <p className="font-semibold text-gray-900 text-sm">{member.name || 'New Member'}</p>
-                        <p className="text-xs text-gray-400">{[member.relation, member.gender, member.age ? `Age ${member.age}` : ''].filter(Boolean).join(' · ') || 'Tap to fill details'}</p>
+                        <p className="font-semibold text-sm" style={{ color: 'var(--heading-color)' }}>{member.name || 'New Member'}</p>
+                        <p className="text-xs" style={{ color: 'color-mix(in srgb, var(--body-text-color) 55%, var(--surface-color))' }}>{[member.relation, member.gender, member.age ? `Age ${member.age}` : ''].filter(Boolean).join(' · ') || 'Tap to fill details'}</p>
                       </div>
-                      {isOpen ? <ChevronUp className="h-4 w-4 text-gray-400" /> : <ChevronDown className="h-4 w-4 text-gray-400" />}
+                      {isOpen ? <ChevronUp className="h-4 w-4" style={{ color: 'color-mix(in srgb, var(--body-text-color) 45%, var(--surface-color))' }} /> : <ChevronDown className="h-4 w-4" style={{ color: 'color-mix(in srgb, var(--body-text-color) 45%, var(--surface-color))' }} />}
                     </div>
 
                     {/* Expanded form */}
                     {isOpen && (
-                      <div className="border-t border-gray-100 px-4 pb-4 pt-3 space-y-3 bg-gray-50/50">
+                      <div className="border-t px-4 pb-4 pt-3 space-y-3" style={{ borderColor: 'color-mix(in srgb, var(--brand-navy) 10%, transparent)', background: 'color-mix(in srgb, var(--surface-color) 82%, var(--app-accent-bg))' }}>
                         {/* Name & Relation */}
                         <div className="grid grid-cols-2 gap-3">
                           <div className="flex flex-col gap-1">
-                            <label className="text-[11px] font-bold text-indigo-500 uppercase tracking-widest ml-0.5">Name *</label>
-                            <div className="rounded-2xl border-2 border-gray-100 bg-white focus-within:border-indigo-400 focus-within:shadow-[0_0_0_3px_rgba(99,102,241,0.08)] transition-all">
+                            <label className="text-[11px] font-bold uppercase tracking-widest ml-0.5" style={{ color: 'var(--brand-red)' }}>Name *</label>
+                            <div className="rounded-2xl border-2 border-gray-100 transition-all" style={{ background: 'var(--surface-color)' }}
+                              onFocusCapture={e => { e.currentTarget.style.borderColor = 'var(--brand-red)'; e.currentTarget.style.boxShadow = '0 0 0 3px color-mix(in srgb, var(--brand-red) 8%, transparent)'; }}
+                              onBlurCapture={e => { e.currentTarget.style.borderColor = ''; e.currentTarget.style.boxShadow = ''; }}>
                               <input type="text" value={member.name} onChange={e => updateMember(idx, 'name', e.target.value)}
                                 placeholder="Full name"
                                 className="w-full px-3 py-2.5 text-sm font-medium text-gray-900 bg-transparent focus:outline-none rounded-2xl" />
                             </div>
                           </div>
                           <div className="flex flex-col gap-1">
-                            <label className="text-[11px] font-bold text-indigo-500 uppercase tracking-widest ml-0.5">Relation *</label>
-                            <div className="relative rounded-2xl border-2 border-gray-100 bg-white focus-within:border-indigo-400 focus-within:shadow-[0_0_0_3px_rgba(99,102,241,0.08)] transition-all">
+                            <label className="text-[11px] font-bold uppercase tracking-widest ml-0.5" style={{ color: 'var(--brand-red)' }}>Relation *</label>
+                            <div className="relative rounded-2xl border-2 border-gray-100 transition-all" style={{ background: 'var(--surface-color)' }}
+                              onFocusCapture={e => { e.currentTarget.style.borderColor = 'var(--brand-red)'; e.currentTarget.style.boxShadow = '0 0 0 3px color-mix(in srgb, var(--brand-red) 8%, transparent)'; }}
+                              onBlurCapture={e => { e.currentTarget.style.borderColor = ''; e.currentTarget.style.boxShadow = ''; }}>
                               <select value={member.relation} onChange={e => updateMember(idx, 'relation', e.target.value)}
                                 className="w-full px-3 py-2.5 text-sm font-medium text-gray-900 bg-transparent focus:outline-none appearance-none rounded-2xl pr-7">
                                 <option value="">Select</option>
@@ -635,11 +644,14 @@ const Profile = ({ onNavigate, onProfileUpdate }) => {
 
                         {/* Gender chips */}
                         <div>
-                          <label className="text-[11px] font-bold text-indigo-500 uppercase tracking-widest ml-0.5 block mb-2">Gender</label>
+                          <label className="text-[11px] font-bold uppercase tracking-widest ml-0.5 block mb-2" style={{ color: 'var(--brand-red)' }}>Gender</label>
                           <div className="flex gap-2">
                             {['Male', 'Female', 'Other'].map(g => (
                               <button key={g} type="button" onClick={() => updateMember(idx, 'gender', g)}
-                                className={`flex-1 py-2.5 rounded-2xl text-sm font-semibold border-2 transition-all ${member.gender === g ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm' : 'bg-white text-gray-500 border-gray-100 hover:border-indigo-300'}`}>
+                                className={`flex-1 py-2.5 rounded-2xl text-sm font-semibold border-2 transition-all ${member.gender === g ? 'shadow-sm' : 'border-gray-100'}`}
+                                style={member.gender === g
+                                  ? { background: 'linear-gradient(135deg, var(--brand-red) 0%, var(--brand-navy) 100%)', color: 'var(--surface-color)', borderColor: 'var(--brand-red)' }
+                                  : { background: 'var(--surface-color)', color: 'color-mix(in srgb, var(--body-text-color) 70%, var(--surface-color))' }}>
                                 {g}
                               </button>
                             ))}
@@ -649,16 +661,20 @@ const Profile = ({ onNavigate, onProfileUpdate }) => {
                         {/* Age & Blood Group */}
                         <div className="grid grid-cols-2 gap-3">
                           <div className="flex flex-col gap-1">
-                            <label className="text-[11px] font-bold text-indigo-500 uppercase tracking-widest ml-0.5">Age</label>
-                            <div className="rounded-2xl border-2 border-gray-100 bg-white focus-within:border-indigo-400 focus-within:shadow-[0_0_0_3px_rgba(99,102,241,0.08)] transition-all">
+                            <label className="text-[11px] font-bold uppercase tracking-widest ml-0.5" style={{ color: 'var(--brand-red)' }}>Age</label>
+                            <div className="rounded-2xl border-2 border-gray-100 transition-all" style={{ background: 'var(--surface-color)' }}
+                              onFocusCapture={e => { e.currentTarget.style.borderColor = 'var(--brand-red)'; e.currentTarget.style.boxShadow = '0 0 0 3px color-mix(in srgb, var(--brand-red) 8%, transparent)'; }}
+                              onBlurCapture={e => { e.currentTarget.style.borderColor = ''; e.currentTarget.style.boxShadow = ''; }}>
                               <input type="number" value={member.age} min="0" max="120" onChange={e => updateMember(idx, 'age', e.target.value)}
                                 placeholder="Years"
                                 className="w-full px-3 py-2.5 text-sm font-medium text-gray-900 bg-transparent focus:outline-none rounded-2xl" />
                             </div>
                           </div>
                           <div className="flex flex-col gap-1">
-                            <label className="text-[11px] font-bold text-indigo-500 uppercase tracking-widest ml-0.5">Blood Group</label>
-                            <div className="relative rounded-2xl border-2 border-gray-100 bg-white focus-within:border-indigo-400 transition-all">
+                            <label className="text-[11px] font-bold uppercase tracking-widest ml-0.5" style={{ color: 'var(--brand-red)' }}>Blood Group</label>
+                            <div className="relative rounded-2xl border-2 border-gray-100 transition-all" style={{ background: 'var(--surface-color)' }}
+                              onFocusCapture={e => { e.currentTarget.style.borderColor = 'var(--brand-red)'; }}
+                              onBlurCapture={e => { e.currentTarget.style.borderColor = ''; }}>
                               <select value={member.blood_group} onChange={e => updateMember(idx, 'blood_group', e.target.value)}
                                 className="w-full px-3 py-2.5 text-sm font-medium text-gray-900 bg-transparent focus:outline-none appearance-none rounded-2xl pr-7">
                                 <option value="">Select</option>
@@ -673,8 +689,10 @@ const Profile = ({ onNavigate, onProfileUpdate }) => {
 
                         {/* Contact No */}
                         <div className="flex flex-col gap-1">
-                          <label className="text-[11px] font-bold text-indigo-500 uppercase tracking-widest ml-0.5">Contact No</label>
-                          <div className="rounded-2xl border-2 border-gray-100 bg-white focus-within:border-indigo-400 focus-within:shadow-[0_0_0_3px_rgba(99,102,241,0.08)] transition-all">
+                          <label className="text-[11px] font-bold uppercase tracking-widest ml-0.5" style={{ color: 'var(--brand-red)' }}>Contact No</label>
+                          <div className="rounded-2xl border-2 border-gray-100 transition-all" style={{ background: 'var(--surface-color)' }}
+                            onFocusCapture={e => { e.currentTarget.style.borderColor = 'var(--brand-red)'; e.currentTarget.style.boxShadow = '0 0 0 3px color-mix(in srgb, var(--brand-red) 8%, transparent)'; }}
+                            onBlurCapture={e => { e.currentTarget.style.borderColor = ''; e.currentTarget.style.boxShadow = ''; }}>
                             <input type="tel" value={member.contact_no} onChange={e => updateMember(idx, 'contact_no', e.target.value)}
                               placeholder="Optional"
                               className="w-full px-3 py-2.5 text-sm font-medium text-gray-900 bg-transparent focus:outline-none rounded-2xl" />
@@ -683,8 +701,10 @@ const Profile = ({ onNavigate, onProfileUpdate }) => {
 
                         {/* Email */}
                         <div className="flex flex-col gap-1">
-                          <label className="text-[11px] font-bold text-indigo-500 uppercase tracking-widest ml-0.5">Email</label>
-                          <div className="rounded-2xl border-2 border-gray-100 bg-white focus-within:border-indigo-400 focus-within:shadow-[0_0_0_3px_rgba(99,102,241,0.08)] transition-all">
+                          <label className="text-[11px] font-bold uppercase tracking-widest ml-0.5" style={{ color: 'var(--brand-red)' }}>Email</label>
+                          <div className="rounded-2xl border-2 border-gray-100 transition-all" style={{ background: 'var(--surface-color)' }}
+                            onFocusCapture={e => { e.currentTarget.style.borderColor = 'var(--brand-red)'; e.currentTarget.style.boxShadow = '0 0 0 3px color-mix(in srgb, var(--brand-red) 8%, transparent)'; }}
+                            onBlurCapture={e => { e.currentTarget.style.borderColor = ''; e.currentTarget.style.boxShadow = ''; }}>
                             <input type="email" value={member.email} onChange={e => updateMember(idx, 'email', e.target.value)}
                               placeholder="email@example.com"
                               className="w-full px-3 py-2.5 text-sm font-medium text-gray-900 bg-transparent focus:outline-none rounded-2xl" />
@@ -693,8 +713,10 @@ const Profile = ({ onNavigate, onProfileUpdate }) => {
 
                         {/* Address */}
                         <div className="flex flex-col gap-1">
-                          <label className="text-[11px] font-bold text-indigo-500 uppercase tracking-widest ml-0.5">Address</label>
-                          <div className="rounded-2xl border-2 border-gray-100 bg-white focus-within:border-indigo-400 focus-within:shadow-[0_0_0_3px_rgba(99,102,241,0.08)] transition-all">
+                          <label className="text-[11px] font-bold uppercase tracking-widest ml-0.5" style={{ color: 'var(--brand-red)' }}>Address</label>
+                          <div className="rounded-2xl border-2 border-gray-100 transition-all" style={{ background: 'var(--surface-color)' }}
+                            onFocusCapture={e => { e.currentTarget.style.borderColor = 'var(--brand-red)'; e.currentTarget.style.boxShadow = '0 0 0 3px color-mix(in srgb, var(--brand-red) 8%, transparent)'; }}
+                            onBlurCapture={e => { e.currentTarget.style.borderColor = ''; e.currentTarget.style.boxShadow = ''; }}>
                             <input type="text" value={member.address} onChange={e => updateMember(idx, 'address', e.target.value)}
                               placeholder="Full address"
                               className="w-full px-3 py-2.5 text-sm font-medium text-gray-900 bg-transparent focus:outline-none rounded-2xl" />
@@ -703,7 +725,8 @@ const Profile = ({ onNavigate, onProfileUpdate }) => {
 
                         {/* Remove */}
                         <button type="button" onClick={() => removeMember(idx)}
-                          className="w-full flex items-center justify-center gap-2 py-3 rounded-2xl border-2 border-red-100 text-red-500 text-sm font-semibold bg-red-50/60 active:scale-95 transition-all">
+                          className="w-full flex items-center justify-center gap-2 py-3 rounded-2xl border-2 text-sm font-semibold active:scale-95 transition-all"
+                          style={{ borderColor: 'color-mix(in srgb, var(--brand-red) 15%, transparent)', color: 'var(--brand-red)', background: 'color-mix(in srgb, var(--brand-red-light) 68%, var(--surface-color))' }}>
                           <Trash2 className="h-4 w-4" /> Remove Member
                         </button>
                       </div>
@@ -717,7 +740,7 @@ const Profile = ({ onNavigate, onProfileUpdate }) => {
       )}
 
       {/* Sticky Save Button */}
-      <div className="fixed bottom-0 left-0 right-0 z-40 px-4 pb-5 pt-4 bg-gradient-to-t from-white via-white to-transparent max-w-full md:max-w-[430px] md:mx-auto pointer-events-none">
+      <div className="fixed bottom-0 left-0 right-0 z-40 px-4 pb-5 pt-4 max-w-full md:max-w-[430px] md:mx-auto pointer-events-none" style={{ background: 'linear-gradient(to top, var(--surface-color), color-mix(in srgb, var(--surface-color) 82%, transparent), transparent)' }}>
         <button onClick={handleSave} disabled={saving}
           className="pointer-events-auto w-full py-4 text-white rounded-2xl font-bold text-base active:scale-[0.98] transition-all flex items-center justify-center gap-2 disabled:opacity-50"
           style={{ background: 'linear-gradient(135deg, var(--brand-red) 0%, var(--brand-red-dark) 40%, var(--brand-navy) 100%)', boxShadow: '0 8px 24px color-mix(in srgb, var(--brand-red) 30%, transparent)' }}>
@@ -728,12 +751,12 @@ const Profile = ({ onNavigate, onProfileUpdate }) => {
       {/* Success Popup */}
       {showSuccessPopup && (
         <div className="fixed inset-0 bg-black/40 z-[999] flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl shadow-2xl p-8 max-w-sm w-full text-center">
-            <div className="bg-green-100 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
-              <CheckCircle className="h-10 w-10 text-green-600" />
+          <div className="rounded-3xl shadow-2xl p-8 max-w-sm w-full text-center" style={{ background: 'var(--surface-color)' }}>
+            <div className="w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4" style={{ background: 'color-mix(in srgb, var(--brand-navy-light) 72%, var(--surface-color))' }}>
+              <CheckCircle className="h-10 w-10" style={{ color: 'var(--brand-navy)' }} />
             </div>
-            <h2 className="text-xl font-bold text-gray-900 mb-1">Saved!</h2>
-            <p className="text-gray-500 text-sm mb-6">Profile saved successfully.</p>
+            <h2 className="text-xl font-bold mb-1" style={{ color: 'var(--heading-color)' }}>Saved!</h2>
+            <p className="text-sm mb-6" style={{ color: 'color-mix(in srgb, var(--body-text-color) 65%, var(--surface-color))' }}>Profile saved successfully.</p>
             <button onClick={() => setShowSuccessPopup(false)} className="w-full text-white py-3 rounded-xl font-semibold active:scale-95 transition-all" style={{ background: 'linear-gradient(135deg, var(--brand-red) 0%, var(--brand-navy) 100%)' }}>Done</button>
           </div>
         </div>
@@ -742,14 +765,14 @@ const Profile = ({ onNavigate, onProfileUpdate }) => {
       {/* Under Review Popup — for non-registered members */}
       {showUnderReviewPopup && (
         <div className="fixed inset-0 bg-black/50 z-[999] flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl shadow-2xl p-8 max-w-sm w-full text-center">
-            <div className="bg-amber-100 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-5">
-              <Shield className="h-10 w-10 text-amber-500" />
+          <div className="rounded-3xl shadow-2xl p-8 max-w-sm w-full text-center" style={{ background: 'var(--surface-color)' }}>
+            <div className="w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-5" style={{ background: 'color-mix(in srgb, var(--brand-red-light) 72%, var(--surface-color))' }}>
+              <Shield className="h-10 w-10" style={{ color: 'var(--brand-red)' }} />
             </div>
-            <h2 className="text-xl font-bold text-gray-900 mb-2">Profile Submitted!</h2>
-            <div className="bg-amber-50 border border-amber-200 rounded-2xl px-4 py-3 mb-5">
-              <p className="text-amber-800 text-sm font-semibold">⏳ Your profile is under review</p>
-              <p className="text-amber-600 text-xs mt-1">Our team will verify your details and activate your membership. You'll be notified once approved.</p>
+            <h2 className="text-xl font-bold mb-2" style={{ color: 'var(--heading-color)' }}>Profile Submitted!</h2>
+            <div className="rounded-2xl px-4 py-3 mb-5" style={{ background: 'color-mix(in srgb, var(--brand-red-light) 72%, var(--surface-color))', border: '1px solid color-mix(in srgb, var(--brand-red) 16%, transparent)' }}>
+              <p className="text-sm font-semibold" style={{ color: 'var(--brand-red-dark)' }}>⏳ Your profile is under review</p>
+              <p className="text-xs mt-1" style={{ color: 'var(--brand-red)' }}>Our team will verify your details and activate your membership. You'll be notified once approved.</p>
             </div>
             <button
               onClick={() => setShowUnderReviewPopup(false)}
@@ -765,15 +788,15 @@ const Profile = ({ onNavigate, onProfileUpdate }) => {
       {/* Unsaved Changes Warning */}
       {showNavWarning && (
         <div className="fixed inset-0 bg-black/40 z-[999] flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl shadow-2xl p-8 max-w-sm w-full">
-            <div className="bg-amber-100 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
-              <AlertCircle className="h-10 w-10 text-amber-500" />
+          <div className="rounded-3xl shadow-2xl p-8 max-w-sm w-full" style={{ background: 'var(--surface-color)' }}>
+            <div className="w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4" style={{ background: 'color-mix(in srgb, var(--brand-red-light) 72%, var(--surface-color))' }}>
+              <AlertCircle className="h-10 w-10" style={{ color: 'var(--brand-red)' }} />
             </div>
-            <h2 className="text-xl font-bold text-gray-900 mb-1 text-center">Unsaved Changes</h2>
-            <p className="text-gray-500 text-sm text-center mb-6">Your changes will be lost if you leave now.</p>
+            <h2 className="text-xl font-bold mb-1 text-center" style={{ color: 'var(--heading-color)' }}>Unsaved Changes</h2>
+            <p className="text-sm text-center mb-6" style={{ color: 'color-mix(in srgb, var(--body-text-color) 65%, var(--surface-color))' }}>Your changes will be lost if you leave now.</p>
             <div className="flex gap-3">
               <button onClick={() => { setShowNavWarning(false); setNavTarget(null); if (navTarget) onNavigate(navTarget); }}
-                className="flex-1 bg-gray-100 text-gray-700 py-3 rounded-xl font-semibold active:scale-95 transition-all">Discard</button>
+                className="flex-1 py-3 rounded-xl font-semibold active:scale-95 transition-all" style={{ background: 'color-mix(in srgb, var(--surface-color) 76%, var(--app-accent-bg))', color: 'var(--body-text-color)' }}>Discard</button>
               <button onClick={async () => { await handleSave(); setShowNavWarning(false); if (navTarget) onNavigate(navTarget); }}
                 disabled={saving}
                 className="flex-1 text-white py-3 rounded-xl font-semibold active:scale-95 transition-all disabled:opacity-50"

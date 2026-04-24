@@ -24,7 +24,12 @@ import {
   setSelectedSponsorId,
   sponsorConfig
 } from './services/sponsorStore';
-import { getFooterThemeStyles, getNavbarThemeStyles, getThemeToken } from './utils/themeUtils';
+import {
+  getFooterThemeStyles,
+  getNavbarThemeStyles,
+  getThemeToken,
+  normalizeHomeLayout
+} from './utils/themeUtils';
 import { applyOpacity } from './utils/colorUtils';
 
 const DEFAULT_TRUST_NAME = import.meta.env.VITE_DEFAULT_TRUST_NAME || 'Mahila Mandal';
@@ -1476,7 +1481,10 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
     ? applyOpacity(sponsorBgColor1, sponsorTheme.bgOpacity)
     : `linear-gradient(${Number.isFinite(sponsorTheme.gradientAngle) ? sponsorTheme.gradientAngle : 135}deg, ${applyOpacity(sponsorBgColor1, sponsorTheme.bgOpacity)} 0%, ${applyOpacity(sponsorBgColor2, sponsorTheme.bgOpacity)} 100%)`;
   const animationMap = {
+    none: 'none',
+    fadeIn: 'themeFadeIn 360ms ease-out both',
     fadeUp: 'themeFadeUp 420ms ease-out both',
+    slideUp: 'themeFadeUp 420ms ease-out both',
     fadeSlideDown: 'themeFadeSlideDown 420ms ease-out both',
     zoomIn: 'themeZoomIn 420ms ease-out both'
   };
@@ -1485,6 +1493,19 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
     if (animationMap[preferred]) return animationMap[preferred];
     return animationMap[fallbackName] || 'none';
   };
+  const resolvedHomeLayout = useMemo(() => {
+    const stableDefaultOrder = ['trustList', 'sponsors', 'marquee', 'gallery', 'quickActions'];
+    const configuredLayout = normalizeHomeLayout(theme?.homeLayout, stableDefaultOrder);
+    const mergedLayout = [...configuredLayout];
+
+    stableDefaultOrder.forEach((sectionKey) => {
+      if (!mergedLayout.includes(sectionKey)) {
+        mergedLayout.push(sectionKey);
+      }
+    });
+
+    return mergedLayout;
+  }, [theme?.homeLayout]);
 
   return (
     <div
@@ -1757,7 +1778,7 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
                 scrollbarWidth: 'none',
                 background: 'transparent',
                 borderBottom: 'none',
-                animation: resolveAnimation('cards')
+                animation: resolveAnimation('trustList', 'cards')
               }}
               key="trustList"
             >
@@ -1795,7 +1816,7 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
               style={{
                 background: 'var(--marquee-bg)',
                 boxShadow: `0 2px 12px ${applyOpacity(theme.primary, 0.3)}`,
-                animation: resolveAnimation('cards')
+                animation: resolveAnimation('marquee', 'cards')
               }}
               key="marquee"
             >
@@ -1872,7 +1893,7 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
           ) : null,
 
           quickActions: enabledQuickActions.length > 0 ? (
-            <div className="px-4 mt-5 mb-4" style={{ animation: resolveAnimation('cards') }} key="quickActions">
+            <div className="px-4 mt-5 mb-4" style={{ animation: resolveAnimation('quickActions', 'cards') }} key="quickActions">
               <div className="grid grid-cols-2 gap-3">
                 {enabledQuickActions.map((action) => {
                   return (
@@ -1925,7 +1946,7 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
           ) : null,
 
           sponsors: (
-            <div className="px-4 mt-5 mb-4" style={{ animation: resolveAnimation('cards') }} key="sponsors">
+            <div className="px-4 mt-5 mb-4" style={{ animation: resolveAnimation('sponsors', 'cards') }} key="sponsors">
               {sponsors.length > 0 ? (
               <div className="relative">
                 <div
@@ -2114,10 +2135,7 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
           ),
         };
 
-        const baseLayout = Array.isArray(theme.homeLayout) && theme.homeLayout.length > 0
-          ? theme.homeLayout
-          : ['trustList', 'sponsors', 'marquee', 'gallery', 'quickActions'];
-        return baseLayout.map((key) => {
+        return resolvedHomeLayout.map((key) => {
           if (key === 'trustList' && !showTrustSelector) return null;
           return SECTIONS[key] || null;
         });
@@ -2137,6 +2155,10 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
           100% { transform: translateX(-50%); }
         }
 
+        @keyframes themeFadeIn {
+          from { opacity: 0; }
+          to { opacity: 1; }
+        }
         @keyframes themeFadeUp {
           from { opacity: 0; transform: translateY(14px); }
           to { opacity: 1; transform: translateY(0); }

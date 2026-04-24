@@ -7,6 +7,11 @@ import {
   sanitizeCustomCss,
   getThemeToken
 } from '../utils/themeUtils';
+import {
+  THEME_TEMPLATE_APPLIED_EVENT,
+  dispatchThemeRefresh,
+  dispatchThemeTemplateApplied
+} from '../utils/themeEvents';
 
 const LAST_THEME_CACHE_KEY = 'last_theme_cache_v2';
 const LEGACY_LAST_THEME_CACHE_KEY = 'last_theme_cache_v1';
@@ -64,6 +69,7 @@ const resolveStoredTrustId = () => {
 
 const getTrustCacheIndexKey = (trustId) => `theme_cache_trust_v2_${trustId}`;
 const getThemeCacheEntryKey = (trustId, templateId) => `theme_cache_v2_${trustId}_${templateId || 'none'}`;
+const normalizeTemplateMetaValue = (value) => String(value || '').trim() || null;
 
 const readLastThemeCache = (trustId) => {
   const parsedV2 = safeParse(localStorage.getItem(LAST_THEME_CACHE_KEY) || '');
@@ -167,6 +173,14 @@ const writeThemeCache = (trustId, theme) => {
   }));
 };
 
+const hasTemplateMetaChanged = ({ cachedTemplateId, cachedTemplateUpdatedAt, latestMeta }) => {
+  const latestTemplateId = normalizeTemplateMetaValue(latestMeta?.trustTemplateId);
+  const latestTemplateUpdatedAt = latestMeta?.linkedTemplateUpdatedAt || null;
+
+  return latestTemplateId !== normalizeTemplateMetaValue(cachedTemplateId)
+    || latestTemplateUpdatedAt !== (cachedTemplateUpdatedAt || null);
+};
+
 const fetchTrustThemeLink = async (targetTrustId) => {
   if (!targetTrustId) {
     return {
@@ -239,7 +253,7 @@ const fetchTrustThemeLink = async (targetTrustId) => {
 
   const templateResult = await supabase
     .from('app_templates')
-    .select('id, trust_id, name, template_key, is_active, theme_config, home_layout, animations, custom_css, updated_at')
+    .select('id, trust_id, name, template_key, theme_config, home_layout, animations, custom_css, updated_at')
     .eq('id', linkedTemplateId)
     .maybeSingle();
 
@@ -254,51 +268,24 @@ const fetchTrustThemeLink = async (targetTrustId) => {
   }
 
   const template = templateResult?.data || null;
-  const isTemplateActive = template?.is_active === true;
   if (import.meta.env.DEV) {
     console.log('[useTheme][TemplateLink][Fetch]', {
       trustId: targetTrustId,
       trustTemplateId: linkedTemplateId,
       fetchedTemplateId: template?.id || null,
       fetchedTemplateUpdatedAt: template?.updated_at || null,
-      fetchedTemplateIsActive: template?.is_active ?? null,
       linkSource: !template
         ? 'invalid_template_link'
-        : (isTemplateActive ? 'linked_template' : 'inactive_template_link')
+        : 'linked_template'
     });
   }
   return {
     trust,
-    template: isTemplateActive ? template : null,
+    template: template,
     overrides: trust.theme_overrides || {},
     linkSource: !template
       ? 'invalid_template_link'
-      : (isTemplateActive ? 'linked_template' : 'inactive_template_link')
-  };
-};
-
-const fetchLatestActiveTemplateForTrust = async (targetTrustId) => {
-  if (!targetTrustId) return { template: null, source: 'missing_trust' };
-  const result = await supabase
-    .from('app_templates')
-    .select('id, trust_id, name, template_key, is_active, theme_config, home_layout, animations, custom_css, updated_at')
-    .eq('trust_id', targetTrustId)
-    .eq('is_active', true)
-    .order('updated_at', { ascending: false })
-    .limit(1)
-    .maybeSingle();
-
-  if (result?.error) {
-    return {
-      template: null,
-      source: 'legacy_query_error',
-      error: result.error
-    };
-  }
-
-  return {
-    template: result?.data || null,
-    source: result?.data ? 'legacy_latest_active' : 'legacy_not_found'
+      : 'linked_template'
   };
 };
 
@@ -378,15 +365,30 @@ export const useTheme = (trustId) => {
   const isCacheValidationInFlightRef = useRef(false);
   const hasQueuedRefreshRef = useRef(false);
   const previousTrustIdRef = useRef(null);
-  const [theme, setTheme] = useState(() => {
+  const initialThemeStateRef = useRef(null);
+  if (!initialThemeStateRef.current) {
     try {
       const resolvedTrustId = String(trustId || '').trim() || resolveStoredTrustId();
-      return readCachedThemeEntry(resolvedTrustId)?.theme || readLastThemeCache(resolvedTrustId) || DEFAULT_THEME;
+      const immediateTheme = readCachedThemeEntry(resolvedTrustId)?.theme || readLastThemeCache(resolvedTrustId) || null;
+      initialThemeStateRef.current = {
+        theme: immediateTheme || DEFAULT_THEME,
+        hasImmediateTheme: Boolean(immediateTheme),
+        resolvedTrustId
+      };
     } catch {
-      return DEFAULT_THEME;
+      initialThemeStateRef.current = {
+        theme: DEFAULT_THEME,
+        hasImmediateTheme: false,
+        resolvedTrustId: ''
+      };
     }
+  }
+  const [theme, setTheme] = useState(() => initialThemeStateRef.current.theme);
+  const [isThemeLoading, setIsThemeLoading] = useState(() => {
+    const initialState = initialThemeStateRef.current;
+    if (!initialState?.resolvedTrustId) return false;
+    return !initialState.hasImmediateTheme;
   });
-  const [isThemeLoading, setIsThemeLoading] = useState(false);
 
   useEffect(() => {
     const resolvedTrustId = String(trustId || '').trim() || resolveStoredTrustId();
@@ -419,13 +421,19 @@ export const useTheme = (trustId) => {
         const cachedBaseTemplateUpdatedAt = cachedTheme?.baseTemplateUpdatedAt || null;
         const cachedSelectedTemplateUpdatedAt = cachedTheme?.selectedTemplateUpdatedAt || null;
 
-        const shouldReloadBase = (String(latestBaseMeta?.trustTemplateId || '').trim() || null) !== cachedBaseTemplateId
-          || (latestBaseMeta?.linkedTemplateUpdatedAt || null) !== cachedBaseTemplateUpdatedAt;
+        const shouldReloadBase = hasTemplateMetaChanged({
+          cachedTemplateId: cachedBaseTemplateId,
+          cachedTemplateUpdatedAt: cachedBaseTemplateUpdatedAt,
+          latestMeta: latestBaseMeta
+        });
 
         const shouldReloadSelected = isBaseTrustSelected
           ? false
-          : ((String(latestSelectedMeta?.trustTemplateId || '').trim() || null) !== cachedSelectedTemplateId
-            || (latestSelectedMeta?.linkedTemplateUpdatedAt || null) !== cachedSelectedTemplateUpdatedAt);
+          : hasTemplateMetaChanged({
+            cachedTemplateId: cachedSelectedTemplateId,
+            cachedTemplateUpdatedAt: cachedSelectedTemplateUpdatedAt,
+            latestMeta: latestSelectedMeta
+          });
 
         const cacheOutdated = shouldReloadBase || shouldReloadSelected;
 
@@ -464,6 +472,7 @@ export const useTheme = (trustId) => {
       if (hasCachedTheme) {
         const cachedTheme = tagThemeSource(cachedEntry.theme, 'cache');
         setTheme(cachedTheme);
+        setIsThemeLoading(false);
 
         if (import.meta.env.DEV) {
           console.log('[useTheme][TemplateLink] Cache hit:', {
@@ -501,17 +510,29 @@ export const useTheme = (trustId) => {
                 ? null
                 : (String(latestBaseMeta?.trustTemplateId || '').trim() || null);
               const baseChanged = !isBaseTrust && cachedBaseTemplateId !== latestBaseTemplateId;
+              const selectedTemplateUpdatedAtChanged = hasTemplateMetaChanged({
+                cachedTemplateId: cachedSelectedTemplateId,
+                cachedTemplateUpdatedAt: cachedTheme?.selectedTemplateUpdatedAt || null,
+                latestMeta: latestSelectedMeta
+              });
+              const baseTemplateUpdatedAtChanged = !isBaseTrust && hasTemplateMetaChanged({
+                cachedTemplateId: cachedBaseTemplateId,
+                cachedTemplateUpdatedAt: cachedTheme?.baseTemplateUpdatedAt || null,
+                latestMeta: latestBaseMeta
+              });
 
-              if (selectedChanged || baseChanged) {
+              if (selectedChanged || baseChanged || selectedTemplateUpdatedAtChanged || baseTemplateUpdatedAtChanged) {
                 if (import.meta.env.DEV) {
                   console.log('[useTheme][TemplateLink] Cache discarded due to template link change:', {
                     selectedTrustId: resolvedTrustId,
                     cachedSelectedTemplateId,
                     latestSelectedTemplateId,
                     selectedChanged,
+                    selectedTemplateUpdatedAtChanged,
                     cachedBaseTemplateId,
                     latestBaseTemplateId,
                     baseChanged,
+                    baseTemplateUpdatedAtChanged,
                     cacheSource: 'cache',
                     nextSource: 'db'
                   });
@@ -556,20 +577,10 @@ export const useTheme = (trustId) => {
             : fetchTrustThemeLink(resolvedTrustId)
         ]);
 
-        const shouldUseLegacyBaseFallback = !baseLink?.template && baseLink?.linkSource === 'no_template_link';
-        const shouldUseLegacySelectedFallback =
-          !isBaseTrustSelected
-          && !selectedLink?.template
-          && selectedLink?.linkSource === 'no_template_link';
-        const [baseLegacyFallback, selectedLegacyFallback] = await Promise.all([
-          shouldUseLegacyBaseFallback ? fetchLatestActiveTemplateForTrust(BASE_TRUST_ID) : Promise.resolve(null),
-          shouldUseLegacySelectedFallback ? fetchLatestActiveTemplateForTrust(resolvedTrustId) : Promise.resolve(null)
-        ]);
-
-        const effectiveBaseTemplate = baseLink?.template || baseLegacyFallback?.template || null;
+        const effectiveBaseTemplate = baseLink?.template || null;
         const effectiveSelectedTemplate = isBaseTrustSelected
           ? null
-          : (selectedLink?.template || selectedLegacyFallback?.template || null);
+          : (selectedLink?.template || null);
 
         const baseTheme = effectiveBaseTemplate
           ? buildThemeFromTemplate({
@@ -614,8 +625,8 @@ export const useTheme = (trustId) => {
         resolved.selectedThemeConfigRaw = selectedThemeConfigRaw;
 
         const selectedSource = isBaseTrustSelected
-          ? (baseLink?.template ? (baseLink?.linkSource || 'linked_template') : (baseLegacyFallback?.source || 'fallback_default'))
-          : (selectedLink?.template ? (selectedLink?.linkSource || 'linked_template') : (selectedLegacyFallback?.source || 'fallback_base'));
+          ? (baseLink?.template ? (baseLink?.linkSource || 'linked_template') : 'fallback_default')
+          : (selectedLink?.template ? (selectedLink?.linkSource || 'linked_template') : 'fallback_base');
         resolved.themeLoadSource = selectedSource.startsWith('linked_') ? 'db.linked_template' : `fallback.${selectedSource}`;
 
         if (import.meta.env.DEV) {
@@ -637,8 +648,6 @@ export const useTheme = (trustId) => {
             baseLinkedTemplateName: effectiveBaseTemplate?.name || null,
             baseLinkSource: baseLink?.linkSource || null,
             selectedLinkSource: selectedLink?.linkSource || null,
-            baseLegacyFallbackSource: baseLegacyFallback?.source || null,
-            selectedLegacyFallbackSource: selectedLegacyFallback?.source || null,
             source: resolved.themeLoadSource,
             cacheUsed: false,
             selectedTemplateUpdatedAt: resolved.selectedTemplateUpdatedAt,
@@ -659,17 +668,57 @@ export const useTheme = (trustId) => {
       }
     };
 
-    void load();
+    void load({ silent: hasCachedTheme });
     return undefined;
   }, [trustId, refreshTick]);
 
   useEffect(() => {
-    const queueRefreshFromEvent = () => {
+    const queueRefreshFromEvent = async () => {
       const targetTrustId = String(trustId || '').trim() || resolveStoredTrustId();
       if (!targetTrustId || hasQueuedRefreshRef.current) return;
       const cachedEntry = readCachedThemeEntry(targetTrustId);
       const shouldRefresh = !cachedEntry?.theme || isStale(cachedEntry?.ts);
-      if (!shouldRefresh) return;
+      if (shouldRefresh) {
+        hasQueuedRefreshRef.current = true;
+        clearThemeCacheForTrust(targetTrustId);
+        setRefreshTick((prev) => prev + 1);
+        return;
+      }
+
+      try {
+        const cachedTheme = cachedEntry.theme;
+        const isBaseTrust = targetTrustId === BASE_TRUST_ID;
+        const [latestSelectedMeta, latestBaseMeta] = await Promise.all([
+          fetchTrustTemplateMeta(targetTrustId),
+          isBaseTrust ? Promise.resolve(null) : fetchTrustTemplateMeta(BASE_TRUST_ID)
+        ]);
+
+        const selectedTemplateChanged = hasTemplateMetaChanged({
+          cachedTemplateId: cachedTheme?.selectedTrustTemplateId || null,
+          cachedTemplateUpdatedAt: cachedTheme?.selectedTemplateUpdatedAt || null,
+          latestMeta: latestSelectedMeta
+        });
+
+        const baseTemplateChanged = !isBaseTrust && hasTemplateMetaChanged({
+          cachedTemplateId: cachedTheme?.baseTrustTemplateId || null,
+          cachedTemplateUpdatedAt: cachedTheme?.baseTemplateUpdatedAt || null,
+          latestMeta: latestBaseMeta
+        });
+
+        if (!selectedTemplateChanged && !baseTemplateChanged) return;
+
+        if (import.meta.env.DEV) {
+          console.log('[useTheme][TemplateLink] Refresh queued from app lifecycle event:', {
+            selectedTrustId: targetTrustId,
+            selectedTemplateChanged,
+            baseTemplateChanged,
+            trigger: 'focus_or_visibility'
+          });
+        }
+      } catch (err) {
+        console.warn('[useTheme][TemplateLink] Lifecycle cache validation failed:', err);
+      }
+
       hasQueuedRefreshRef.current = true;
       clearThemeCacheForTrust(targetTrustId);
       setRefreshTick((prev) => prev + 1);
@@ -690,12 +739,12 @@ export const useTheme = (trustId) => {
 
     window.addEventListener('focus', queueRefreshFromEvent);
     document.addEventListener('visibilitychange', onVisibilityChange);
-    window.addEventListener('theme-template-applied', onTemplateApplied);
+    window.addEventListener(THEME_TEMPLATE_APPLIED_EVENT, onTemplateApplied);
 
     return () => {
       window.removeEventListener('focus', queueRefreshFromEvent);
       document.removeEventListener('visibilitychange', onVisibilityChange);
-      window.removeEventListener('theme-template-applied', onTemplateApplied);
+      window.removeEventListener(THEME_TEMPLATE_APPLIED_EVENT, onTemplateApplied);
     };
   }, [trustId]);
 
@@ -750,13 +799,15 @@ export const useTheme = (trustId) => {
         });
       }
 
-      window.dispatchEvent(new CustomEvent('theme-template-applied', {
-        detail: {
-          trustId: targetTrustId,
-          templateId: nextTemplateId
-        }
-      }));
-      window.dispatchEvent(new Event('theme-refresh'));
+      dispatchThemeTemplateApplied({
+        trustId: targetTrustId,
+        templateId: nextTemplateId,
+        source: 'applyTrustTemplate'
+      });
+      dispatchThemeRefresh({
+        trustId: targetTrustId,
+        reason: 'template-applied'
+      });
 
       hasQueuedRefreshRef.current = false;
       setRefreshTick((prev) => prev + 1);

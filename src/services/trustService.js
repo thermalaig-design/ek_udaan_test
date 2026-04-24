@@ -126,18 +126,14 @@ export const fetchTrustById = async (id) => {
   return data || null;
 };
 
-export const fetchTemplatesForTrust = async (trustId, { onlyActive = true } = {}) => {
+export const fetchTemplatesForTrust = async (trustId) => {
   if (!trustId) return [];
 
-  let query = supabase
+  const query = supabase
     .from('app_templates')
-    .select('id, trust_id, name, template_key, is_active, updated_at')
+    .select('id, trust_id, name, template_key, updated_at')
     .eq('trust_id', trustId)
     .order('updated_at', { ascending: false });
-
-  if (onlyActive) {
-    query = query.eq('is_active', true);
-  }
 
   const { data, error } = await query;
   if (error) throw error;

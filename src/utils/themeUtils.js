@@ -100,10 +100,123 @@ export const sanitizeCustomCss = (css) => {
     /@import/gi,
     /javascript:/gi,
     /expression\s*\(/gi,
-    /<\/?script/gi
+    /<\/?script/gi,
+    /behavior\s*:/gi
   ];
   const isBlocked = blockedPatterns.some((pattern) => pattern.test(text));
   return isBlocked ? '' : text;
+};
+
+export const DEFAULT_HOME_LAYOUT = ['gallery', 'quickActions', 'sponsors'];
+export const AVAILABLE_HOME_SECTIONS = ['trustList', 'marquee', 'gallery', 'quickActions', 'sponsors'];
+export const DEFAULT_THEME_ANIMATIONS = { cards: 'fadeUp', navbar: 'fadeSlideDown', gallery: 'zoomIn' };
+export const AVAILABLE_THEME_ANIMATIONS = ['none', 'fadeUp', 'fadeSlideDown', 'zoomIn', 'fadeIn'];
+export const LEGACY_THEME_ANIMATION_ALIASES = {
+  slideUp: 'fadeUp'
+};
+
+export const normalizeHomeLayout = (value, fallback = DEFAULT_HOME_LAYOUT) => {
+  const source = Array.isArray(value) ? value : fallback;
+  const unique = [];
+  const seen = new Set();
+
+  source.forEach((item) => {
+    const key = String(item || '').trim();
+    if (!AVAILABLE_HOME_SECTIONS.includes(key) || seen.has(key)) return;
+    seen.add(key);
+    unique.push(key);
+  });
+
+  return unique.length > 0 ? unique : [...fallback];
+};
+
+export const normalizeThemeAnimations = (value, fallback = DEFAULT_THEME_ANIMATIONS) => {
+  const safeFallback = isPlainObject(fallback) ? fallback : DEFAULT_THEME_ANIMATIONS;
+  if (!isPlainObject(value)) return { ...safeFallback };
+
+  const normalized = { ...safeFallback };
+  Object.keys(value).forEach((slot) => {
+    const rawAnimation = String(value[slot] || '').trim();
+    const nextAnimation = LEGACY_THEME_ANIMATION_ALIASES[rawAnimation] || rawAnimation;
+    if (!nextAnimation) return;
+    normalized[slot] = AVAILABLE_THEME_ANIMATIONS.includes(nextAnimation)
+      ? nextAnimation
+      : (safeFallback[slot] || 'none');
+  });
+
+  return normalized;
+};
+
+const scopeSelectorList = (selectorText, scopeSelector) =>
+  selectorText
+    .split(',')
+    .map((selector) => selector.trim())
+    .filter(Boolean)
+    .map((selector) => {
+      if (selector.includes(scopeSelector)) return selector;
+      if (selector === ':root' || selector === 'html' || selector === 'body') {
+        return scopeSelector;
+      }
+      if (selector.startsWith('html ') || selector.startsWith('body ')) {
+        return `${scopeSelector} ${selector.replace(/^(html|body)\s+/, '')}`.trim();
+      }
+      return `${scopeSelector} ${selector}`;
+    })
+    .join(', ');
+
+const scopeCssContent = (css, scopeSelector) => {
+  let cursor = 0;
+  let result = '';
+
+  while (cursor < css.length) {
+    const openIndex = css.indexOf('{', cursor);
+    if (openIndex === -1) {
+      result += css.slice(cursor);
+      break;
+    }
+
+    const prelude = css.slice(cursor, openIndex).trim();
+    let depth = 1;
+    let closeIndex = openIndex + 1;
+
+    while (closeIndex < css.length && depth > 0) {
+      const char = css[closeIndex];
+      if (char === '{') depth += 1;
+      if (char === '}') depth -= 1;
+      closeIndex += 1;
+    }
+
+    const blockContent = css.slice(openIndex + 1, closeIndex - 1);
+
+    if (!prelude) {
+      result += css.slice(cursor, closeIndex);
+      cursor = closeIndex;
+      continue;
+    }
+
+    if (prelude.startsWith('@keyframes') || prelude.startsWith('@font-face')) {
+      result += `${prelude}{${blockContent}}`;
+      cursor = closeIndex;
+      continue;
+    }
+
+    if (prelude.startsWith('@media') || prelude.startsWith('@supports') || prelude.startsWith('@layer')) {
+      result += `${prelude}{${scopeCssContent(blockContent, scopeSelector)}}`;
+      cursor = closeIndex;
+      continue;
+    }
+
+    result += `${scopeSelectorList(prelude, scopeSelector)}{${blockContent}}`;
+    cursor = closeIndex;
+  }
+
+  return result;
+};
+
+export const scopeCustomCss = (css, scopeSelector = '[data-theme-scope="trust-app"]') => {
+  const safeCss = sanitizeCustomCss(css);
+  if (!safeCss) return '';
+  return scopeCssContent(safeCss, scopeSelector).trim();
 };
 
 export const DEFAULT_THEME_CONFIG = {
@@ -175,8 +288,8 @@ export const DEFAULT_THEME = {
   pageBg: 'linear-gradient(160deg,#F8FAFC 0%,#EEF2F7 100%)',
   sidebarBg: '#ffffff',
   marqueeBg: 'linear-gradient(90deg,#4B5563,#1F2937)',
-  homeLayout: ['gallery', 'quickActions', 'sponsors'],
-  animations: { cards: 'fadeUp', navbar: 'fadeSlideDown', gallery: 'zoomIn' },
+  homeLayout: DEFAULT_HOME_LAYOUT,
+  animations: DEFAULT_THEME_ANIMATIONS,
   customCss: '',
   templateKey: 'mahila',
   themeConfig: DEFAULT_THEME_CONFIG,
@@ -189,13 +302,16 @@ export const mergeResolvedThemes = (baseTheme, selectedTheme) => {
   if (!selectedTheme) return { ...safeBase };
 
   const merged = deepMerge(safeBase, selectedTheme);
-  merged.homeLayout = sanitizeArrayOfStrings(
+  merged.homeLayout = normalizeHomeLayout(
     selectedTheme.homeLayout,
-    sanitizeArrayOfStrings(safeBase.homeLayout, DEFAULT_THEME.homeLayout)
+    normalizeHomeLayout(safeBase.homeLayout, DEFAULT_THEME.homeLayout)
   );
-  merged.animations = isPlainObject(selectedTheme.animations)
-    ? deepMerge(safeBase.animations || DEFAULT_THEME.animations, selectedTheme.animations)
-    : (safeBase.animations || DEFAULT_THEME.animations);
+  merged.animations = normalizeThemeAnimations(
+    isPlainObject(selectedTheme.animations)
+      ? deepMerge(safeBase.animations || DEFAULT_THEME.animations, selectedTheme.animations)
+      : (safeBase.animations || DEFAULT_THEME.animations),
+    safeBase.animations || DEFAULT_THEME.animations
+  );
   merged.customCss = selectedTheme.customCss || safeBase.customCss || '';
   merged.template = selectedTheme.template || safeBase.template || null;
   merged.templateId = selectedTheme.templateId || safeBase.templateId || null;
@@ -341,9 +457,12 @@ export const buildThemeFromTemplate = ({
     templateRow.home_layout,
     DEFAULT_THEME.homeLayout
   );
-  const resolvedAnimations = isPlainObject(templateRow.animations)
-    ? templateRow.animations
-    : DEFAULT_THEME.animations;
+  const resolvedAnimations = normalizeThemeAnimations(
+    isPlainObject(templateRow.animations)
+      ? templateRow.animations
+      : DEFAULT_THEME.animations,
+    DEFAULT_THEME.animations
+  );
 
   const resolvedPageBg = typeof pageBg === 'string'
     ? pageBg
@@ -358,7 +477,7 @@ export const buildThemeFromTemplate = ({
     pageBg: resolvedPageBg,
     sidebarBg: buildSurfaceBackground(sidebar, DEFAULT_THEME.sidebarBg),
     marqueeBg: buildGradient(marquee),
-    homeLayout: resolvedHomeLayout,
+    homeLayout: normalizeHomeLayout(resolvedHomeLayout, DEFAULT_THEME.homeLayout),
     animations: resolvedAnimations,
     customCss: sanitizeCustomCss(templateRow.custom_css || ''),
     templateKey: templateRow.template_key || 'mahila',

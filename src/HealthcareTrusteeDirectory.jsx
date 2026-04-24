@@ -884,7 +884,7 @@ const HealthcareTrusteeDirectory = ({ onNavigate }) => {
   }, [navbarTextColor, theme?.templateId, theme?.themeLoadSource]);
 
   return (
-    <div className={`bg-white h-screen flex flex-col relative${isMenuOpen ? ' overflow-hidden' : ' overflow-hidden'}`} ref={containerRef}>
+    <div className={`h-screen flex flex-col relative${isMenuOpen ? ' overflow-hidden' : ' overflow-hidden'}`} ref={containerRef} style={{ background: 'var(--page-bg, var(--app-page-bg))' }}>
       {/* Navbar - Brand theme */}
       <div
         className="px-4 py-4 flex items-center justify-between sticky top-0 z-50 shadow-md pointer-events-auto"
@@ -916,14 +916,15 @@ const HealthcareTrusteeDirectory = ({ onNavigate }) => {
       {/* Sidebar */}
       {error && (
         <div className="px-6 py-4 flex-shrink-0">
-          <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-center">
-            <p className="text-red-600 font-medium">{error}</p>
+          <div className="rounded-xl p-4 text-center" style={{ background: 'var(--brand-red-light)', border: '1px solid color-mix(in srgb, var(--brand-red) 18%, transparent)' }}>
+            <p className="font-medium" style={{ color: 'var(--brand-red-dark)' }}>{error}</p>
             <button
               onClick={() => {
                 setError(null);
                 fetchMembers(false);
               }}
-              className="mt-2 bg-red-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-red-700 transition-colors"
+              className="mt-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+              style={{ background: 'linear-gradient(135deg, var(--brand-red) 0%, var(--brand-navy) 100%)', color: 'var(--surface-color)' }}
             >
               Retry
             </button>
@@ -934,7 +935,7 @@ const HealthcareTrusteeDirectory = ({ onNavigate }) => {
       {loading && !dataLoaded && (
         <div className="px-6 py-4 flex-shrink-0">
           <div className="flex justify-center items-center h-32">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2" style={{ borderColor: 'var(--brand-red)', borderBottomColor: 'transparent' }}></div>
           </div>
         </div>
       )}
@@ -955,7 +956,7 @@ const HealthcareTrusteeDirectory = ({ onNavigate }) => {
             {/* Hero Header */}
             <div
               className="px-6 pt-8 pb-10"
-              style={{ background: 'linear-gradient(160deg, var(--brand-navy-light) 0%, #fff5f5 60%, #ffffff 100%)' }}
+              style={{ background: 'linear-gradient(160deg, var(--brand-navy-light) 0%, color-mix(in srgb, var(--brand-red-light) 68%, var(--surface-color)) 60%, var(--surface-color) 100%)' }}
             >
               <div className="flex items-center gap-4 mb-2">
                 <div
@@ -977,7 +978,7 @@ const HealthcareTrusteeDirectory = ({ onNavigate }) => {
 
             <div className="px-5 -mt-5 space-y-4">
               {directoryCards.length === 0 && (
-                <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 text-center text-sm text-gray-600">
+                <div className="rounded-2xl p-6 shadow-sm text-center text-sm" style={{ background: 'var(--surface-color)', border: '1px solid color-mix(in srgb, var(--brand-navy) 10%, transparent)', color: 'color-mix(in srgb, var(--body-text-color) 70%, var(--surface-color))' }}>
                   Members directory is disabled right now.
                 </div>
               )}
@@ -987,8 +988,8 @@ const HealthcareTrusteeDirectory = ({ onNavigate }) => {
                 return (
                 <div
                   key={card.id}
-                  className="bg-white rounded-2xl overflow-hidden shadow-md border border-gray-100 cursor-pointer group active:scale-[0.98] transition-all duration-200"
-                  style={{ boxShadow: '0 8px 32px rgba(43,47,126,0.10), 0 2px 8px rgba(192,36,26,0.06)' }}
+                  className="rounded-2xl overflow-hidden shadow-md cursor-pointer group active:scale-[0.98] transition-all duration-200"
+                  style={{ background: 'var(--surface-color)', border: '1px solid color-mix(in srgb, var(--brand-navy) 10%, transparent)', boxShadow: '0 8px 32px color-mix(in srgb, var(--brand-navy) 10%, transparent), 0 2px 8px color-mix(in srgb, var(--brand-red) 6%, transparent)' }}
                   onClick={() => {
                     setSelectedDirectory(card.id);
                     setActiveTab(card.tabKey || null);
@@ -1000,7 +1001,7 @@ const HealthcareTrusteeDirectory = ({ onNavigate }) => {
                   <div className="p-5 flex items-center gap-4">
                     <div
                       className="h-16 w-16 rounded-2xl flex items-center justify-center flex-shrink-0 shadow-md"
-                      style={{ background: 'linear-gradient(135deg, var(--brand-navy-light) 0%, #dde0f7 100%)' }}
+                      style={{ background: 'linear-gradient(135deg, var(--brand-navy-light) 0%, color-mix(in srgb, var(--brand-navy-light) 72%, var(--surface-color)) 100%)' }}
                     >
                       {card.icon_url ? (
                         <img
@@ -1014,8 +1015,8 @@ const HealthcareTrusteeDirectory = ({ onNavigate }) => {
                       )}
                     </div>
                     <div className="flex-1 min-w-0">
-                      <h3 className="font-extrabold text-gray-900 text-lg leading-tight">{card.title}</h3>
-                      <p className="text-gray-500 text-sm mt-0.5">{card.tagline}</p>
+                      <h3 className="font-extrabold text-lg leading-tight" style={{ color: 'var(--heading-color)' }}>{card.title}</h3>
+                      <p className="text-sm mt-0.5" style={{ color: 'color-mix(in srgb, var(--body-text-color) 68%, var(--surface-color))' }}>{card.tagline}</p>
                       <div className="flex items-center gap-2 mt-3">
                         <span
                           className="px-3 py-1 rounded-full text-xs font-bold"
@@ -1045,7 +1046,7 @@ const HealthcareTrusteeDirectory = ({ onNavigate }) => {
             {/* Hero Header */}
             <div
               className="px-5 pt-5 pb-8"
-              style={{ background: 'linear-gradient(160deg, var(--brand-navy-light) 0%, #fff5f5 60%, #ffffff 100%)' }}
+              style={{ background: 'linear-gradient(160deg, var(--brand-navy-light) 0%, color-mix(in srgb, var(--brand-red-light) 68%, var(--surface-color)) 60%, var(--surface-color) 100%)' }}
             >
               <div className="flex items-center gap-3">
                 <button
@@ -1070,7 +1071,7 @@ const HealthcareTrusteeDirectory = ({ onNavigate }) => {
             <div className="px-5 -mt-4">
               <div
                 className="rounded-2xl p-2.5 flex items-center gap-3 shadow-md transition-all focus-within:shadow-lg"
-                style={{ background: '#fff', border: '2px solid var(--brand-navy-light)' }}
+                style={{ background: 'var(--surface-color)', border: '2px solid var(--brand-navy-light)' }}
               >
                 <div
                   className="p-2 rounded-xl ml-1"
@@ -1112,8 +1113,8 @@ const HealthcareTrusteeDirectory = ({ onNavigate }) => {
                         }}
                         className="flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold whitespace-nowrap transition-all text-xs"
                         style={isActive
-                          ? { background: 'linear-gradient(135deg, var(--brand-red) 0%, var(--brand-navy) 100%)', color: '#fff', boxShadow: '0 4px 12px rgba(192,36,26,0.25)' }
-                          : { background: '#fff', color: 'var(--brand-navy)', border: '1.5px solid var(--brand-navy-light)' }
+                          ? { background: 'linear-gradient(135deg, var(--brand-red) 0%, var(--brand-navy) 100%)', color: 'var(--surface-color)', boxShadow: '0 4px 12px color-mix(in srgb, var(--brand-red) 25%, transparent)' }
+                          : { background: 'var(--surface-color)', color: 'var(--brand-navy)', border: '1.5px solid var(--brand-navy-light)' }
                         }
                       >
                         {tab.icon_url ? (
@@ -1124,7 +1125,7 @@ const HealthcareTrusteeDirectory = ({ onNavigate }) => {
                             onError={(e) => { e.target.onerror = null; e.target.style.display = 'none'; }}
                           />
                         ) : (
-                          <tab.icon className="h-4 w-4" style={{ color: isActive ? '#fff' : 'var(--brand-red)' }} />
+                          <tab.icon className="h-4 w-4" style={{ color: isActive ? 'var(--surface-color)' : 'var(--brand-red)' }} />
                         )}
                         {tab.label}
                       </button>
@@ -1140,7 +1141,7 @@ const HealthcareTrusteeDirectory = ({ onNavigate }) => {
                 <div className="flex justify-center items-center py-20">
                   <div className="text-center">
                     <div className="animate-spin rounded-full h-12 w-12 border-b-2-2 mx-auto mb-4" style={{ borderColor: 'var(--brand-red)', borderBottomColor: 'transparent' }}></div>
-                    <p className="text-gray-600 text-sm">Loading directory...</p>
+                    <p className="text-sm" style={{ color: 'color-mix(in srgb, var(--body-text-color) 70%, var(--surface-color))' }}>Loading directory...</p>
                   </div>
                 </div>
               ) : currentPageMembers.length > 0 ? (
@@ -1148,7 +1149,7 @@ const HealthcareTrusteeDirectory = ({ onNavigate }) => {
                   <div
                     key={item['S. No.'] || item.id || Math.random()}
                     className="bg-white rounded-2xl p-4 flex items-center gap-4 group cursor-pointer active:scale-[0.98] transition-all duration-200"
-                    style={{ boxShadow: '0 2px 12px rgba(43,47,126,0.07)', border: '1px solid rgba(43,47,126,0.08)' }}
+                    style={{ background: 'var(--surface-color)', boxShadow: '0 2px 12px color-mix(in srgb, var(--brand-navy) 7%, transparent)', border: '1px solid color-mix(in srgb, var(--brand-navy) 8%, transparent)' }}
                     onClick={() => {
                       const currentTabId = activeTab || currentTabs[0]?.id;
                       const isElectedContext = selectedDirectory === 'committee' && currentTabId === 'elected';
@@ -1294,7 +1295,7 @@ const HealthcareTrusteeDirectory = ({ onNavigate }) => {
                       // Ã¢â€â‚¬Ã¢â€â‚¬ Doctor card: large image + rich details Ã¢â€â‚¬Ã¢â€â‚¬
                       <div className="flex gap-4 w-full">
                         {/* Doctor Photo */}
-                        <div className="flex-shrink-0 h-20 w-20 rounded-2xl overflow-hidden bg-gradient-to-br from-indigo-100 to-purple-100 flex items-center justify-center border border-indigo-200/50 shadow-sm">
+                        <div className="flex-shrink-0 h-20 w-20 rounded-2xl overflow-hidden flex items-center justify-center border shadow-sm" style={{ background: 'linear-gradient(135deg, var(--brand-navy-light) 0%, var(--brand-red-light) 100%)', borderColor: 'color-mix(in srgb, var(--brand-navy) 14%, transparent)' }}>
                           {getMemberPhoto(item) ? (
                             <img
                               src={getMemberPhoto(item)}
@@ -1303,31 +1304,31 @@ const HealthcareTrusteeDirectory = ({ onNavigate }) => {
                               onError={(e) => { e.target.onerror = null; e.target.style.display = 'none'; }}
                             />
                           ) : (
-                            <Stethoscope className="h-8 w-8 text-indigo-500" />
+                            <Stethoscope className="h-8 w-8" style={{ color: 'var(--brand-red)' }} />
                           )}
                         </div>
 
                         {/* Doctor Info */}
                         <div className="flex-1 min-w-0">
                           <div className="flex items-start justify-between gap-2">
-                            <h3 className="font-bold text-gray-900 text-sm leading-tight group-hover:text-indigo-600 transition-colors">
+                            <h3 className="font-bold text-sm leading-tight transition-colors group-hover:opacity-85" style={{ color: 'var(--heading-color)' }}>
                               {item.consultant_name || item.Name || 'N/A'}
                             </h3>
-                            <div className="bg-gray-50 p-1.5 rounded-full group-hover:bg-indigo-50 flex-shrink-0">
-                              <ChevronRight className="h-4 w-4 text-gray-300 group-hover:text-indigo-400" />
+                            <div className="p-1.5 rounded-full flex-shrink-0" style={{ background: 'color-mix(in srgb, var(--surface-color) 82%, var(--app-accent-bg))' }}>
+                              <ChevronRight className="h-4 w-4" style={{ color: 'color-mix(in srgb, var(--body-text-color) 35%, var(--surface-color))' }} />
                             </div>
                           </div>
 
                           {/* Department */}
                           {item.department && (
-                            <span className="inline-block mt-1 text-[10px] font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-full">
+                            <span className="inline-block mt-1 text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ color: 'var(--brand-navy)', background: 'var(--brand-navy-light)' }}>
                               {item.department}
                             </span>
                           )}
 
                           {/* Designation + Qualification */}
                           {(item.designation || item.qualification) && (
-                            <p className="text-purple-700 text-[10px] font-semibold bg-purple-50 px-2 py-0.5 rounded-full inline-block mt-1">
+                            <p className="text-[10px] font-semibold px-2 py-0.5 rounded-full inline-block mt-1" style={{ color: 'var(--brand-red-dark)', background: 'var(--brand-red-light)' }}>
                               {[item.designation, item.qualification].filter(Boolean).join(' | ')}
                             </p>
                           )}
@@ -1335,12 +1336,12 @@ const HealthcareTrusteeDirectory = ({ onNavigate }) => {
                           {/* Experience + Fee row */}
                           <div className="flex items-center gap-2 mt-1.5 flex-wrap">
                             {item.experience_years && (
-                              <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full">
+                              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ color: 'var(--brand-red-dark)', background: 'color-mix(in srgb, var(--brand-red-light) 42%, var(--surface-color))' }}>
                                 {item.experience_years}+ yrs exp
                               </span>
                             )}
                             {item.consultation_fee && (
-                              <span className="text-[10px] font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full">
+                              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ color: 'var(--brand-navy)', background: 'color-mix(in srgb, var(--brand-navy-light) 60%, var(--surface-color))' }}>
                                 Ã¢â€šÂ¹{item.consultation_fee} fee
                               </span>
                             )}
@@ -1348,10 +1349,10 @@ const HealthcareTrusteeDirectory = ({ onNavigate }) => {
 
                           {/* OPD Days */}
                           {(item.general_opd_days || item.private_opd_days) && (
-                            <p className="text-gray-500 text-[10px] mt-1.5 leading-relaxed">
-                              {item.general_opd_days && <span><span className="font-semibold text-gray-600">OPD:</span> {item.general_opd_days}</span>}
+                            <p className="text-[10px] mt-1.5 leading-relaxed" style={{ color: 'color-mix(in srgb, var(--body-text-color) 70%, var(--surface-color))' }}>
+                              {item.general_opd_days && <span><span className="font-semibold" style={{ color: 'var(--body-text-color)' }}>OPD:</span> {item.general_opd_days}</span>}
                               {item.general_opd_days && item.private_opd_days && ' Ã‚Â· '}
-                              {item.private_opd_days && <span><span className="font-semibold text-gray-600">Pvt:</span> {item.private_opd_days}</span>}
+                              {item.private_opd_days && <span><span className="font-semibold" style={{ color: 'var(--body-text-color)' }}>Pvt:</span> {item.private_opd_days}</span>}
                             </p>
                           )}
 
@@ -1360,7 +1361,8 @@ const HealthcareTrusteeDirectory = ({ onNavigate }) => {
                             <a
                               href={`tel:${(item.mobile || item.Mobile).replace(/\s+/g, '').split(',')[0]}`}
                               onClick={(e) => e.stopPropagation()}
-                              className="inline-flex items-center gap-1.5 mt-2 bg-gray-50 border border-gray-200 px-3 py-1.5 rounded-lg text-xs font-semibold text-gray-600 hover:bg-indigo-50 hover:text-indigo-600 hover:border-indigo-200 transition-all"
+                              className="inline-flex items-center gap-1.5 mt-2 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all"
+                              style={{ background: 'color-mix(in srgb, var(--surface-color) 82%, var(--app-accent-bg))', border: '1px solid color-mix(in srgb, var(--brand-navy) 12%, transparent)', color: 'var(--body-text-color)' }}
                             >
                               <Phone className="h-3 w-3" />
                               Call
@@ -1373,7 +1375,7 @@ const HealthcareTrusteeDirectory = ({ onNavigate }) => {
                       <>
                         <div
                           className="h-14 w-14 rounded-xl flex items-center justify-center overflow-hidden flex-shrink-0"
-                          style={{ background: 'linear-gradient(135deg, var(--brand-navy-light) 0%, #dde0f7 100%)', border: '1.5px solid rgba(43,47,126,0.12)' }}
+                          style={{ background: 'linear-gradient(135deg, var(--brand-navy-light) 0%, color-mix(in srgb, var(--brand-navy-light) 72%, var(--surface-color)) 100%)', border: '1.5px solid color-mix(in srgb, var(--brand-navy) 12%, transparent)' }}
                         >
                           {getMemberPhoto(item) ? (
                             <img
@@ -1408,7 +1410,7 @@ const HealthcareTrusteeDirectory = ({ onNavigate }) => {
                                     </span>
                                   )}
                                 {item.location && item.location !== 'N/A' && (
-                                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full inline-flex items-center gap-1" style={{ background: '#f0fdf4', color: '#166534' }}>
+                                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full inline-flex items-center gap-1" style={{ background: 'color-mix(in srgb, var(--brand-red-light) 34%, var(--surface-color))', color: 'var(--brand-red-dark)' }}>
                                     <MapPin className="h-3 w-3" />{item.location}
                                   </span>
                                 )}
@@ -1427,12 +1429,12 @@ const HealthcareTrusteeDirectory = ({ onNavigate }) => {
                                   )}
                                 {(item.designation || item.qualification) &&
                                   (item.designation || item.qualification) !== 'N/A' && (
-                                    <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full inline-block" style={{ background: '#f5f3ff', color: '#5b21b6' }}>
+                                    <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full inline-block" style={{ background: 'color-mix(in srgb, var(--brand-navy-light) 62%, var(--surface-color))', color: 'var(--brand-navy)' }}>
                                       {item.designation}{item.qualification && item.qualification !== 'N/A' ? ` | ${item.qualification}` : ''}
                                     </span>
                                   )}
                                 {item.city && item.city !== 'N/A' && (
-                                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full inline-flex items-center gap-1" style={{ background: '#f0fdf4', color: '#166534' }}>
+                                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full inline-flex items-center gap-1" style={{ background: 'color-mix(in srgb, var(--brand-red-light) 34%, var(--surface-color))', color: 'var(--brand-red-dark)' }}>
                                     <MapPin className="h-3 w-3" />{item.city}{item.state && item.state !== 'N/A' ? `, ${item.state}` : ''}
                                   </span>
                                 )}
@@ -1461,7 +1463,7 @@ const HealthcareTrusteeDirectory = ({ onNavigate }) => {
                                 href={`mailto:${item.Email.trim()}`}
                                 onClick={(e) => e.stopPropagation()}
                                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all"
-                                style={{ background: 'var(--brand-navy-light)', color: 'var(--brand-navy)', border: '1.5px solid rgba(43,47,126,0.12)' }}
+                                style={{ background: 'var(--brand-navy-light)', color: 'var(--brand-navy)', border: '1.5px solid color-mix(in srgb, var(--brand-navy) 12%, transparent)' }}
                               >
                                 <Mail className="h-3 w-3" />Email
                               </a>
@@ -1476,7 +1478,7 @@ const HealthcareTrusteeDirectory = ({ onNavigate }) => {
                 <div className="text-center py-20">
                   <div
                     className="h-20 w-20 rounded-full flex items-center justify-center mx-auto mb-4"
-                    style={{ background: 'var(--brand-navy-light)', border: '2px dashed rgba(43,47,126,0.2)' }}
+                    style={{ background: 'var(--brand-navy-light)', border: '2px dashed color-mix(in srgb, var(--brand-navy) 20%, transparent)' }}
                   >
                     <User className="h-8 w-8" style={{ color: 'var(--brand-navy)' }} />
                   </div>
@@ -1489,7 +1491,7 @@ const HealthcareTrusteeDirectory = ({ onNavigate }) => {
             {/* Pagination Controls */}
             {filteredMembers.length > itemsPerPage && (
               <div className="px-5 mt-5 mb-4">
-                <div className="rounded-2xl px-3 py-3" style={{ background: 'linear-gradient(135deg, var(--brand-navy-light) 0%, var(--brand-red-light) 100%)', border: '1px solid rgba(43,47,126,0.10)' }}>
+                <div className="rounded-2xl px-3 py-3" style={{ background: 'linear-gradient(135deg, var(--brand-navy-light) 0%, var(--brand-red-light) 100%)', border: '1px solid color-mix(in srgb, var(--brand-navy) 10%, transparent)' }}>
                   <div className="flex items-center justify-between gap-2">
                     <button
                       onClick={() => { setCurrentPage(prev => Math.max(1, prev - 1)); scrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' }); }}
@@ -1511,8 +1513,8 @@ const HealthcareTrusteeDirectory = ({ onNavigate }) => {
                               onClick={() => { setCurrentPage(p); scrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' }); }}
                               className="w-9 h-9 rounded-xl font-bold text-sm transition-all"
                               style={currentPage === p
-                                ? { background: 'linear-gradient(135deg, var(--brand-red) 0%, var(--brand-navy) 100%)', color: '#fff', boxShadow: '0 4px 12px rgba(192,36,26,0.25)' }
-                                : { background: '#fff', color: 'var(--brand-navy)', border: '1.5px solid var(--brand-navy-light)' }
+                                ? { background: 'linear-gradient(135deg, var(--brand-red) 0%, var(--brand-navy) 100%)', color: 'var(--surface-color)', boxShadow: '0 4px 12px color-mix(in srgb, var(--brand-red) 25%, transparent)' }
+                                : { background: 'var(--surface-color)', color: 'var(--brand-navy)', border: '1.5px solid var(--brand-navy-light)' }
                               }
                             >{p}</button>
                           );

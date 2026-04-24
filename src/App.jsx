@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useLayoutEffect } from 'react';
 import { Routes, Route, useNavigate, useLocation, Navigate } from 'react-router-dom';
 import { LocalNotifications } from '@capacitor/local-notifications';
 import { ThemeContext } from './context/ThemeContext';
@@ -35,8 +35,11 @@ import Gallery from './Gallery';
 import OtherMemberships from './OtherMemberships';
 import AdminUserProfiles from './admin/AdminUserProfiles';
 import { getCurrentNotificationContext, matchesNotificationForContext } from './services/notificationAudience';
-import { applyThemeCssVariables, sanitizeCustomCss } from './utils/themeUtils';
+import { applyThemeCssVariables, scopeCustomCss } from './utils/themeUtils';
 import { colorToHex } from './utils/colorUtils';
+import {
+  THEME_REFRESH_EVENT
+} from './utils/themeEvents';
 
 import {
   useAndroidBackHandler,
@@ -47,6 +50,64 @@ import {
   useSwipeBackNavigation,
   useTheme
 } from './hooks';
+
+const LAST_THEME_CACHE_KEY = 'last_theme_cache_v2';
+const LEGACY_LAST_THEME_CACHE_KEY = 'last_theme_cache_v1';
+
+const safeParse = (value) => {
+  try {
+    return JSON.parse(value);
+  } catch {
+    return null;
+  }
+};
+
+const readBootThemeCache = (trustId) => {
+  const normalizedTrustId = String(trustId || '').trim();
+  if (!normalizedTrustId) return null;
+
+  const trustIndexKey = `theme_cache_trust_v2_${normalizedTrustId}`;
+  const activeEntryKey = sessionStorage.getItem(trustIndexKey);
+  if (activeEntryKey) {
+    const parsedEntry = safeParse(sessionStorage.getItem(activeEntryKey) || '');
+    if (parsedEntry?.theme && typeof parsedEntry.theme === 'object') {
+      return parsedEntry.theme;
+    }
+  }
+
+  const legacyEntry = safeParse(sessionStorage.getItem(`theme_cache_${normalizedTrustId}`) || '');
+  if (legacyEntry && typeof legacyEntry === 'object') {
+    if (legacyEntry.theme && typeof legacyEntry.theme === 'object') {
+      return legacyEntry.theme;
+    }
+    return legacyEntry;
+  }
+
+  const lastTheme = safeParse(localStorage.getItem(LAST_THEME_CACHE_KEY) || '')
+    || safeParse(localStorage.getItem(LEGACY_LAST_THEME_CACHE_KEY) || '');
+  if (!lastTheme || typeof lastTheme !== 'object') return null;
+
+  const cachedTrustId = String(lastTheme.selectedTrustId || lastTheme.trustId || '').trim();
+  if (cachedTrustId === normalizedTrustId) return lastTheme;
+  return null;
+};
+
+const applyThemeToDocument = (theme) => {
+  applyThemeCssVariables(theme);
+
+  const styleId = 'trust-custom-css-scoped';
+  const existing = document.getElementById(styleId);
+  if (existing) existing.remove();
+  document.getElementById('trust-custom-css-global')?.remove();
+
+  const scopedCustomCss = scopeCustomCss(theme?.customCss || '');
+  if (!scopedCustomCss) return;
+
+  const style = document.createElement('style');
+  style.id = styleId;
+  style.textContent = scopedCustomCss;
+  document.head.appendChild(style);
+};
 
 const HospitalTrusteeApp = () => {
   const BASE_TRUST_ID = import.meta.env.VITE_DEFAULT_TRUST_ID || '';
@@ -106,8 +167,16 @@ const HospitalTrusteeApp = () => {
   const resolvedThemeTrustId = shouldUseBaseTheme
     ? defaultThemeTrust.id
     : (activeTrustId || defaultThemeTrust.id);
-  const { theme: appTheme, refreshTheme } = useTheme(resolvedThemeTrustId);
+  const { theme: appTheme, refreshTheme, isThemeLoading } = useTheme(resolvedThemeTrustId);
   const notificationLightColorRef = useRef('');
+
+  useLayoutEffect(() => {
+    if (!resolvedThemeTrustId) return;
+    const cachedTheme = readBootThemeCache(resolvedThemeTrustId);
+    if (!cachedTheme) return;
+
+    applyThemeToDocument(cachedTheme);
+  }, [resolvedThemeTrustId]);
 
   useEffect(() => {
     const rootBrand = typeof window !== 'undefined'
@@ -185,27 +254,21 @@ const HospitalTrusteeApp = () => {
   }, []);
 
   useEffect(() => {
-    applyThemeCssVariables(appTheme);
-    const styleId = 'trust-custom-css-global';
-    const existing = document.getElementById(styleId);
-    if (existing) existing.remove();
-    const safeCustomCss = sanitizeCustomCss(appTheme?.customCss || '');
-    if (safeCustomCss) {
-      const style = document.createElement('style');
-      style.id = styleId;
-      style.textContent = safeCustomCss;
-      document.head.appendChild(style);
-    }
+    applyThemeToDocument(appTheme);
 
     return () => {
+      document.getElementById('trust-custom-css-scoped')?.remove();
       document.getElementById('trust-custom-css-global')?.remove();
     };
   }, [appTheme]);
 
   useEffect(() => {
     const handleThemeRefresh = () => refreshTheme();
-    window.addEventListener('theme-refresh', handleThemeRefresh);
-    return () => window.removeEventListener('theme-refresh', handleThemeRefresh);
+    window.addEventListener(THEME_REFRESH_EVENT, handleThemeRefresh);
+
+    return () => {
+      window.removeEventListener(THEME_REFRESH_EVENT, handleThemeRefresh);
+    };
   }, [refreshTheme]);
 
   // Push tap deep link fallback
@@ -719,20 +782,44 @@ const HospitalTrusteeApp = () => {
     }
   }, [location.pathname]);
 
-  return (
-    <GalleryProvider>
-      <ThemeContext.Provider value={appTheme}>
-        <div className="min-h-screen w-full flex justify-center overflow-x-hidden app-root-shell">
-          <div
-            className={`min-h-screen relative shadow-2xl overflow-x-hidden app-route-shell ${(location.pathname === '/login' || location.pathname === '/otp-verification' || location.pathname === '/profile' || location.pathname === '/vip-login') ? 'overflow-hidden' : 'overflow-y-auto'
-              } w-full max-w-[430px]`}
-            style={{
-              background: 'var(--page-bg, var(--app-page-bg))',
-              color: 'var(--body-text-color)',
-              fontFamily: "var(--font-family, 'Inter', sans-serif)",
-            }}
-          >
-            <Routes>
+  const hasResolvedThemeTrustId = Boolean(String(resolvedThemeTrustId || '').trim());
+  const hasLinkedTheme = Boolean(
+    appTheme?.selectedTrustTemplateId
+    || appTheme?.templateId
+    || appTheme?.baseTrustTemplateId
+  );
+  const shouldShowThemeGate = !hasResolvedThemeTrustId || (isThemeLoading && !hasLinkedTheme);
+
+  const appContent = shouldShowThemeGate ? (
+    <div
+      className="min-h-screen relative shadow-2xl overflow-hidden w-full max-w-[430px] flex items-center justify-center px-6"
+      style={{
+        background: 'var(--page-bg, var(--app-page-bg))',
+        color: 'var(--body-text-color)',
+        fontFamily: "var(--font-family, 'Inter', sans-serif)",
+      }}
+    >
+      <div className="text-center">
+        <div
+          className="w-10 h-10 rounded-full border-2 border-t-transparent animate-spin mx-auto"
+          style={{ borderColor: 'var(--brand-red)', borderTopColor: 'transparent' }}
+        />
+        <p className="text-sm font-semibold mt-3" style={{ color: 'var(--brand-navy)' }}>
+          Applying trust theme...
+        </p>
+      </div>
+    </div>
+  ) : (
+    <div
+      className={`min-h-screen relative shadow-2xl overflow-x-hidden app-route-shell ${(location.pathname === '/login' || location.pathname === '/otp-verification' || location.pathname === '/profile' || location.pathname === '/vip-login') ? 'overflow-hidden' : 'overflow-y-auto'
+        } w-full max-w-[430px]`}
+      style={{
+        background: 'var(--page-bg, var(--app-page-bg))',
+        color: 'var(--body-text-color)',
+        fontFamily: "var(--font-family, 'Inter', sans-serif)",
+      }}
+    >
+      <Routes>
         <Route
           path="/login"
           element={<Login />}
@@ -1040,11 +1127,21 @@ const HospitalTrusteeApp = () => {
           element={<PrivacyPolicy />}
         />
         <Route path="*" element={<Navigate to="/" replace />} />
-            </Routes>
-          </div>
+      </Routes>
+    </div>
+  );
+
+  return (
+    <ThemeContext.Provider value={appTheme}>
+      <GalleryProvider>
+        <div
+          className="min-h-screen w-full flex justify-center overflow-x-hidden app-root-shell"
+          data-theme-scope="trust-app"
+        >
+          {appContent}
         </div>
-      </ThemeContext.Provider>
-    </GalleryProvider>
+      </GalleryProvider>
+    </ThemeContext.Provider>
   );
 };
 

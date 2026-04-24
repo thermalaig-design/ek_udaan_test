@@ -4,6 +4,7 @@ import { getMemberTypes, getAllMembers, getAllHospitals, getAllElectedMembers, g
 import { getOpdDoctors } from './services/supabaseService';
 import Sidebar from './components/Sidebar';
 import { fetchFeatureFlags, subscribeFeatureFlags } from './services/featureFlags';
+import { useAppTheme, useThemeToken } from './context/ThemeContext';
 
 const CACHE_KEY = 'directory_data_cache';
 const CACHE_TIMESTAMP_KEY = 'directory_cache_timestamp';
@@ -103,6 +104,7 @@ const isTrusteeLikeRole = (member) => {
 
 const Directory = ({ onNavigate }) => {
   const theme = useAppTheme();
+  const navbarTextColor = useThemeToken('navbar.text_color', '#f7f7f7');
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [directoryTab, setDirectoryTab] = useState('healthcare');
   const [searchQuery, setSearchQuery] = useState('');
@@ -749,13 +751,13 @@ const Directory = ({ onNavigate }) => {
 
   if (!isFeatureEnabled('feature_directory')) {
     return (
-      <div className="min-h-screen bg-white flex items-center justify-center p-6">
+      <div className="min-h-screen flex items-center justify-center p-6" style={{ background: 'var(--page-bg, var(--app-page-bg))' }}>
         <div className="text-center max-w-sm">
-          <div className="bg-gray-100 h-16 w-16 rounded-full flex items-center justify-center mx-auto mb-4">
-            <Users className="h-7 w-7 text-gray-400" />
+          <div className="h-16 w-16 rounded-full flex items-center justify-center mx-auto mb-4" style={{ background: 'color-mix(in srgb, var(--surface-color) 76%, var(--app-accent-bg))' }}>
+            <Users className="h-7 w-7" style={{ color: 'color-mix(in srgb, var(--body-text-color) 42%, var(--surface-color))' }} />
           </div>
-          <h2 className="text-lg font-bold text-gray-800">Directory is disabled</h2>
-          <p className="text-sm text-gray-500 mt-2">This feature is currently turned off by admin.</p>
+          <h2 className="text-lg font-bold" style={{ color: 'var(--heading-color)' }}>Directory is disabled</h2>
+          <p className="text-sm mt-2" style={{ color: 'color-mix(in srgb, var(--body-text-color) 65%, var(--surface-color))' }}>This feature is currently turned off by admin.</p>
         </div>
       </div>
     );
@@ -763,8 +765,9 @@ const Directory = ({ onNavigate }) => {
 
   return (
     <div
-      className={`bg-white min-h-screen pb-10 relative${isMenuOpen ? ' overflow-hidden max-h-screen' : ''}`}
+      className={`min-h-screen pb-10 relative${isMenuOpen ? ' overflow-hidden max-h-screen' : ''}`}
       ref={containerRef}
+      style={{ background: 'var(--page-bg, var(--app-page-bg))' }}
     >
       {/* Navbar - Brand theme */}
       <div
@@ -774,30 +777,33 @@ const Directory = ({ onNavigate }) => {
         <button
           onClick={() => setIsMenuOpen(!isMenuOpen)}
           className="p-2 rounded-xl hover:bg-white/10 transition-colors pointer-events-auto"
+          style={{ color: navbarTextColor }}
         >
-          {isMenuOpen ? <X className="h-6 w-6 text-white" /> : <Menu className="h-6 w-6 text-white" />}
+          {isMenuOpen ? <X className="h-6 w-6" style={{ color: navbarTextColor }} /> : <Menu className="h-6 w-6" style={{ color: navbarTextColor }} />}
         </button>
-        <h1 className="text-base font-bold text-white tracking-wide">Directory</h1>
+        <h1 className="text-base font-bold tracking-wide" style={{ color: navbarTextColor }}>Directory</h1>
         <div className="flex items-center gap-1">
           <button
             onClick={() => onNavigate('home')}
             className="p-2 rounded-xl hover:bg-white/10 transition-colors flex items-center justify-center"
+            style={{ color: navbarTextColor }}
           >
-            <HomeIcon className="h-5 w-5 text-white" />
+            <HomeIcon className="h-5 w-5" style={{ color: navbarTextColor }} />
           </button>
         </div>
       </div>
 
       {error && (
         <div className="px-6 py-4">
-          <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-center">
-            <p className="text-red-600 font-medium">{error}</p>
+          <div className="rounded-xl p-4 text-center" style={{ background: 'var(--brand-red-light)', border: '1px solid color-mix(in srgb, var(--brand-red) 18%, transparent)' }}>
+            <p className="font-medium" style={{ color: 'var(--brand-red-dark)' }}>{error}</p>
             <button
               onClick={() => {
                 setError(null);
                 loadTabData(directoryTab);
               }}
-              className="mt-2 bg-red-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-red-700 transition-colors"
+              className="mt-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+              style={{ background: 'linear-gradient(135deg, var(--brand-red) 0%, var(--brand-navy) 100%)', color: 'var(--surface-color)' }}
             >
               Retry
             </button>
@@ -817,7 +823,7 @@ const Directory = ({ onNavigate }) => {
       {/* Header Section - Brand gradient */}
       <div
         className="px-5 pt-6 pb-10"
-        style={{ background: 'linear-gradient(160deg, var(--brand-navy-light) 0%, #fff5f5 60%, #ffffff 100%)' }}
+        style={{ background: 'linear-gradient(160deg, var(--brand-navy-light) 0%, color-mix(in srgb, var(--brand-red-light) 68%, var(--surface-color)) 60%, var(--surface-color) 100%)' }}
       >
         <div className="flex items-center gap-4">
           <div
@@ -860,7 +866,7 @@ const Directory = ({ onNavigate }) => {
       <div className="px-5 -mt-5">
         <div
           className="rounded-2xl p-2.5 flex items-center gap-3 shadow-md transition-all focus-within:shadow-lg"
-          style={{ background: '#fff', border: '2px solid var(--brand-navy-light)' }}
+          style={{ background: 'var(--surface-color)', border: '2px solid var(--brand-navy-light)' }}
         >
           <div className="p-2 rounded-xl ml-1" style={{ background: 'var(--brand-navy-light)' }}>
             <Search className="h-5 w-5" style={{ color: 'var(--brand-navy)' }} />
@@ -881,7 +887,8 @@ const Directory = ({ onNavigate }) => {
               if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
               searchTimeoutRef.current = setTimeout(() => setSearchQuery(val), 250);
             }}
-            className="flex-1 bg-transparent border-none focus:ring-0 text-gray-800 placeholder-gray-400 font-semibold text-sm py-2"
+            className="flex-1 bg-transparent border-none focus:ring-0 font-semibold text-sm py-2"
+            style={{ color: 'var(--body-text-color)' }}
           />
           {searchQuery ? (
             <button
@@ -889,7 +896,8 @@ const Directory = ({ onNavigate }) => {
                 if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
                 setSearchQuery('');
               }}
-              className="h-8 w-8 rounded-lg flex items-center justify-center text-gray-500 hover:text-[var(--brand-red-dark)] hover:bg-[var(--brand-red-light)] transition-colors"
+              className="h-8 w-8 rounded-lg flex items-center justify-center transition-colors"
+              style={{ color: 'color-mix(in srgb, var(--body-text-color) 55%, var(--surface-color))' }}
               aria-label="Clear search"
             >
               <X className="h-4 w-4" />
@@ -909,11 +917,11 @@ const Directory = ({ onNavigate }) => {
                 onClick={() => setDirectoryTab(tab.id)}
                 className="flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold whitespace-nowrap transition-all text-xs"
                 style={isActive
-                  ? { background: 'linear-gradient(135deg, var(--brand-red) 0%, var(--brand-navy) 100%)', color: '#fff', boxShadow: '0 4px 12px rgba(192,36,26,0.25)' }
-                  : { background: '#fff', color: 'var(--brand-navy)', border: '1.5px solid var(--brand-navy-light)' }
+                  ? { background: 'linear-gradient(135deg, var(--brand-red) 0%, var(--brand-navy) 100%)', color: 'var(--surface-color)', boxShadow: '0 4px 12px color-mix(in srgb, var(--brand-red) 25%, transparent)' }
+                  : { background: 'var(--surface-color)', color: 'var(--brand-navy)', border: '1.5px solid var(--brand-navy-light)' }
                 }
               >
-                <tab.icon className="h-4 w-4" style={{ color: isActive ? '#fff' : 'var(--brand-red)' }} />
+                <tab.icon className="h-4 w-4" style={{ color: isActive ? 'var(--surface-color)' : 'var(--brand-red)' }} />
                 {tab.label}
               </button>
             );
@@ -928,8 +936,8 @@ const Directory = ({ onNavigate }) => {
           currentPageMembers.map((item) => (
             <div
               key={item['S. No.'] || item.id || item['Membership number'] || `member-${item.Name || 'unknown'}`}
-              className="bg-white rounded-2xl p-4 flex items-center gap-4 group cursor-pointer active:scale-[0.98] transition-all duration-200"
-              style={{ boxShadow: '0 2px 12px rgba(43,47,126,0.07)', border: '1px solid rgba(43,47,126,0.08)' }}
+              className="rounded-2xl p-4 flex items-center gap-4 group cursor-pointer active:scale-[0.98] transition-all duration-200"
+              style={{ background: 'var(--surface-color)', boxShadow: '0 2px 12px color-mix(in srgb, var(--brand-navy) 7%, transparent)', border: '1px solid color-mix(in srgb, var(--brand-navy) 8%, transparent)' }}
               onClick={() => {
                 // Check if this is a committee group (committee name)
                 if (item.is_committee_group) {
@@ -1076,7 +1084,7 @@ const Directory = ({ onNavigate }) => {
               {/* Avatar */}
               <div
                 className="h-14 w-14 rounded-xl flex items-center justify-center overflow-hidden flex-shrink-0"
-                style={{ background: 'linear-gradient(135deg, var(--brand-navy-light) 0%, #dde0f7 100%)', border: '1.5px solid rgba(43,47,126,0.12)' }}
+                style={{ background: 'linear-gradient(135deg, var(--brand-navy-light) 0%, color-mix(in srgb, var(--brand-navy-light) 72%, var(--surface-color)) 100%)', border: '1.5px solid color-mix(in srgb, var(--brand-navy) 12%, transparent)' }}
               >
                 {item.doctor_image_url ? (
                   <img
@@ -1114,12 +1122,12 @@ const Directory = ({ onNavigate }) => {
               <div className="flex-1 min-w-0">
                 <div className="flex justify-between items-start gap-2">
                   <div className="min-w-0">
-                    <h3 className="font-bold text-gray-900 text-sm leading-tight">
+                    <h3 className="font-bold text-sm leading-tight" style={{ color: 'var(--heading-color)' }}>
                       {item.consultant_name || item.Name || item.hospital_name || ''}
                     </h3>
                     <div className="flex flex-wrap gap-1.5 mt-1.5">
                       {item['Membership number'] && item['Membership number'] !== 'N/A' && (
-                        <p className="text-gray-500 text-xs font-medium">{item['Membership number']}</p>
+                        <p className="text-xs font-medium" style={{ color: 'color-mix(in srgb, var(--body-text-color) 60%, var(--surface-color))' }}>{item['Membership number']}</p>
                       )}
                       {(item.position || item.member_role || item.type || item['Company Name']) &&
                         (item.position || item.member_role || item.type || item['Company Name']) !== 'N/A' && (
@@ -1131,16 +1139,16 @@ const Directory = ({ onNavigate }) => {
                           </span>
                         )}
                       {item.location && item.location !== 'N/A' && (
-                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full inline-flex items-center gap-1" style={{ background: '#f0fdf4', color: '#166534' }}>
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full inline-flex items-center gap-1" style={{ background: 'color-mix(in srgb, var(--brand-red-light) 34%, var(--surface-color))', color: 'var(--brand-red-dark)' }}>
                           ðŸ“ {item.location}
                         </span>
                       )}
                       {(item.hospital_type || item.trust_name) &&
                         (item.hospital_type || item.trust_name) !== 'N/A' && (
-                          <span className="text-gray-500 text-[10px]">{item.hospital_type || item.trust_name}</span>
+                          <span className="text-[10px]" style={{ color: 'color-mix(in srgb, var(--body-text-color) 60%, var(--surface-color))' }}>{item.hospital_type || item.trust_name}</span>
                         )}
                       {item.city && item.city !== 'N/A' && (
-                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full inline-flex items-center gap-1" style={{ background: '#f0fdf4', color: '#166534' }}>
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full inline-flex items-center gap-1" style={{ background: 'color-mix(in srgb, var(--brand-red-light) 34%, var(--surface-color))', color: 'var(--brand-red-dark)' }}>
                           ðŸ“ {item.city}{item.state && item.state !== 'N/A' ? `, ${item.state}` : ''}
                         </span>
                       )}
@@ -1160,7 +1168,7 @@ const Directory = ({ onNavigate }) => {
                       href={`tel:${item.Mobile.replace(/\s+/g, '').split(',')[0]}`}
                       onClick={(e) => e.stopPropagation()}
                       className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all"
-                      style={{ background: 'var(--brand-red-light)', color: 'var(--brand-red-dark)', border: '1px solid rgba(192,36,26,0.15)' }}
+                      style={{ background: 'var(--brand-red-light)', color: 'var(--brand-red-dark)', border: '1px solid color-mix(in srgb, var(--brand-red) 15%, transparent)' }}
                     >
                       <Phone className="h-3 w-3" />Call
                     </a>
@@ -1170,7 +1178,7 @@ const Directory = ({ onNavigate }) => {
                       href={`mailto:${item.Email.trim()}`}
                       onClick={(e) => e.stopPropagation()}
                       className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all"
-                      style={{ background: 'var(--brand-navy-light)', color: 'var(--brand-navy)', border: '1.5px solid rgba(43,47,126,0.12)' }}
+                      style={{ background: 'var(--brand-navy-light)', color: 'var(--brand-navy)', border: '1.5px solid color-mix(in srgb, var(--brand-navy) 12%, transparent)' }}
                     >
                       <Mail className="h-3 w-3" />Email
                     </a>
@@ -1183,12 +1191,12 @@ const Directory = ({ onNavigate }) => {
           <div className="text-center py-20">
             <div
               className="h-20 w-20 rounded-full flex items-center justify-center mx-auto mb-4"
-              style={{ background: 'var(--brand-navy-light)', border: '2px dashed rgba(43,47,126,0.2)' }}
+              style={{ background: 'var(--brand-navy-light)', border: '2px dashed color-mix(in srgb, var(--brand-navy) 20%, transparent)' }}
             >
               <Search className="h-8 w-8" style={{ color: 'var(--brand-navy)' }} />
             </div>
-            <h3 className="text-gray-800 font-bold">No results found</h3>
-            <p className="text-gray-500 text-sm mt-1">Try searching with a different keyword</p>
+            <h3 className="font-bold" style={{ color: 'var(--heading-color)' }}>No results found</h3>
+            <p className="text-sm mt-1" style={{ color: 'color-mix(in srgb, var(--body-text-color) 60%, var(--surface-color))' }}>Try searching with a different keyword</p>
           </div>
         )}
       </div>
@@ -1198,8 +1206,8 @@ const Directory = ({ onNavigate }) => {
         <div className="px-5 mt-4 mb-6 flex justify-center">
           <button
             onClick={loadMoreMembers}
-            className="px-6 py-2.5 rounded-xl font-bold text-sm text-white transition-all active:scale-95"
-            style={{ background: 'linear-gradient(135deg, var(--brand-red) 0%, var(--brand-navy) 100%)', boxShadow: '0 4px 12px rgba(192,36,26,0.25)' }}
+            className="px-6 py-2.5 rounded-xl font-bold text-sm transition-all active:scale-95"
+            style={{ background: 'linear-gradient(135deg, var(--brand-red) 0%, var(--brand-navy) 100%)', boxShadow: '0 4px 12px color-mix(in srgb, var(--brand-red) 25%, transparent)', color: 'var(--surface-color)' }}
           >
             Load more
           </button>
@@ -1209,12 +1217,15 @@ const Directory = ({ onNavigate }) => {
       {/* Pagination Controls - Brand Design */}
       {filteredMembers.length > itemsPerPage && (
         <div className="px-5 mt-5 mb-4">
-          <div className="rounded-2xl px-3 py-3" style={{ background: 'linear-gradient(135deg, var(--brand-navy-light) 0%, var(--brand-red-light) 100%)', border: '1px solid rgba(43,47,126,0.10)' }}>
+          <div className="rounded-2xl px-3 py-3" style={{ background: 'linear-gradient(135deg, var(--brand-navy-light) 0%, var(--brand-red-light) 100%)', border: '1px solid color-mix(in srgb, var(--brand-navy) 10%, transparent)' }}>
             <div className="flex items-center justify-between gap-2">
               <button
                 onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
                 disabled={currentPage === 1}
-                className={`flex-shrink-0 px-3 py-2 rounded-xl text-xs font-bold transition-all ${currentPage === 1 ? 'bg-gray-100 text-gray-300 cursor-not-allowed' : 'bg-white text-[var(--brand-navy)] border border-[var(--brand-navy-light)] active:scale-95'}`}
+                className={`flex-shrink-0 px-3 py-2 rounded-xl text-xs font-bold transition-all ${currentPage === 1 ? 'cursor-not-allowed' : 'active:scale-95'}`}
+                style={currentPage === 1
+                  ? { background: 'color-mix(in srgb, var(--surface-color) 76%, var(--app-accent-bg))', color: 'color-mix(in srgb, var(--body-text-color) 35%, var(--surface-color))' }
+                  : { background: 'var(--surface-color)', color: 'var(--brand-navy)', border: '1px solid var(--brand-navy-light)' }}
               >
                 â† Prev
               </button>
@@ -1231,8 +1242,8 @@ const Directory = ({ onNavigate }) => {
                       onClick={() => setCurrentPage(pageNum)}
                       className="w-9 h-9 rounded-xl font-bold text-sm transition-all"
                       style={currentPage === pageNum
-                        ? { background: 'linear-gradient(135deg, var(--brand-red) 0%, var(--brand-navy) 100%)', color: '#fff', boxShadow: '0 4px 12px rgba(192,36,26,0.25)' }
-                        : { background: '#fff', color: 'var(--brand-navy)', border: '1.5px solid var(--brand-navy-light)' }
+                        ? { background: 'linear-gradient(135deg, var(--brand-red) 0%, var(--brand-navy) 100%)', color: 'var(--surface-color)', boxShadow: '0 4px 12px color-mix(in srgb, var(--brand-red) 25%, transparent)' }
+                        : { background: 'var(--surface-color)', color: 'var(--brand-navy)', border: '1.5px solid var(--brand-navy-light)' }
                       }
                     >{pageNum}</button>
                   );
@@ -1244,7 +1255,10 @@ const Directory = ({ onNavigate }) => {
               <button
                 onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
                 disabled={currentPage === totalPages}
-                className={`flex-shrink-0 px-3 py-2 rounded-xl text-xs font-bold transition-all ${currentPage === totalPages ? 'bg-gray-100 text-gray-300 cursor-not-allowed' : 'bg-white text-[var(--brand-navy)] border border-[var(--brand-navy-light)] active:scale-95'}`}
+                className={`flex-shrink-0 px-3 py-2 rounded-xl text-xs font-bold transition-all ${currentPage === totalPages ? 'cursor-not-allowed' : 'active:scale-95'}`}
+                style={currentPage === totalPages
+                  ? { background: 'color-mix(in srgb, var(--surface-color) 76%, var(--app-accent-bg))', color: 'color-mix(in srgb, var(--body-text-color) 35%, var(--surface-color))' }
+                  : { background: 'var(--surface-color)', color: 'var(--brand-navy)', border: '1px solid var(--brand-navy-light)' }}
               >
                 Next â†’
               </button>
