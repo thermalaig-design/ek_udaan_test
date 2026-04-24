@@ -7,7 +7,8 @@ import {
 } from 'lucide-react';
 import Sidebar from './components/Sidebar';
 import { getAllElectedMembers, getProfile, saveProfile } from './services/api';
-import { useAppTheme, useThemeToken } from './context/ThemeContext';
+import { useAppTheme } from './context/ThemeContext';
+import { getNavbarThemeStyles } from './utils/themeUtils';
 
 // Classy input field — label on top, styled bordered input
 const RowField = ({ label, type = 'text', value, onChange, placeholder, disabled = false, icon: Icon }) => (
@@ -16,11 +17,13 @@ const RowField = ({ label, type = 'text', value, onChange, placeholder, disabled
       {Icon && <Icon className="h-3 w-3" />}{label}
       {disabled && <span className="text-[9px] px-1.5 py-0.5 rounded-full ml-1 font-semibold" style={{ background: 'color-mix(in srgb, var(--surface-color) 78%, var(--app-accent-bg))', color: 'color-mix(in srgb, var(--body-text-color) 60%, var(--surface-color))' }}>AUTO</span>}
     </label>
-    <div className={`relative rounded-2xl border-2 transition-all ${disabled
-        ? 'border-gray-100'
-        : 'border-gray-100'
-      }`}
-      style={{ boxShadow: 'none', background: disabled ? 'color-mix(in srgb, var(--surface-color) 76%, var(--app-accent-bg))' : 'var(--surface-color)' }}
+    <div
+      className="relative rounded-2xl border-2 transition-all"
+      style={{
+        boxShadow: 'none',
+        borderColor: 'color-mix(in srgb, var(--brand-navy) 10%, transparent)',
+        background: disabled ? 'color-mix(in srgb, var(--surface-color) 76%, var(--app-accent-bg))' : 'var(--surface-color)'
+      }}
       onFocusCapture={e => { if (!disabled) e.currentTarget.style.borderColor = 'var(--brand-red)'; e.currentTarget.style.boxShadow = '0 0 0 3px color-mix(in srgb, var(--brand-red) 8%, transparent)'; }}
       onBlurCapture={e => { e.currentTarget.style.borderColor = ''; e.currentTarget.style.boxShadow = ''; }}
     >
@@ -30,7 +33,8 @@ const RowField = ({ label, type = 'text', value, onChange, placeholder, disabled
         onChange={(e) => onChange && onChange(e.target.value)}
         placeholder={placeholder || `Enter ${label.toLowerCase()}`}
         disabled={disabled}
-        className="w-full px-4 py-3 text-sm font-medium text-gray-800 bg-transparent focus:outline-none placeholder:text-gray-300 disabled:cursor-not-allowed rounded-2xl"
+        className="w-full px-4 py-3 text-sm font-medium bg-transparent focus:outline-none placeholder:opacity-65 disabled:cursor-not-allowed rounded-2xl"
+        style={{ color: 'var(--body-text-color)' }}
       />
     </div>
   </div>
@@ -42,12 +46,13 @@ const RowDate = ({ label, value, onChange, icon: Icon }) => (
     <label className="text-[11px] font-bold uppercase tracking-widest ml-0.5 flex items-center gap-1" style={{ color: 'var(--brand-navy)' }}>
       {Icon && <Icon className="h-3 w-3" />}{label}
     </label>
-    <div className="relative rounded-2xl border-2 border-gray-100 transition-all" style={{ background: 'var(--surface-color)' }} onFocusCapture={e => { e.currentTarget.style.borderColor = 'var(--brand-red)'; e.currentTarget.style.boxShadow = '0 0 0 3px color-mix(in srgb, var(--brand-red) 8%, transparent)'; }} onBlurCapture={e => { e.currentTarget.style.borderColor = ''; e.currentTarget.style.boxShadow = ''; }}>
+    <div className="relative rounded-2xl border-2 transition-all" style={{ background: 'var(--surface-color)', borderColor: 'color-mix(in srgb, var(--brand-navy) 10%, transparent)' }} onFocusCapture={e => { e.currentTarget.style.borderColor = 'var(--brand-red)'; e.currentTarget.style.boxShadow = '0 0 0 3px color-mix(in srgb, var(--brand-red) 8%, transparent)'; }} onBlurCapture={e => { e.currentTarget.style.borderColor = ''; e.currentTarget.style.boxShadow = ''; }}>
       <input
         type="date"
         value={value || ''}
         onChange={(e) => onChange(e.target.value)}
-        className="w-full px-4 py-3 text-sm font-medium text-gray-800 bg-transparent focus:outline-none rounded-2xl"
+        className="w-full px-4 py-3 text-sm font-medium bg-transparent focus:outline-none rounded-2xl"
+        style={{ color: 'var(--body-text-color)' }}
       />
     </div>
   </div>
@@ -59,17 +64,18 @@ const RowSelect = ({ label, value, onChange, options, placeholder, icon: Icon })
     <label className="text-[11px] font-bold uppercase tracking-widest ml-0.5 flex items-center gap-1" style={{ color: 'var(--brand-navy)' }}>
       {Icon && <Icon className="h-3 w-3" />}{label}
     </label>
-    <div className="relative rounded-2xl border-2 border-gray-100 transition-all" style={{ background: 'var(--surface-color)' }} onFocusCapture={e => { e.currentTarget.style.borderColor = 'var(--brand-red)'; e.currentTarget.style.boxShadow = '0 0 0 3px color-mix(in srgb, var(--brand-red) 8%, transparent)'; }} onBlurCapture={e => { e.currentTarget.style.borderColor = ''; e.currentTarget.style.boxShadow = ''; }}>
+    <div className="relative rounded-2xl border-2 transition-all" style={{ background: 'var(--surface-color)', borderColor: 'color-mix(in srgb, var(--brand-navy) 10%, transparent)' }} onFocusCapture={e => { e.currentTarget.style.borderColor = 'var(--brand-red)'; e.currentTarget.style.boxShadow = '0 0 0 3px color-mix(in srgb, var(--brand-red) 8%, transparent)'; }} onBlurCapture={e => { e.currentTarget.style.borderColor = ''; e.currentTarget.style.boxShadow = ''; }}>
       <select
         value={value || ''}
         onChange={(e) => onChange(e.target.value)}
-        className="w-full px-4 py-3 text-sm font-medium text-gray-800 bg-transparent focus:outline-none appearance-none rounded-2xl pr-8"
+        className="w-full px-4 py-3 text-sm font-medium bg-transparent focus:outline-none appearance-none rounded-2xl pr-8"
+        style={{ color: 'var(--body-text-color)' }}
       >
         <option value="">{placeholder || 'Select'}</option>
         {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
       </select>
       <div className="absolute inset-y-0 right-3 flex items-center pointer-events-none">
-        <svg className="h-4 w-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+        <svg className="h-4 w-4" style={{ color: 'color-mix(in srgb, var(--body-text-color) 45%, var(--surface-color))' }} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
       </div>
     </div>
   </div>
@@ -85,7 +91,8 @@ const SectionHeader = ({ title, color = 'var(--brand-red)' }) => (
 
 const Profile = ({ onNavigate, onProfileUpdate }) => {
   const theme = useAppTheme();
-  const navbarTextColor = useThemeToken('navbar.text_color', '#f7f7f7');
+  const navbarTheme = getNavbarThemeStyles(theme);
+  const navbarTextColor = navbarTheme?.textColor || 'var(--navbar-text)';
   // Check if user is a registered member
   const isRegisteredMember = (() => {
     try {
@@ -389,16 +396,19 @@ const Profile = ({ onNavigate, onProfileUpdate }) => {
       <div
         className="px-4 py-4 flex items-center justify-between sticky top-0 z-50 shadow-md"
         style={{
-          background: `linear-gradient(135deg, ${theme.secondary} 0%, ${theme.primary} 100%)`,
+          background: navbarTheme?.backgroundStyle || 'var(--navbar-bg, var(--app-navbar-bg))',
+          backdropFilter: `blur(${navbarTheme?.blurPx || '12px'})`,
+          WebkitBackdropFilter: `blur(${navbarTheme?.blurPx || '12px'})`,
+          borderBottom: '1px solid var(--navbar-border)',
           paddingTop: 'max(env(safe-area-inset-top, 0px), 16px)',
           color: navbarTextColor
         }}
       >
-        <button onClick={() => setIsMenuOpen(!isMenuOpen)} className="p-2 rounded-xl hover:bg-white/10 transition-colors" style={{ color: navbarTextColor }}>
+        <button onClick={() => setIsMenuOpen(!isMenuOpen)} className="p-2 rounded-xl transition-colors" style={{ color: navbarTextColor, background: 'transparent' }}>
           {isMenuOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
         </button>
         <h1 className="text-base font-bold tracking-wide" style={{ color: navbarTextColor }}>Profile</h1>
-        <button onClick={() => handleNavigate('home')} className="p-2 rounded-xl hover:bg-white/10 transition-colors" style={{ color: navbarTextColor }}>
+        <button onClick={() => handleNavigate('home')} className="p-2 rounded-xl transition-colors" style={{ color: navbarTextColor, background: 'transparent' }}>
           <HomeIcon className="h-5 w-5" />
         </button>
       </div>
@@ -574,8 +584,8 @@ const Profile = ({ onNavigate, onProfileUpdate }) => {
               <p className="text-xs" style={{ color: 'color-mix(in srgb, var(--body-text-color) 55%, var(--surface-color))' }}>Add to book appointments for them</p>
             </div>
             <button onClick={addMember}
-              className="flex items-center gap-1.5 text-white px-4 py-2.5 rounded-xl text-sm font-semibold active:scale-95 transition-all"
-              style={{ background: 'linear-gradient(135deg, var(--brand-red) 0%, var(--brand-red-dark) 40%, var(--brand-navy) 100%)' }}>
+              className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-semibold active:scale-95 transition-all"
+              style={{ color: 'var(--surface-color)', background: 'linear-gradient(135deg, var(--brand-red) 0%, var(--brand-red-dark) 40%, var(--brand-navy) 100%)' }}>
               <Plus className="h-4 w-4" /> Add Member
             </button>
           </div>
@@ -586,8 +596,8 @@ const Profile = ({ onNavigate, onProfileUpdate }) => {
               <p className="font-semibold" style={{ color: 'var(--body-text-color)' }}>No family members yet</p>
               <p className="text-sm px-8" style={{ color: 'color-mix(in srgb, var(--body-text-color) 55%, var(--surface-color))' }}>Add members so you can book appointments for them</p>
               <button onClick={addMember}
-                className="mt-2 px-6 py-3 text-white rounded-xl text-sm font-semibold flex items-center gap-2 active:scale-95 transition-all"
-                style={{ background: 'linear-gradient(135deg, var(--brand-red) 0%, var(--brand-red-dark) 40%, var(--brand-navy) 100%)' }}>
+                className="mt-2 px-6 py-3 rounded-xl text-sm font-semibold flex items-center gap-2 active:scale-95 transition-all"
+                style={{ color: 'var(--surface-color)', background: 'linear-gradient(135deg, var(--brand-red) 0%, var(--brand-red-dark) 40%, var(--brand-navy) 100%)' }}>
                 <Plus className="h-4 w-4" /> Add First Member
               </button>
             </div>
@@ -617,26 +627,26 @@ const Profile = ({ onNavigate, onProfileUpdate }) => {
                         <div className="grid grid-cols-2 gap-3">
                           <div className="flex flex-col gap-1">
                             <label className="text-[11px] font-bold uppercase tracking-widest ml-0.5" style={{ color: 'var(--brand-red)' }}>Name *</label>
-                            <div className="rounded-2xl border-2 border-gray-100 transition-all" style={{ background: 'var(--surface-color)' }}
+                            <div className="rounded-2xl border-2 transition-all" style={{ background: 'var(--surface-color)', borderColor: 'color-mix(in srgb, var(--brand-navy) 10%, transparent)' }}
                               onFocusCapture={e => { e.currentTarget.style.borderColor = 'var(--brand-red)'; e.currentTarget.style.boxShadow = '0 0 0 3px color-mix(in srgb, var(--brand-red) 8%, transparent)'; }}
                               onBlurCapture={e => { e.currentTarget.style.borderColor = ''; e.currentTarget.style.boxShadow = ''; }}>
                               <input type="text" value={member.name} onChange={e => updateMember(idx, 'name', e.target.value)}
                                 placeholder="Full name"
-                                className="w-full px-3 py-2.5 text-sm font-medium text-gray-900 bg-transparent focus:outline-none rounded-2xl" />
+                                className="w-full px-3 py-2.5 text-sm font-medium bg-transparent focus:outline-none rounded-2xl" style={{ color: 'var(--body-text-color)' }} />
                             </div>
                           </div>
                           <div className="flex flex-col gap-1">
                             <label className="text-[11px] font-bold uppercase tracking-widest ml-0.5" style={{ color: 'var(--brand-red)' }}>Relation *</label>
-                            <div className="relative rounded-2xl border-2 border-gray-100 transition-all" style={{ background: 'var(--surface-color)' }}
+                            <div className="relative rounded-2xl border-2 transition-all" style={{ background: 'var(--surface-color)', borderColor: 'color-mix(in srgb, var(--brand-navy) 10%, transparent)' }}
                               onFocusCapture={e => { e.currentTarget.style.borderColor = 'var(--brand-red)'; e.currentTarget.style.boxShadow = '0 0 0 3px color-mix(in srgb, var(--brand-red) 8%, transparent)'; }}
                               onBlurCapture={e => { e.currentTarget.style.borderColor = ''; e.currentTarget.style.boxShadow = ''; }}>
                               <select value={member.relation} onChange={e => updateMember(idx, 'relation', e.target.value)}
-                                className="w-full px-3 py-2.5 text-sm font-medium text-gray-900 bg-transparent focus:outline-none appearance-none rounded-2xl pr-7">
+                                className="w-full px-3 py-2.5 text-sm font-medium bg-transparent focus:outline-none appearance-none rounded-2xl pr-7" style={{ color: 'var(--body-text-color)' }}>
                                 <option value="">Select</option>
                                 {['Spouse', 'Father', 'Mother', 'Son', 'Daughter', 'Brother', 'Sister', 'Grandfather', 'Grandmother', 'Uncle', 'Aunt', 'Other'].map(r => <option key={r} value={r}>{r}</option>)}
                               </select>
                               <div className="absolute inset-y-0 right-2 flex items-center pointer-events-none">
-                                <svg className="h-3.5 w-3.5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+                                <svg className="h-3.5 w-3.5" style={{ color: 'color-mix(in srgb, var(--body-text-color) 45%, var(--surface-color))' }} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
                               </div>
                             </div>
                           </div>
@@ -648,10 +658,10 @@ const Profile = ({ onNavigate, onProfileUpdate }) => {
                           <div className="flex gap-2">
                             {['Male', 'Female', 'Other'].map(g => (
                               <button key={g} type="button" onClick={() => updateMember(idx, 'gender', g)}
-                                className={`flex-1 py-2.5 rounded-2xl text-sm font-semibold border-2 transition-all ${member.gender === g ? 'shadow-sm' : 'border-gray-100'}`}
+                                className="flex-1 py-2.5 rounded-2xl text-sm font-semibold border-2 transition-all"
                                 style={member.gender === g
                                   ? { background: 'linear-gradient(135deg, var(--brand-red) 0%, var(--brand-navy) 100%)', color: 'var(--surface-color)', borderColor: 'var(--brand-red)' }
-                                  : { background: 'var(--surface-color)', color: 'color-mix(in srgb, var(--body-text-color) 70%, var(--surface-color))' }}>
+                                  : { background: 'var(--surface-color)', color: 'color-mix(in srgb, var(--body-text-color) 70%, var(--surface-color))', borderColor: 'color-mix(in srgb, var(--brand-navy) 10%, transparent)' }}>
                                 {g}
                               </button>
                             ))}
@@ -662,26 +672,26 @@ const Profile = ({ onNavigate, onProfileUpdate }) => {
                         <div className="grid grid-cols-2 gap-3">
                           <div className="flex flex-col gap-1">
                             <label className="text-[11px] font-bold uppercase tracking-widest ml-0.5" style={{ color: 'var(--brand-red)' }}>Age</label>
-                            <div className="rounded-2xl border-2 border-gray-100 transition-all" style={{ background: 'var(--surface-color)' }}
+                            <div className="rounded-2xl border-2 transition-all" style={{ background: 'var(--surface-color)', borderColor: 'color-mix(in srgb, var(--brand-navy) 10%, transparent)' }}
                               onFocusCapture={e => { e.currentTarget.style.borderColor = 'var(--brand-red)'; e.currentTarget.style.boxShadow = '0 0 0 3px color-mix(in srgb, var(--brand-red) 8%, transparent)'; }}
                               onBlurCapture={e => { e.currentTarget.style.borderColor = ''; e.currentTarget.style.boxShadow = ''; }}>
                               <input type="number" value={member.age} min="0" max="120" onChange={e => updateMember(idx, 'age', e.target.value)}
                                 placeholder="Years"
-                                className="w-full px-3 py-2.5 text-sm font-medium text-gray-900 bg-transparent focus:outline-none rounded-2xl" />
+                                className="w-full px-3 py-2.5 text-sm font-medium bg-transparent focus:outline-none rounded-2xl" style={{ color: 'var(--body-text-color)' }} />
                             </div>
                           </div>
                           <div className="flex flex-col gap-1">
                             <label className="text-[11px] font-bold uppercase tracking-widest ml-0.5" style={{ color: 'var(--brand-red)' }}>Blood Group</label>
-                            <div className="relative rounded-2xl border-2 border-gray-100 transition-all" style={{ background: 'var(--surface-color)' }}
+                            <div className="relative rounded-2xl border-2 transition-all" style={{ background: 'var(--surface-color)', borderColor: 'color-mix(in srgb, var(--brand-navy) 10%, transparent)' }}
                               onFocusCapture={e => { e.currentTarget.style.borderColor = 'var(--brand-red)'; }}
                               onBlurCapture={e => { e.currentTarget.style.borderColor = ''; }}>
                               <select value={member.blood_group} onChange={e => updateMember(idx, 'blood_group', e.target.value)}
-                                className="w-full px-3 py-2.5 text-sm font-medium text-gray-900 bg-transparent focus:outline-none appearance-none rounded-2xl pr-7">
+                                className="w-full px-3 py-2.5 text-sm font-medium bg-transparent focus:outline-none appearance-none rounded-2xl pr-7" style={{ color: 'var(--body-text-color)' }}>
                                 <option value="">Select</option>
                                 {['A+', 'A-', 'B+', 'B-', 'O+', 'O-', 'AB+', 'AB-'].map(bg => <option key={bg} value={bg}>{bg}</option>)}
                               </select>
                               <div className="absolute inset-y-0 right-2 flex items-center pointer-events-none">
-                                <svg className="h-3.5 w-3.5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+                                <svg className="h-3.5 w-3.5" style={{ color: 'color-mix(in srgb, var(--body-text-color) 45%, var(--surface-color))' }} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
                               </div>
                             </div>
                           </div>
@@ -690,36 +700,36 @@ const Profile = ({ onNavigate, onProfileUpdate }) => {
                         {/* Contact No */}
                         <div className="flex flex-col gap-1">
                           <label className="text-[11px] font-bold uppercase tracking-widest ml-0.5" style={{ color: 'var(--brand-red)' }}>Contact No</label>
-                          <div className="rounded-2xl border-2 border-gray-100 transition-all" style={{ background: 'var(--surface-color)' }}
+                          <div className="rounded-2xl border-2 transition-all" style={{ background: 'var(--surface-color)', borderColor: 'color-mix(in srgb, var(--brand-navy) 10%, transparent)' }}
                             onFocusCapture={e => { e.currentTarget.style.borderColor = 'var(--brand-red)'; e.currentTarget.style.boxShadow = '0 0 0 3px color-mix(in srgb, var(--brand-red) 8%, transparent)'; }}
                             onBlurCapture={e => { e.currentTarget.style.borderColor = ''; e.currentTarget.style.boxShadow = ''; }}>
                             <input type="tel" value={member.contact_no} onChange={e => updateMember(idx, 'contact_no', e.target.value)}
                               placeholder="Optional"
-                              className="w-full px-3 py-2.5 text-sm font-medium text-gray-900 bg-transparent focus:outline-none rounded-2xl" />
+                              className="w-full px-3 py-2.5 text-sm font-medium bg-transparent focus:outline-none rounded-2xl" style={{ color: 'var(--body-text-color)' }} />
                           </div>
                         </div>
 
                         {/* Email */}
                         <div className="flex flex-col gap-1">
                           <label className="text-[11px] font-bold uppercase tracking-widest ml-0.5" style={{ color: 'var(--brand-red)' }}>Email</label>
-                          <div className="rounded-2xl border-2 border-gray-100 transition-all" style={{ background: 'var(--surface-color)' }}
+                          <div className="rounded-2xl border-2 transition-all" style={{ background: 'var(--surface-color)', borderColor: 'color-mix(in srgb, var(--brand-navy) 10%, transparent)' }}
                             onFocusCapture={e => { e.currentTarget.style.borderColor = 'var(--brand-red)'; e.currentTarget.style.boxShadow = '0 0 0 3px color-mix(in srgb, var(--brand-red) 8%, transparent)'; }}
                             onBlurCapture={e => { e.currentTarget.style.borderColor = ''; e.currentTarget.style.boxShadow = ''; }}>
                             <input type="email" value={member.email} onChange={e => updateMember(idx, 'email', e.target.value)}
                               placeholder="email@example.com"
-                              className="w-full px-3 py-2.5 text-sm font-medium text-gray-900 bg-transparent focus:outline-none rounded-2xl" />
+                              className="w-full px-3 py-2.5 text-sm font-medium bg-transparent focus:outline-none rounded-2xl" style={{ color: 'var(--body-text-color)' }} />
                           </div>
                         </div>
 
                         {/* Address */}
                         <div className="flex flex-col gap-1">
                           <label className="text-[11px] font-bold uppercase tracking-widest ml-0.5" style={{ color: 'var(--brand-red)' }}>Address</label>
-                          <div className="rounded-2xl border-2 border-gray-100 transition-all" style={{ background: 'var(--surface-color)' }}
+                          <div className="rounded-2xl border-2 transition-all" style={{ background: 'var(--surface-color)', borderColor: 'color-mix(in srgb, var(--brand-navy) 10%, transparent)' }}
                             onFocusCapture={e => { e.currentTarget.style.borderColor = 'var(--brand-red)'; e.currentTarget.style.boxShadow = '0 0 0 3px color-mix(in srgb, var(--brand-red) 8%, transparent)'; }}
                             onBlurCapture={e => { e.currentTarget.style.borderColor = ''; e.currentTarget.style.boxShadow = ''; }}>
                             <input type="text" value={member.address} onChange={e => updateMember(idx, 'address', e.target.value)}
                               placeholder="Full address"
-                              className="w-full px-3 py-2.5 text-sm font-medium text-gray-900 bg-transparent focus:outline-none rounded-2xl" />
+                              className="w-full px-3 py-2.5 text-sm font-medium bg-transparent focus:outline-none rounded-2xl" style={{ color: 'var(--body-text-color)' }} />
                           </div>
                         </div>
 
@@ -742,8 +752,8 @@ const Profile = ({ onNavigate, onProfileUpdate }) => {
       {/* Sticky Save Button */}
       <div className="fixed bottom-0 left-0 right-0 z-40 px-4 pb-5 pt-4 max-w-full md:max-w-[430px] md:mx-auto pointer-events-none" style={{ background: 'linear-gradient(to top, var(--surface-color), color-mix(in srgb, var(--surface-color) 82%, transparent), transparent)' }}>
         <button onClick={handleSave} disabled={saving}
-          className="pointer-events-auto w-full py-4 text-white rounded-2xl font-bold text-base active:scale-[0.98] transition-all flex items-center justify-center gap-2 disabled:opacity-50"
-          style={{ background: 'linear-gradient(135deg, var(--brand-red) 0%, var(--brand-red-dark) 40%, var(--brand-navy) 100%)', boxShadow: '0 8px 24px color-mix(in srgb, var(--brand-red) 30%, transparent)' }}>
+          className="pointer-events-auto w-full py-4 rounded-2xl font-bold text-base active:scale-[0.98] transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+          style={{ color: 'var(--surface-color)', background: 'linear-gradient(135deg, var(--brand-red) 0%, var(--brand-red-dark) 40%, var(--brand-navy) 100%)', boxShadow: '0 8px 24px color-mix(in srgb, var(--brand-red) 30%, transparent)' }}>
           {saving ? <><div className="animate-spin rounded-full h-5 w-5 border-2 border-white border-t-transparent" /> Saving...</> : <><Save className="h-5 w-5" /> Save Profile</>}
         </button>
       </div>
@@ -757,7 +767,7 @@ const Profile = ({ onNavigate, onProfileUpdate }) => {
             </div>
             <h2 className="text-xl font-bold mb-1" style={{ color: 'var(--heading-color)' }}>Saved!</h2>
             <p className="text-sm mb-6" style={{ color: 'color-mix(in srgb, var(--body-text-color) 65%, var(--surface-color))' }}>Profile saved successfully.</p>
-            <button onClick={() => setShowSuccessPopup(false)} className="w-full text-white py-3 rounded-xl font-semibold active:scale-95 transition-all" style={{ background: 'linear-gradient(135deg, var(--brand-red) 0%, var(--brand-navy) 100%)' }}>Done</button>
+            <button onClick={() => setShowSuccessPopup(false)} className="w-full py-3 rounded-xl font-semibold active:scale-95 transition-all" style={{ color: 'var(--surface-color)', background: 'linear-gradient(135deg, var(--brand-red) 0%, var(--brand-navy) 100%)' }}>Done</button>
           </div>
         </div>
       )}
@@ -776,8 +786,8 @@ const Profile = ({ onNavigate, onProfileUpdate }) => {
             </div>
             <button
               onClick={() => setShowUnderReviewPopup(false)}
-              className="w-full text-white py-3 rounded-xl font-semibold active:scale-95 transition-all"
-              style={{ background: 'linear-gradient(135deg, var(--brand-red) 0%, var(--brand-navy) 100%)' }}
+              className="w-full py-3 rounded-xl font-semibold active:scale-95 transition-all"
+              style={{ color: 'var(--surface-color)', background: 'linear-gradient(135deg, var(--brand-red) 0%, var(--brand-navy) 100%)' }}
             >
               OK, Got It
             </button>
@@ -799,8 +809,8 @@ const Profile = ({ onNavigate, onProfileUpdate }) => {
                 className="flex-1 py-3 rounded-xl font-semibold active:scale-95 transition-all" style={{ background: 'color-mix(in srgb, var(--surface-color) 76%, var(--app-accent-bg))', color: 'var(--body-text-color)' }}>Discard</button>
               <button onClick={async () => { await handleSave(); setShowNavWarning(false); if (navTarget) onNavigate(navTarget); }}
                 disabled={saving}
-                className="flex-1 text-white py-3 rounded-xl font-semibold active:scale-95 transition-all disabled:opacity-50"
-                style={{ background: 'linear-gradient(135deg, var(--brand-red) 0%, var(--brand-navy) 100%)' }}>
+                className="flex-1 py-3 rounded-xl font-semibold active:scale-95 transition-all disabled:opacity-50"
+                style={{ color: 'var(--surface-color)', background: 'linear-gradient(135deg, var(--brand-red) 0%, var(--brand-navy) 100%)' }}>
                 {saving ? 'Saving...' : 'Save & Go'}
               </button>
             </div>

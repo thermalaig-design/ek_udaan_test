@@ -4,9 +4,10 @@ import Sidebar from './components/Sidebar';
 import { getAllCommitteeMembers, getAllDoctors, getAllElectedMembers, getProfilePhotos } from './services/api';
 import { getTrusteesAndPatrons } from './services/supabaseService';
 import { registerSidebarState, useAndroidBack } from './hooks';
-import { useAppTheme, useThemeToken } from './context/ThemeContext';
+import { useAppTheme } from './context/ThemeContext';
 import { fetchFeatureFlags, subscribeFeatureFlags } from './services/featureFlags';
 import { fetchSubFeatureFlags, subscribeSubFeatureFlags } from './services/subFeatureFlags';
+import { getNavbarThemeStyles } from './utils/themeUtils';
 
 const CACHE_KEY_HTD = 'healthcare_trustee_directory_cache';
 const CACHE_TIMESTAMP_KEY_HTD = 'healthcare_trustee_directory_cache_timestamp';
@@ -83,7 +84,8 @@ const resolveDirectoryTier = () => {
 
 const HealthcareTrusteeDirectory = ({ onNavigate }) => {
   const theme = useAppTheme();
-  const navbarTextColor = useThemeToken('navbar.text_color', '#f7f7f7');
+  const navbarTheme = getNavbarThemeStyles(theme);
+  const navbarTextColor = navbarTheme?.textColor || 'var(--navbar-text)';
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [selectedDirectory, setSelectedDirectory] = useState(null); // null, 'healthcare', 'trustee', or 'committee'
   const [activeTab, setActiveTab] = useState(null);
@@ -889,15 +891,18 @@ const HealthcareTrusteeDirectory = ({ onNavigate }) => {
       <div
         className="px-4 py-4 flex items-center justify-between sticky top-0 z-50 shadow-md pointer-events-auto"
         style={{
-          background: `linear-gradient(135deg, ${theme.secondary} 0%, ${theme.primary} 100%)`,
+          background: navbarTheme?.backgroundStyle || 'var(--navbar-bg, var(--app-navbar-bg))',
+          backdropFilter: `blur(${navbarTheme?.blurPx || '12px'})`,
+          WebkitBackdropFilter: `blur(${navbarTheme?.blurPx || '12px'})`,
+          borderBottom: '1px solid var(--navbar-border)',
           paddingTop: "max(env(safe-area-inset-top, 0px), 22px)",
           color: navbarTextColor
         }}
       >
         <button
           onClick={() => setIsMenuOpen(!isMenuOpen)}
-          className="p-2 rounded-xl hover:bg-white/10 transition-colors pointer-events-auto"
-          style={{ color: navbarTextColor }}
+          className="p-2 rounded-xl transition-colors pointer-events-auto"
+          style={{ color: navbarTextColor, background: 'transparent' }}
         >
           {isMenuOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
         </button>
@@ -906,8 +911,8 @@ const HealthcareTrusteeDirectory = ({ onNavigate }) => {
         </h1>
         <button
           onClick={() => onNavigate('home')}
-          className="p-2 rounded-xl hover:bg-white/10 transition-colors flex items-center justify-center"
-          style={{ color: navbarTextColor }}
+          className="p-2 rounded-xl transition-colors flex items-center justify-center"
+          style={{ color: navbarTextColor, background: 'transparent' }}
         >
           <HomeIcon className="h-5 w-5" />
         </button>
@@ -963,7 +968,7 @@ const HealthcareTrusteeDirectory = ({ onNavigate }) => {
                   className="h-14 w-14 rounded-2xl flex items-center justify-center shadow-lg flex-shrink-0"
                   style={{ background: 'linear-gradient(135deg, var(--brand-red) 0%, var(--brand-navy) 100%)' }}
                 >
-                  <Users className="h-7 w-7 text-white" />
+                  <Users className="h-7 w-7" style={{ color: 'var(--surface-color)' }} />
                 </div>
                 <div>
                   <h1 className="text-2xl font-extrabold" style={{ color: 'var(--brand-navy)' }}>
@@ -1051,8 +1056,8 @@ const HealthcareTrusteeDirectory = ({ onNavigate }) => {
               <div className="flex items-center gap-3">
                 <button
                   onClick={() => setSelectedDirectory(null)}
-                  className="p-2 rounded-xl hover:bg-white/60 transition-colors flex-shrink-0"
-                  style={{ color: 'var(--brand-navy)' }}
+                  className="p-2 rounded-xl transition-colors flex-shrink-0"
+                  style={{ color: 'var(--brand-navy)', background: 'transparent' }}
                 >
                   <ChevronLeft className="h-5 w-5" />
                 </button>
@@ -1084,12 +1089,14 @@ const HealthcareTrusteeDirectory = ({ onNavigate }) => {
                   placeholder={`Name, Membership No., Mobile - ${selectedDirectory === 'trustee' ? (activeTab === 'trustees' ? 'Trustees' : activeTab === 'patrons' ? 'Patrons' : 'Members') : (directoryTitleMap[selectedDirectory] || 'Members')}...`}
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="flex-1 bg-transparent border-none focus:ring-0 text-gray-800 placeholder-gray-400 font-semibold text-sm py-2"
+                  className="flex-1 bg-transparent border-none focus:ring-0 placeholder:opacity-65 font-semibold text-sm py-2"
+                  style={{ color: 'var(--body-text-color)' }}
                 />
                 {searchQuery ? (
                   <button
                     onClick={() => setSearchQuery('')}
-                    className="h-8 w-8 rounded-lg flex items-center justify-center text-gray-500 hover:text-[var(--brand-red-dark)] hover:bg-[var(--brand-red-light)] transition-colors"
+                    className="h-8 w-8 rounded-lg flex items-center justify-center transition-colors"
+                    style={{ color: 'color-mix(in srgb, var(--body-text-color) 60%, var(--surface-color))' }}
                     aria-label="Clear search"
                   >
                     <X className="h-4 w-4" />
@@ -1148,7 +1155,7 @@ const HealthcareTrusteeDirectory = ({ onNavigate }) => {
                 currentPageMembers.map((item) => (
                   <div
                     key={item['S. No.'] || item.id || Math.random()}
-                    className="bg-white rounded-2xl p-4 flex items-center gap-4 group cursor-pointer active:scale-[0.98] transition-all duration-200"
+                    className="rounded-2xl p-4 flex items-center gap-4 group cursor-pointer active:scale-[0.98] transition-all duration-200"
                     style={{ background: 'var(--surface-color)', boxShadow: '0 2px 12px color-mix(in srgb, var(--brand-navy) 7%, transparent)', border: '1px solid color-mix(in srgb, var(--brand-navy) 8%, transparent)' }}
                     onClick={() => {
                       const currentTabId = activeTab || currentTabs[0]?.id;
@@ -1392,12 +1399,12 @@ const HealthcareTrusteeDirectory = ({ onNavigate }) => {
                         <div className="flex-1 min-w-0">
                           <div className="flex justify-between items-start gap-2">
                             <div className="min-w-0">
-                              <h3 className="font-bold text-gray-900 text-sm leading-tight">
+                              <h3 className="font-bold text-sm leading-tight" style={{ color: 'var(--heading-color)' }}>
                                 {item.member_name_english || item.Name || ''}
                               </h3>
                               <div className="flex flex-wrap gap-1.5 mt-1.5">
                                 {item['Membership number'] && item['Membership number'] !== 'N/A' && (
-                                  <p className="text-gray-500 text-xs font-medium">{item['Membership number']}</p>
+                                  <p className="text-xs font-medium" style={{ color: 'color-mix(in srgb, var(--body-text-color) 60%, var(--surface-color))' }}>{item['Membership number']}</p>
                                 )}
                                 {!(selectedDirectory === 'healthcare' && (activeTab === 'doctors' || activeTab === 'hospitals')) &&
                                   (item.position || item.member_role || item.type || item['Company Name']) &&
@@ -1425,7 +1432,7 @@ const HealthcareTrusteeDirectory = ({ onNavigate }) => {
                                   )}
                                 {(item.hospital_type || item.trust_name) &&
                                   (item.hospital_type || item.trust_name) !== 'N/A' && (
-                                    <span className="text-gray-500 text-[10px]">{item.hospital_type || item.trust_name}</span>
+                                    <span className="text-[10px]" style={{ color: 'color-mix(in srgb, var(--body-text-color) 60%, var(--surface-color))' }}>{item.hospital_type || item.trust_name}</span>
                                   )}
                                 {(item.designation || item.qualification) &&
                                   (item.designation || item.qualification) !== 'N/A' && (
@@ -1482,8 +1489,8 @@ const HealthcareTrusteeDirectory = ({ onNavigate }) => {
                   >
                     <User className="h-8 w-8" style={{ color: 'var(--brand-navy)' }} />
                   </div>
-                  <h3 className="text-gray-800 font-bold">No results found</h3>
-                  <p className="text-gray-500 text-sm mt-1">Try searching with a different keyword</p>
+                  <h3 className="font-bold" style={{ color: 'var(--heading-color)' }}>No results found</h3>
+                  <p className="text-sm mt-1" style={{ color: 'color-mix(in srgb, var(--body-text-color) 60%, var(--surface-color))' }}>Try searching with a different keyword</p>
                 </div>
               )}
             </div>
@@ -1496,7 +1503,10 @@ const HealthcareTrusteeDirectory = ({ onNavigate }) => {
                     <button
                       onClick={() => { setCurrentPage(prev => Math.max(1, prev - 1)); scrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' }); }}
                       disabled={currentPage === 1}
-                      className={`flex-shrink-0 px-3 py-2 rounded-xl text-xs font-bold transition-all ${currentPage === 1 ? 'bg-gray-100 text-gray-300 cursor-not-allowed' : 'bg-white text-[var(--brand-navy)] border border-[var(--brand-navy-light)] active:scale-95'}`}
+                      className={`flex-shrink-0 px-3 py-2 rounded-xl text-xs font-bold transition-all ${currentPage === 1 ? 'cursor-not-allowed' : 'active:scale-95'}`}
+                      style={currentPage === 1
+                        ? { background: 'color-mix(in srgb, var(--surface-color) 76%, var(--app-accent-bg))', color: 'color-mix(in srgb, var(--body-text-color) 35%, var(--surface-color))' }
+                        : { background: 'var(--surface-color)', color: 'var(--brand-navy)', border: '1px solid var(--brand-navy-light)' }}
                     >
                       Ã¢â€ Â Prev
                     </button>
@@ -1528,7 +1538,10 @@ const HealthcareTrusteeDirectory = ({ onNavigate }) => {
                     <button
                       onClick={() => { setCurrentPage(prev => Math.min(totalPages, prev + 1)); scrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' }); }}
                       disabled={currentPage === totalPages}
-                      className={`flex-shrink-0 px-3 py-2 rounded-xl text-xs font-bold transition-all ${currentPage === totalPages ? 'bg-gray-100 text-gray-300 cursor-not-allowed' : 'bg-white text-[var(--brand-navy)] border border-[var(--brand-navy-light)] active:scale-95'}`}
+                      className={`flex-shrink-0 px-3 py-2 rounded-xl text-xs font-bold transition-all ${currentPage === totalPages ? 'cursor-not-allowed' : 'active:scale-95'}`}
+                      style={currentPage === totalPages
+                        ? { background: 'color-mix(in srgb, var(--surface-color) 76%, var(--app-accent-bg))', color: 'color-mix(in srgb, var(--body-text-color) 35%, var(--surface-color))' }
+                        : { background: 'var(--surface-color)', color: 'var(--brand-navy)', border: '1px solid var(--brand-navy-light)' }}
                     >
                       Next Ã¢â€ â€™
                     </button>

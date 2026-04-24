@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Home as HomeIcon, Users, Clock, FileText, UserPlus, ChevronRight, LogOut, Image, User, Share2 } from 'lucide-react';
+import { Users, ChevronRight, LogOut, Share2 } from 'lucide-react';
 import { Capacitor } from '@capacitor/core';
 import { Share } from '@capacitor/share';
 import { getProfile } from '../services/api';
@@ -180,14 +180,7 @@ const Sidebar = ({ isOpen, onClose, onNavigate, currentPage, onLogout }) => {
   const completion = calcCompletion(profile, userData);
   const completionColor = primary;
 
-  const menuItems = [
-    { id: 'home', label: 'Home', icon: HomeIcon },
-    { id: 'directory', label: 'Directory', icon: Users, featureKey: 'feature_directory' },
-    { id: 'appointment', label: 'OPD Schedule', icon: Clock, featureKey: 'feature_opd' },
-    { id: 'reports', label: 'Reports', icon: FileText, featureKey: 'feature_reports' },
-    { id: 'gallery', label: 'Gallery', icon: Image, featureKey: 'feature_gallery' },
-    { id: 'reference', label: 'Patient Referral', icon: UserPlus, featureKey: 'feature_referral' },
-  ].filter((item) => !item.featureKey || ff(item.featureKey));
+  const menuItems = [];
 
   return (
     <>

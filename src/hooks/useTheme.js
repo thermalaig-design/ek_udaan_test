@@ -15,6 +15,8 @@ import {
 
 const LAST_THEME_CACHE_KEY = 'last_theme_cache_v2';
 const LEGACY_LAST_THEME_CACHE_KEY = 'last_theme_cache_v1';
+const getPersistTrustCacheIndexKey = (trustId) => `theme_cache_persist_trust_v2_${trustId}`;
+const getPersistThemeCacheEntryKey = (trustId, templateId) => `theme_cache_persist_v2_${trustId}_${templateId || 'none'}`;
 const BASE_TRUST_ID = import.meta.env.VITE_DEFAULT_TRUST_ID || 'b353d2ff-ec3b-4b90-a896-69f40662084e';
 const THEME_CACHE_TTL_MS = Number(import.meta.env.VITE_THEME_CACHE_TTL_MS) > 0
   ? Number(import.meta.env.VITE_THEME_CACHE_TTL_MS)
@@ -97,6 +99,20 @@ const readCachedThemeEntry = (trustId) => {
     }
   }
 
+  const persistIndexKey = getPersistTrustCacheIndexKey(trustId);
+  const persistEntryKey = localStorage.getItem(persistIndexKey);
+  if (persistEntryKey) {
+    const parsedPersist = safeParse(localStorage.getItem(persistEntryKey) || '');
+    if (parsedPersist && typeof parsedPersist === 'object' && parsedPersist.theme && typeof parsedPersist.theme === 'object') {
+      return {
+        theme: parsedPersist.theme,
+        ts: Number(parsedPersist.ts) || 0,
+        templateId: parsedPersist.templateId || null,
+        cacheKey: persistEntryKey
+      };
+    }
+  }
+
   const legacyParsed = safeParse(sessionStorage.getItem(`theme_cache_${trustId}`) || '');
   if (!legacyParsed || typeof legacyParsed !== 'object') return null;
 
@@ -126,8 +142,11 @@ const isStale = (timestamp) => {
 const clearThemeCacheForTrust = (trustId) => {
   if (!trustId) return;
   const trustPrefix = `theme_cache_v2_${trustId}_`;
+  const persistPrefix = `theme_cache_persist_v2_${trustId}_`;
   const indexKey = getTrustCacheIndexKey(trustId);
+  const persistIndexKey = getPersistTrustCacheIndexKey(trustId);
   const keysToRemove = [];
+  const localKeysToRemove = [];
 
   for (let i = 0; i < sessionStorage.length; i += 1) {
     const key = sessionStorage.key(i);
@@ -137,7 +156,16 @@ const clearThemeCacheForTrust = (trustId) => {
     }
   }
 
+  for (let i = 0; i < localStorage.length; i += 1) {
+    const key = localStorage.key(i);
+    if (!key) continue;
+    if (key === persistIndexKey || key.startsWith(persistPrefix)) {
+      localKeysToRemove.push(key);
+    }
+  }
+
   keysToRemove.forEach((key) => sessionStorage.removeItem(key));
+  localKeysToRemove.forEach((key) => localStorage.removeItem(key));
 
   // Also clear localStorage last-theme cache so stale data doesn't
   // persist across sessions after a template change.
@@ -156,6 +184,8 @@ const writeThemeCache = (trustId, theme) => {
   if (!trustId || !theme) return;
   const templateId = String(theme?.selectedTrustTemplateId || theme?.templateId || 'none');
   const entryKey = getThemeCacheEntryKey(trustId, templateId);
+  const persistEntryKey = getPersistThemeCacheEntryKey(trustId, templateId);
+  const persistIndexKey = getPersistTrustCacheIndexKey(trustId);
   const payload = {
     trustId,
     templateId,
@@ -165,6 +195,8 @@ const writeThemeCache = (trustId, theme) => {
 
   sessionStorage.setItem(entryKey, JSON.stringify(payload));
   sessionStorage.setItem(getTrustCacheIndexKey(trustId), entryKey);
+  localStorage.setItem(persistEntryKey, JSON.stringify(payload));
+  localStorage.setItem(persistIndexKey, persistEntryKey);
   localStorage.setItem(LAST_THEME_CACHE_KEY, JSON.stringify({
     ...theme,
     selectedTrustId: trustId,

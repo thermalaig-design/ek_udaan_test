@@ -232,10 +232,11 @@ export const fetchNoticeboardPage = async ({
     const rowsBeforeDate = Array.isArray(data) ? data : [];
     debug.counts.beforeDateFilterRows = rowsBeforeDate.length;
 
-    const rowsAfterDate = rowsBeforeDate.filter((item) => isDateValidForToday(item, today));
-    debug.counts.afterDateFilterRows = rowsAfterDate.length;
+    // Client-side date filter removed — we trust DB's status='active' as source of truth.
+    // Notices with expired end_date should be deactivated at DB level by admin.
+    debug.counts.afterDateFilterRows = rowsBeforeDate.length;
 
-    const finalRows = rowsAfterDate
+    const finalRows = rowsBeforeDate
       .map((item) => ({
         id: item.id,
         trust_id: item.trust_id,

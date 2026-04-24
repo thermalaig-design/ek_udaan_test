@@ -1,4 +1,4 @@
-import { getSponsorById, getSponsors } from './api';
+import { getSponsorById, getSponsors } from './sponsorApiBackend';
 
 /**
  * Centralized Sponsor Store (ID normalized)
@@ -20,6 +20,7 @@ import { getSponsorById, getSponsors } from './api';
 const TTL_CAROUSEL_MS = 15 * 60 * 1000;
 const TTL_LIST_PAGE_MS = 15 * 60 * 1000;
 const TTL_DETAIL_MS = 12 * 60 * 1000;
+const SPONSOR_REVALIDATE_MS = 15 * 60 * 1000;
 
 export const sponsorConfig = {
   CAROUSEL_BATCH_SIZE: 6,
@@ -27,16 +28,22 @@ export const sponsorConfig = {
   CAROUSEL_SLIDE_SECONDS: 5
 };
 
-const KEY_BY_ID = (trustId) => `sp_by_id_v3_${trustId}`;
-const KEY_ORDER = (trustId) => `sp_order_v3_${trustId}`;
-const KEY_LIST_PAGES = (trustId) => `sp_list_pages_v3_${trustId}`;
-const KEY_CAROUSEL_BATCHES = (trustId) => `sp_carousel_batches_v3_${trustId}`;
-const KEY_CAROUSEL_STATE = (trustId) => `sp_carousel_state_v3_${trustId}`;
-const KEY_PINNED_ID = (trustId) => `sp_pinned_id_v3_${trustId}`;
+const STORAGE_VERSION = 'v4';
+const SPONSOR_TIMEZONE = 'Asia/Kolkata';
+const KEY_BY_ID_PREFIX = `sp_by_id_${STORAGE_VERSION}_`;
+const KEY_ORDER_PREFIX = `sp_order_${STORAGE_VERSION}_`;
+const KEY_LIST_PAGES_PREFIX = `sp_list_pages_${STORAGE_VERSION}_`;
+const KEY_CAROUSEL_BATCHES_PREFIX = `sp_carousel_batches_${STORAGE_VERSION}_`;
+const KEY_CAROUSEL_STATE_PREFIX = `sp_carousel_state_${STORAGE_VERSION}_`;
+const KEY_PINNED_ID_PREFIX = `sp_pinned_id_${STORAGE_VERSION}_`;
+const KEY_REFRESH_AT_PREFIX = `sp_refresh_at_${STORAGE_VERSION}_`;
 const KEY_DETAIL_CACHE = 'sp_detail_cache_v3';
 const sponsorDebugByTrust = {};
 const memorySponsorsById = {};
 const memorySponsorOrder = {};
+const inFlightCarouselRequests = new Map();
+const inFlightListRequests = new Map();
+const inFlightTrustHydration = new Map();
 
 const readJson = (key, fallback) => {
   try {
@@ -64,10 +71,150 @@ const normalizeId = (value) => {
   return id || null;
 };
 
+const normalizeDigits = (value) => String(value || '').replace(/\D/g, '');
+
+const isSponsorActive = (sponsor) => {
+  const value = sponsor?.is_active;
+  if (value === undefined || value === null) return true;
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'number') return value === 1;
+  const normalized = String(value).trim().toLowerCase();
+  if (!normalized) return true;
+  return !['false', '0', 'no', 'inactive'].includes(normalized);
+};
+
+const readLoggedInUserSponsorContext = (trustId = null) => {
+  try {
+    const raw = localStorage.getItem('user');
+    if (!raw) return { mobile: '', isTrustLinked: false };
+    const parsed = JSON.parse(raw);
+    const mobile = normalizeDigits(parsed?.Mobile || parsed?.mobile || parsed?.phone || '');
+    const normalizedTrustId = normalizeId(trustId);
+
+    if (!normalizedTrustId) {
+      return { mobile, isTrustLinked: Boolean(mobile) };
+    }
+
+    const memberships = Array.isArray(parsed?.hospital_memberships) ? parsed.hospital_memberships : [];
+    const hasActiveMembership = memberships.some((membership) => {
+      const membershipTrustId = normalizeId(membership?.trust_id || membership?.id);
+      if (membershipTrustId !== normalizedTrustId) return false;
+      return membership?.is_active !== false;
+    });
+
+    const primaryTrustId = normalizeId(parsed?.primary_trust?.id || parsed?.trust?.id);
+    const isTrustLinked = hasActiveMembership || primaryTrustId === normalizedTrustId;
+
+    return { mobile, isTrustLinked };
+  } catch {
+    return { mobile: '', isTrustLinked: false };
+  }
+};
+
+const matchesSponsorToLoggedInUser = (sponsor, userMobile) => {
+  const sponsorRef = normalizeDigits(sponsor?.ref_no);
+  if (!sponsorRef || !userMobile) return false;
+  return sponsorRef === userMobile || sponsorRef === userMobile.slice(-10);
+};
+
+const getTodayCacheTag = () => {
+  const formatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone: SPONSOR_TIMEZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  });
+  return formatter.format(new Date());
+};
+
+const getScopedTrustKey = (trustId) => {
+  const normalizedTrustId = normalizeId(trustId) || 'none';
+  return `${normalizedTrustId}_${getTodayCacheTag()}`;
+};
+
+const KEY_BY_ID = (trustId) => `${KEY_BY_ID_PREFIX}${getScopedTrustKey(trustId)}`;
+const KEY_ORDER = (trustId) => `${KEY_ORDER_PREFIX}${getScopedTrustKey(trustId)}`;
+const KEY_LIST_PAGES = (trustId) => `${KEY_LIST_PAGES_PREFIX}${getScopedTrustKey(trustId)}`;
+const KEY_CAROUSEL_BATCHES = (trustId) => `${KEY_CAROUSEL_BATCHES_PREFIX}${getScopedTrustKey(trustId)}`;
+const KEY_CAROUSEL_STATE = (trustId) => `${KEY_CAROUSEL_STATE_PREFIX}${getScopedTrustKey(trustId)}`;
+const KEY_PINNED_ID = (trustId) => `${KEY_PINNED_ID_PREFIX}${getScopedTrustKey(trustId)}`;
+const KEY_REFRESH_AT = (trustId) => `${KEY_REFRESH_AT_PREFIX}${getScopedTrustKey(trustId)}`;
+
+const getTrustScopedPrefix = (prefix, trustId) => `${prefix}${normalizeId(trustId) || 'none'}_`;
+
+const listScopedKeysNewestFirst = (prefix, trustId) => {
+  const scopedPrefix = getTrustScopedPrefix(prefix, trustId);
+  const keys = [];
+  try {
+    for (let i = 0; i < localStorage.length; i += 1) {
+      const key = localStorage.key(i);
+      if (!key || !key.startsWith(scopedPrefix)) continue;
+      keys.push(key);
+    }
+  } catch {
+    return [];
+  }
+  keys.sort((a, b) => b.localeCompare(a));
+  return keys;
+};
+
+const clearStaleKeysByPrefix = (prefix, trustId, keepLimit = 2) => {
+  const keys = listScopedKeysNewestFirst(prefix, trustId);
+  if (keys.length <= keepLimit) return;
+  try {
+    for (const key of keys.slice(keepLimit)) localStorage.removeItem(key);
+  } catch {
+    // ignore storage iteration errors
+  }
+};
+
+const readMostRecentScopedJson = (prefix, trustId, fallback) => {
+  const keys = listScopedKeysNewestFirst(prefix, trustId);
+  for (const key of keys) {
+    const parsed = readJson(key, fallback);
+    if (parsed !== undefined && parsed !== null) return parsed;
+  }
+  return fallback;
+};
+
+const pruneStaleTrustStorage = (trustId) => {
+  clearStaleKeysByPrefix(KEY_BY_ID_PREFIX, trustId);
+  clearStaleKeysByPrefix(KEY_ORDER_PREFIX, trustId);
+  clearStaleKeysByPrefix(KEY_LIST_PAGES_PREFIX, trustId);
+  clearStaleKeysByPrefix(KEY_CAROUSEL_BATCHES_PREFIX, trustId);
+  clearStaleKeysByPrefix(KEY_CAROUSEL_STATE_PREFIX, trustId);
+  clearStaleKeysByPrefix(KEY_PINNED_ID_PREFIX, trustId);
+  clearStaleKeysByPrefix(KEY_REFRESH_AT_PREFIX, trustId);
+};
+
+const readLastSponsorRefreshAt = (trustId) => {
+  pruneStaleTrustStorage(trustId);
+  try {
+    return Number(localStorage.getItem(KEY_REFRESH_AT(trustId)) || 0);
+  } catch {
+    return 0;
+  }
+};
+
+const writeLastSponsorRefreshAt = (trustId) => {
+  try {
+    localStorage.setItem(KEY_REFRESH_AT(trustId), String(now()));
+  } catch {
+    // ignore storage failures
+  }
+};
+
 export function getSponsorDebugInfo(trustId) {
   const normalizedTrustId = normalizeId(trustId);
   if (!normalizedTrustId) return null;
   return sponsorDebugByTrust[normalizedTrustId] || null;
+}
+
+export function shouldRevalidateSponsors(trustId) {
+  const normalizedTrustId = normalizeId(trustId);
+  if (!normalizedTrustId) return false;
+  const lastRefreshAt = readLastSponsorRefreshAt(normalizedTrustId);
+  return !isFresh(lastRefreshAt, SPONSOR_REVALIDATE_MS);
 }
 
 const normalizeSponsor = (value) => {
@@ -87,29 +234,72 @@ const toUniqueSortedBatchNos = (arr) => {
 };
 
 function readSponsorsByIdMap(trustId) {
+  pruneStaleTrustStorage(trustId);
   const persisted = readJson(KEY_BY_ID(trustId), {});
   const persistedKeys = persisted && typeof persisted === 'object' ? Object.keys(persisted) : [];
   if (persistedKeys.length > 0) {
     memorySponsorsById[trustId] = persisted;
     return persisted;
   }
+
+  const previousSnapshot = readMostRecentScopedJson(KEY_BY_ID_PREFIX, trustId, {});
+  const previousKeys = previousSnapshot && typeof previousSnapshot === 'object' ? Object.keys(previousSnapshot) : [];
+  if (previousKeys.length > 0) {
+    writeJson(KEY_BY_ID(trustId), previousSnapshot);
+    memorySponsorsById[trustId] = previousSnapshot;
+    return previousSnapshot;
+  }
+
   return memorySponsorsById[trustId] || {};
 }
 
 function readSponsorOrderIds(trustId) {
+  pruneStaleTrustStorage(trustId);
   const persisted = readJson(KEY_ORDER(trustId), []);
   if (Array.isArray(persisted) && persisted.length > 0) {
     memorySponsorOrder[trustId] = persisted;
     return persisted;
   }
+
+  const previousOrder = readMostRecentScopedJson(KEY_ORDER_PREFIX, trustId, []);
+  if (Array.isArray(previousOrder) && previousOrder.length > 0) {
+    writeJson(KEY_ORDER(trustId), previousOrder);
+    memorySponsorOrder[trustId] = previousOrder;
+    return previousOrder;
+  }
+
   return Array.isArray(memorySponsorOrder[trustId]) ? memorySponsorOrder[trustId] : [];
 }
 
+function reorderSponsorsForLoggedInUser(trustId, orderInput = null, byIdInput = null) {
+  const normalizedTrustId = normalizeId(trustId);
+  if (!normalizedTrustId) return Array.isArray(orderInput) ? orderInput : [];
+
+  const byId = byIdInput || readSponsorsByIdMap(normalizedTrustId);
+  const order = Array.isArray(orderInput) ? [...orderInput] : [...readSponsorOrderIds(normalizedTrustId)];
+  if (order.length === 0) return order;
+
+  const sponsorContext = readLoggedInUserSponsorContext(normalizedTrustId);
+  if (!sponsorContext.isTrustLinked || !sponsorContext.mobile) return order;
+
+  const matchIndex = order.findIndex((id) => matchesSponsorToLoggedInUser(byId[id], sponsorContext.mobile));
+  if (matchIndex <= 0) return order;
+
+  const [matchedId] = order.splice(matchIndex, 1);
+  order.unshift(matchedId);
+
+  writeJson(KEY_ORDER(normalizedTrustId), order);
+  memorySponsorOrder[normalizedTrustId] = order;
+  return order;
+}
+
 function readListPagesMap(trustId) {
+  pruneStaleTrustStorage(trustId);
   return readJson(KEY_LIST_PAGES(trustId), {});
 }
 
 function readCarouselBatchesMap(trustId) {
+  pruneStaleTrustStorage(trustId);
   return readJson(KEY_CAROUSEL_BATCHES(trustId), {});
 }
 
@@ -124,6 +314,7 @@ function getDefaultCarouselState() {
 }
 
 function readCarouselState(trustId) {
+  pruneStaleTrustStorage(trustId);
   const raw = readJson(KEY_CAROUSEL_STATE(trustId), getDefaultCarouselState());
   const merged = { ...getDefaultCarouselState(), ...(raw || {}) };
   merged.sponsorBatchesLoaded = toUniqueSortedBatchNos(merged.sponsorBatchesLoaded);
@@ -155,10 +346,13 @@ function writeCarouselState(trustId, partial) {
 
 function readSponsorObjectsForIds(trustId, ids) {
   const byId = readSponsorsByIdMap(trustId);
-  return (ids || []).map((id) => byId[String(id)]).filter(Boolean);
+  return (ids || [])
+    .map((id) => byId[String(id)])
+    .filter((sponsor) => Boolean(sponsor) && isSponsorActive(sponsor));
 }
 
 export function mergeByIdAndAppendOrder(trustId, sponsorList) {
+  pruneStaleTrustStorage(trustId);
   const byId = readSponsorsByIdMap(trustId);
   const order = readSponsorOrderIds(trustId);
   const orderSet = new Set(order.map(String));
@@ -178,11 +372,16 @@ export function mergeByIdAndAppendOrder(trustId, sponsorList) {
   }
 
   writeJson(KEY_BY_ID(trustId), byId);
-  writeJson(KEY_ORDER(trustId), order);
+  const finalOrder = reorderSponsorsForLoggedInUser(trustId, order, byId)
+    .filter((id) => {
+      const sponsor = byId[id];
+      return Boolean(sponsor) && isSponsorActive(sponsor);
+    });
+  writeJson(KEY_ORDER(trustId), finalOrder);
   memorySponsorsById[trustId] = byId;
-  memorySponsorOrder[trustId] = order;
+  memorySponsorOrder[trustId] = finalOrder;
 
-  return { byId, order, newIds };
+  return { byId, order: finalOrder, newIds };
 }
 
 function warmImageCache(sponsors) {
@@ -205,7 +404,19 @@ export function readSponsorsById(trustId) {
 }
 
 export function readSponsorOrder(trustId) {
-  return readSponsorOrderIds(trustId);
+  const normalizedTrustId = normalizeId(trustId);
+  if (!normalizedTrustId) return [];
+  const byId = readSponsorsByIdMap(normalizedTrustId);
+  const order = reorderSponsorsForLoggedInUser(normalizedTrustId, null, byId);
+  const activeOrder = order.filter((id) => {
+    const sponsor = byId[id];
+    return Boolean(sponsor) && isSponsorActive(sponsor);
+  });
+  if (activeOrder.length !== order.length) {
+    writeJson(KEY_ORDER(normalizedTrustId), activeOrder);
+    memorySponsorOrder[normalizedTrustId] = activeOrder;
+  }
+  return activeOrder;
 }
 
 export function readCarouselProgress(trustId) {
@@ -272,6 +483,7 @@ export function mergeSponsorBatch(trustId, batchNo, sponsorList, options = {}) {
 
 export function saveListPage(trustId, page, sponsorList) {
   if (!trustId) return;
+  pruneStaleTrustStorage(trustId);
   const pageNo = Number(page);
   if (!Number.isFinite(pageNo) || pageNo <= 0) return;
 
@@ -295,7 +507,7 @@ export function saveDetailCache(sponsorId, detail) {
 }
 
 export function buildOrderedSponsors(trustId) {
-  const order = readSponsorOrderIds(trustId);
+  const order = reorderSponsorsForLoggedInUser(trustId);
   return readSponsorObjectsForIds(trustId, order);
 }
 
@@ -370,6 +582,89 @@ export function getCachedCarouselBatch(trustId, batchIndex) {
   };
 }
 
+const hydrateAllSponsorPages = (trustId, sponsorList) => {
+  const list = Array.isArray(sponsorList) ? sponsorList : [];
+  const batches = {};
+  for (let i = 0; i < list.length; i += sponsorConfig.CAROUSEL_BATCH_SIZE) {
+    const batchNo = Math.floor(i / sponsorConfig.CAROUSEL_BATCH_SIZE);
+    batches[String(batchNo)] = list
+      .slice(i, i + sponsorConfig.CAROUSEL_BATCH_SIZE)
+      .map((item) => normalizeId(item?.id))
+      .filter(Boolean);
+  }
+  writeJson(KEY_CAROUSEL_BATCHES(trustId), batches);
+
+  const pages = {};
+  for (let i = 0; i < list.length; i += sponsorConfig.LIST_PAGE_SIZE) {
+    const pageNo = Math.floor(i / sponsorConfig.LIST_PAGE_SIZE) + 1;
+    pages[pageNo] = {
+      ids: list.slice(i, i + sponsorConfig.LIST_PAGE_SIZE).map((item) => normalizeId(item?.id)).filter(Boolean),
+      ts: now()
+    };
+  }
+  writeJson(KEY_LIST_PAGES(trustId), pages);
+
+  const loadedBatchNos = Object.keys(batches).map((key) => Number(key)).filter((n) => Number.isFinite(n));
+  writeCarouselState(trustId, {
+    sponsorBatchesLoaded: loadedBatchNos,
+    hasMoreSponsors: false,
+    isLoadingBatch: false,
+    nextBatchIndex: loadedBatchNos.length,
+    batchTs: loadedBatchNos.reduce((acc, batchNo) => {
+      acc[String(batchNo)] = now();
+      return acc;
+    }, {})
+  });
+};
+
+export async function ensureAllSponsorsLoaded(trustId) {
+  const normalizedTrustId = normalizeId(trustId);
+  if (!normalizedTrustId) return [];
+
+  const existingOrder = readSponsorOrderIds(normalizedTrustId);
+  const existingById = readSponsorsByIdMap(normalizedTrustId);
+  if (existingOrder.length > 0 && Object.keys(existingById || {}).length > 0) {
+    const existingSponsors = readSponsorObjectsForIds(normalizedTrustId, existingOrder);
+    const existingBatchZero = getCachedCarouselBatch(normalizedTrustId, 0);
+    const existingPages = readListPagesMap(normalizedTrustId);
+    const hasDerivedCaches =
+      existingBatchZero.sponsors.length > 0 ||
+      Object.keys(existingPages || {}).length > 0;
+    if (!hasDerivedCaches) {
+      hydrateAllSponsorPages(normalizedTrustId, existingSponsors);
+    }
+    const lastRefreshAt = readLastSponsorRefreshAt(normalizedTrustId);
+    if (isFresh(lastRefreshAt, SPONSOR_REVALIDATE_MS)) {
+      return existingSponsors;
+    }
+  }
+
+  const existing = inFlightTrustHydration.get(normalizedTrustId);
+  if (existing) return existing;
+
+  const request = (async () => {
+    const res = await getSponsors(normalizedTrustId, null, {
+      view: 'list',
+      page: 1,
+      limit: 500,
+      offset: 0,
+      all: true
+    });
+    sponsorDebugByTrust[normalizedTrustId] = res?.debug || null;
+    const sponsors = Array.isArray(res?.data) ? res.data : [];
+    mergeByIdAndAppendOrder(normalizedTrustId, sponsors);
+    hydrateAllSponsorPages(normalizedTrustId, sponsors);
+    writeLastSponsorRefreshAt(normalizedTrustId);
+    warmImageCache(sponsors);
+    return sponsors;
+  })().finally(() => {
+    inFlightTrustHydration.delete(normalizedTrustId);
+  });
+
+  inFlightTrustHydration.set(normalizedTrustId, request);
+  return request;
+}
+
 export async function getCarouselBatch({ trustId, batchIndex, batchSize = sponsorConfig.CAROUSEL_BATCH_SIZE }) {
   const normalizedBatch = Number(batchIndex);
   const limit = Number(batchSize) || sponsorConfig.CAROUSEL_BATCH_SIZE;
@@ -390,31 +685,26 @@ export async function getCarouselBatch({ trustId, batchIndex, batchSize = sponso
     return { sponsors: cached.sponsors, hasMore: state.hasMoreSponsors };
   }
 
-  writeCarouselState(trustId, { isLoadingBatch: true });
+  const requestKey = `${trustId}|${normalizedBatch}|${limit}`;
+  const existing = inFlightCarouselRequests.get(requestKey);
+  if (existing) return existing;
 
-  const offset = normalizedBatch * limit;
-  let hasMore = true;
-  let sponsors = [];
-  let scans = 0;
-  const maxScans = 8;
+  const request = (async () => {
+    writeCarouselState(trustId, { isLoadingBatch: true });
+    await ensureAllSponsorsLoaded(trustId);
+    const refreshed = getCachedCarouselBatch(trustId, normalizedBatch);
+    const ordered = buildOrderedSponsors(trustId);
+    const maxBatchIndex = Math.max(0, Math.ceil(ordered.length / limit) - 1);
+    return {
+      sponsors: refreshed.sponsors,
+      hasMore: normalizedBatch < maxBatchIndex
+    };
+  })().finally(() => {
+    inFlightCarouselRequests.delete(requestKey);
+  });
 
-  while (scans < maxScans) {
-    const res = await getSponsors(trustId, null, { offset: offset + (scans * limit), limit, view: 'carousel' });
-    if (trustId) {
-      sponsorDebugByTrust[String(trustId)] = res?.debug || null;
-    }
-    sponsors = Array.isArray(res?.data) ? res.data : [];
-    hasMore = typeof res?.hasMore === 'boolean' ? res.hasMore : sponsors.length === limit;
-
-    if (sponsors.length > 0) break;
-    if (!hasMore) break;
-    scans += 1;
-  }
-
-  mergeSponsorBatch(trustId, normalizedBatch, sponsors, { hasMore });
-  warmImageCache(sponsors);
-
-  return { sponsors, hasMore };
+  inFlightCarouselRequests.set(requestKey, request);
+  return request;
 }
 
 export async function preloadCarouselBatchImages({ trustId, batchIndex }) {
@@ -450,24 +740,28 @@ export async function getListPage({ trustId, page = 1, pageSize = sponsorConfig.
   const limit = Number(pageSize) || sponsorConfig.LIST_PAGE_SIZE;
   const cached = getCachedListPage(trustId, pageNo);
 
-  // Only use cache if it's fresh AND has at least as many items as the page size.
-  // If cached count < limit, the cache may be stale/partial — re-fetch from API.
-  if (cached.sponsors.length >= limit && cached.isFresh) {
-    return { sponsors: cached.sponsors, hasMore: true };
+  if (cached.isFresh) {
+    return { sponsors: cached.sponsors, hasMore: cached.sponsors.length === limit };
   }
 
-  const res = await getSponsors(trustId, null, { page: pageNo, limit, view: 'list' });
-  if (trustId) {
-    sponsorDebugByTrust[String(trustId)] = res?.debug || null;
-  }
-  const sponsors = Array.isArray(res?.data) ? res.data : [];
+  const requestKey = `${trustId}|${pageNo}|${limit}`;
+  const existing = inFlightListRequests.get(requestKey);
+  if (existing) return existing;
 
-  saveListPage(trustId, pageNo, sponsors);
+  const request = (async () => {
+    await ensureAllSponsorsLoaded(trustId);
+    const refreshed = getCachedListPage(trustId, pageNo);
+    const sponsors = Array.isArray(refreshed?.sponsors) ? refreshed.sponsors : [];
+    const total = buildOrderedSponsors(trustId).length;
+    const hasMore = pageNo * limit < total;
+    return { sponsors, hasMore };
+  })().finally(() => {
+    inFlightListRequests.delete(requestKey);
+  });
 
-  const hasMore = typeof res?.hasMore === 'boolean' ? res.hasMore : sponsors.length === limit;
-  return { sponsors, hasMore };
+  inFlightListRequests.set(requestKey, request);
+  return request;
 }
-
 export function flattenListPages(trustId, pages, includePinned = false) {
   const byId = readSponsorsByIdMap(trustId);
   const listPages = readListPagesMap(trustId);
@@ -494,35 +788,22 @@ export function flattenListPages(trustId, pages, includePinned = false) {
     }
   }
 
-  return mergedIds.map((id) => byId[id]).filter(Boolean);
+  return mergedIds
+    .map((id) => byId[id])
+    .filter((sponsor) => Boolean(sponsor) && isSponsorActive(sponsor));
 }
 
 export async function preloadSponsorListFirstPage(trustId) {
   if (!trustId) return;
   const cached = getCachedListPage(trustId, 1);
   if (cached.sponsors.length > 0 && cached.isFresh) return;
-  await getListPage({ trustId, page: 1, pageSize: sponsorConfig.LIST_PAGE_SIZE });
+  await ensureAllSponsorsLoaded(trustId);
 }
 
 export async function getSponsorListTotalCount(trustId) {
   if (!trustId) return 0;
-  let page = 1;
-  let total = 0;
-  let hasMore = true;
-
-  while (hasMore && page <= 100) {
-    const res = await getSponsors(trustId, null, { page, limit: sponsorConfig.LIST_PAGE_SIZE, view: 'list' });
-    const sponsors = Array.isArray(res?.data) ? res.data : [];
-    if (sponsors.length === 0) {
-      hasMore = false;
-      break;
-    }
-    total += sponsors.length;
-    hasMore = typeof res?.hasMore === 'boolean' ? res.hasMore : sponsors.length === sponsorConfig.LIST_PAGE_SIZE;
-    page += 1;
-  }
-
-  return total;
+  await ensureAllSponsorsLoaded(trustId);
+  return buildOrderedSponsors(trustId).length;
 }
 
 export function getCachedSponsorById(sponsorId, trustId = null) {
@@ -534,7 +815,7 @@ export function getCachedSponsorById(sponsorId, trustId = null) {
     if (direct) return direct;
   }
 
-  const trustKeyPrefix = 'sp_by_id_v3_';
+  const trustKeyPrefix = KEY_BY_ID_PREFIX;
   try {
     for (let i = 0; i < localStorage.length; i += 1) {
       const key = localStorage.key(i);
@@ -566,7 +847,7 @@ export async function getSponsorDetail({ sponsorId, trustId = null }) {
     saveDetailCache(id, sponsorMeta);
   }
 
-  const res = await getSponsorById(id);
+  const res = await getSponsorById(id, trustId);
   const detail = Array.isArray(res?.data) ? res.data[0] : null;
   if (!detail) return sponsorMeta || cachedDetail.detail || null;
 
@@ -577,3 +858,4 @@ export async function getSponsorDetail({ sponsorId, trustId = null }) {
 
   return detail;
 }
+

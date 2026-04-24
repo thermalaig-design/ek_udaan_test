@@ -4,7 +4,8 @@ import { getMemberTypes, getAllMembers, getAllHospitals, getAllElectedMembers, g
 import { getOpdDoctors } from './services/supabaseService';
 import Sidebar from './components/Sidebar';
 import { fetchFeatureFlags, subscribeFeatureFlags } from './services/featureFlags';
-import { useAppTheme, useThemeToken } from './context/ThemeContext';
+import { useAppTheme } from './context/ThemeContext';
+import { getNavbarThemeStyles } from './utils/themeUtils';
 
 const CACHE_KEY = 'directory_data_cache';
 const CACHE_TIMESTAMP_KEY = 'directory_cache_timestamp';
@@ -104,7 +105,8 @@ const isTrusteeLikeRole = (member) => {
 
 const Directory = ({ onNavigate }) => {
   const theme = useAppTheme();
-  const navbarTextColor = useThemeToken('navbar.text_color', '#f7f7f7');
+  const navbarTheme = getNavbarThemeStyles(theme);
+  const navbarTextColor = navbarTheme?.textColor || 'var(--navbar-text)';
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [directoryTab, setDirectoryTab] = useState('healthcare');
   const [searchQuery, setSearchQuery] = useState('');
@@ -772,12 +774,18 @@ const Directory = ({ onNavigate }) => {
       {/* Navbar - Brand theme */}
       <div
         className="px-4 py-4 flex items-center justify-between sticky top-0 z-50 shadow-md transition-all duration-300 pointer-events-auto"
-        style={{ background: `linear-gradient(135deg, ${theme.secondary} 0%, ${theme.primary} 100%)`, paddingTop: "max(env(safe-area-inset-top, 0px), 16px)" }}
+        style={{
+          background: navbarTheme?.backgroundStyle || 'var(--navbar-bg, var(--app-navbar-bg))',
+          backdropFilter: `blur(${navbarTheme?.blurPx || '12px'})`,
+          WebkitBackdropFilter: `blur(${navbarTheme?.blurPx || '12px'})`,
+          borderBottom: '1px solid var(--navbar-border)',
+          paddingTop: "max(env(safe-area-inset-top, 0px), 16px)"
+        }}
       >
         <button
           onClick={() => setIsMenuOpen(!isMenuOpen)}
-          className="p-2 rounded-xl hover:bg-white/10 transition-colors pointer-events-auto"
-          style={{ color: navbarTextColor }}
+          className="p-2 rounded-xl transition-colors pointer-events-auto"
+          style={{ color: navbarTextColor, background: 'transparent' }}
         >
           {isMenuOpen ? <X className="h-6 w-6" style={{ color: navbarTextColor }} /> : <Menu className="h-6 w-6" style={{ color: navbarTextColor }} />}
         </button>
@@ -785,8 +793,8 @@ const Directory = ({ onNavigate }) => {
         <div className="flex items-center gap-1">
           <button
             onClick={() => onNavigate('home')}
-            className="p-2 rounded-xl hover:bg-white/10 transition-colors flex items-center justify-center"
-            style={{ color: navbarTextColor }}
+            className="p-2 rounded-xl transition-colors flex items-center justify-center"
+            style={{ color: navbarTextColor, background: 'transparent' }}
           >
             <HomeIcon className="h-5 w-5" style={{ color: navbarTextColor }} />
           </button>

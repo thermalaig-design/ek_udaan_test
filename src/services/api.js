@@ -533,8 +533,6 @@ export const getMarqueeUpdates = async (trustId = null, trustName = null) => {
   }
 };
 
-const SPONSOR_FLASH_ACTIVE_STATUS = 'active';
-
 const getTodayLocalYmd = () => {
   const now = new Date();
   const year = now.getFullYear();
@@ -560,14 +558,24 @@ const toYmdOnly = (value) => {
 const isFlashDateValidForToday = (row, todayYmd) => {
   const startYmd = toYmdOnly(row?.start_date);
   const endYmd = toYmdOnly(row?.end_date);
-  const startOk = !startYmd || startYmd <= todayYmd;
+  const startOk = Boolean(startYmd) && startYmd <= todayYmd;
   const endOk = !endYmd || endYmd >= todayYmd;
   return startOk && endOk;
 };
 
+const isRowActive = (row) => {
+  const value = row?.is_active;
+  if (value === undefined || value === null) return true;
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'number') return value === 1;
+  const normalized = String(value).trim().toLowerCase();
+  if (!normalized) return true;
+  return !['false', '0', 'no', 'inactive'].includes(normalized);
+};
+
 // Get sponsor information
 // view: "carousel" | "list"
-// Uses sponsor_flash as source of truth for active + valid sponsor rotation.
+// Uses sponsor_flash as source of truth for trust + date-valid sponsor rotation.
 export const getSponsors = async (
   trustId = null,
   trustName = null,
@@ -578,12 +586,10 @@ export const getSponsors = async (
   const diagnostics = {
     trustId: trustId === null || trustId === undefined ? null : String(trustId).trim(),
     trustName: trustName || null,
-    statusFilter: SPONSOR_FLASH_ACTIVE_STATUS,
     today: getTodayLocalYmd(),
     timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'unknown',
     counts: {
       trustRows: 0,
-      activeRows: 0,
       beforeDateFilterRows: 0,
       afterDateFilterRows: 0,
       joinedRows: 0,
@@ -591,7 +597,6 @@ export const getSponsors = async (
     },
     range: { page: Number(page) || 1, limit: Number(limit) || 3, offset: Number(offset) || 0 },
     sponsorFlashTrustIds: [],
-    sponsorFlashStatuses: [],
     sponsorFlashSponsorIds: [],
     joinedSponsorIds: [],
     reason: ''
@@ -629,44 +634,13 @@ export const getSponsors = async (
     const rangeTo = rangeFrom + pageSize - 1;
     diagnostics.range = { page: pageNo, limit: pageSize, offset: rangeFrom };
 
-    const sponsorSelectForView = view === 'carousel'
-      ? 'id,name,photo_url,company_name,position'
-      : `
-          id,
-          name,
-          position,
-          about,
-          photo_url,
-          company_name,
-          ref_no,
-          "ContactNumber1",
-          email_id1,
-          address,
-          city,
-          state,
-          whatsapp_number,
-          website_url,
-          catalog_url,
-          coPartner,
-          contactNumber2,
-          contactNumber3,
-          emailId2,
-          emailId3,
-          facebook,
-          instagram,
-          X,
-          linkedin,
-          address2,
-          address3,
-          position2
-        `;
+    const sponsorSelectForView = '*';
 
     // Step A: Fetch ALL rows for this trust (used as fallback pool).
     const { data: trustRows, error: trustRowsError } = await supabase
       .from('sponsor_flash')
-      .select(`id, sponsor_id, trust_id, duration_seconds, priority, status, start_date, end_date, created_at`)
+      .select('*')
       .eq('trust_id', resolvedTrustId)
-      .order('priority', { ascending: false })
       .order('created_at', { ascending: true })
       .order('id', { ascending: true });
 
@@ -674,27 +648,15 @@ export const getSponsors = async (
     const trustOnlyRows = Array.isArray(trustRows) ? trustRows : [];
     diagnostics.counts.trustRows = trustOnlyRows.length;
     diagnostics.sponsorFlashTrustIds = [...new Set(trustOnlyRows.map((r) => r?.trust_id).filter(Boolean).map(String))];
-    diagnostics.sponsorFlashStatuses = [...new Set(trustOnlyRows.map((r) => r?.status).filter(Boolean).map(String))];
 
-    // Step B: Filter to active rows only.
-    const activeRows = trustOnlyRows.filter((r) => String(r?.status || '').toLowerCase() === SPONSOR_FLASH_ACTIVE_STATUS);
-    diagnostics.counts.activeRows = activeRows.length;
-    diagnostics.counts.beforeDateFilterRows = activeRows.length;
+    // Step B: Date filter only.
+    diagnostics.counts.beforeDateFilterRows = trustOnlyRows.length;
 
-    // Step C: Date filter — fallback chain for maximum sponsor visibility.
-    // Level 1: active + date-valid (strictest)
-    const dateFilteredRows = activeRows.filter((row) => isFlashDateValidForToday(row, diagnostics.today));
+    // Step C: strict filter (active + date-valid).
+    const dateFilteredRows = trustOnlyRows.filter((row) => isRowActive(row) && isFlashDateValidForToday(row, diagnostics.today));
     diagnostics.counts.afterDateFilterRows = dateFilteredRows.length;
 
-    // Level 2: if date-filtered rows are fewer than pageSize, include ALL active rows (ignore expired dates).
-    // Level 3: if still not enough, include ALL trust rows (ignore status + date).
-    let candidateRows = dateFilteredRows;
-    if (candidateRows.length < pageSize) {
-      candidateRows = activeRows.length > candidateRows.length ? activeRows : candidateRows;
-    }
-    if (candidateRows.length < pageSize && trustOnlyRows.length > candidateRows.length) {
-      candidateRows = trustOnlyRows;
-    }
+    const candidateRows = dateFilteredRows;
 
     const pagedRows = candidateRows.slice(rangeFrom, rangeTo + 1);
     const sponsorIdsForPage = [...new Set(pagedRows.map((row) => row?.sponsor_id).filter(Boolean).map(String))];
@@ -714,7 +676,7 @@ export const getSponsors = async (
       diagnostics.joinedSponsorIds = rows.map((row) => row?.id).filter(Boolean).map((id) => String(id));
       sponsorsById = rows.reduce((acc, sponsor) => {
         const key = sponsor?.id === null || sponsor?.id === undefined ? '' : String(sponsor.id);
-        if (key) acc[key] = sponsor;
+        if (key && isRowActive(sponsor)) acc[key] = sponsor;
         return acc;
       }, {});
     }
@@ -758,8 +720,6 @@ export const getSponsors = async (
           sponsor_id: row.sponsor_id,
           trust_id: row.trust_id,
           duration_seconds: row.duration_seconds,
-          priority: row.priority,
-          status: row.status,
           start_date: row.start_date,
           end_date: row.end_date,
           flash_created_at: row.created_at
@@ -770,10 +730,8 @@ export const getSponsors = async (
 
     if (!trustOnlyRows.length) {
       diagnostics.reason = 'No sponsor_flash rows found for this trust_id.';
-    } else if (!activeRows.length) {
-      diagnostics.reason = 'No sponsor_flash rows with status=active for this trust_id.';
     } else if (!dateFilteredRows.length) {
-      diagnostics.reason = 'All active sponsor_flash rows were excluded by date filter.';
+      diagnostics.reason = 'All sponsor_flash rows were excluded by date filter.';
     } else if (sponsorIdsForPage.length > 0 && !diagnostics.counts.joinedRows) {
       diagnostics.reason = 'Join with sponsors returned zero rows for sponsor_ids in sponsor_flash.';
     } else if (!mapped.length) {
@@ -800,9 +758,7 @@ export const getSponsors = async (
 
       console.log('[SponsorFlash][Debug] current_trust_id=', diagnostics.trustId);
       console.log('[SponsorFlash][Debug] trust_ids_in_db=', diagnostics.sponsorFlashTrustIds);
-      console.log('[SponsorFlash][Debug] distinct_status_values=', diagnostics.sponsorFlashStatuses);
       console.log('[SponsorFlash][Debug] total_for_trust=', diagnostics.counts.trustRows);
-      console.log('[SponsorFlash][Debug] total_active_for_trust=', diagnostics.counts.activeRows);
       console.log('[SponsorFlash][Debug] rows_before_date_filter=', diagnostics.counts.beforeDateFilterRows);
       console.log('[SponsorFlash][Debug] rows_after_date_filter=', diagnostics.counts.afterDateFilterRows);
       console.log('[SponsorFlash][Debug] sponsor_flash_sponsor_ids=', diagnostics.sponsorFlashSponsorIds);
@@ -858,22 +814,15 @@ export const getAllSponsorsForTrust = async (trustId) => {
     // ── Call 1: ALL sponsor_flash rows for trust ──
     const { data: flashRows, error: flashErr } = await supabase
       .from('sponsor_flash')
-      .select('id, sponsor_id, trust_id, duration_seconds, priority, status, start_date, end_date, created_at')
+      .select('*')
       .eq('trust_id', trustId)
-      .order('priority', { ascending: false })
       .order('created_at', { ascending: true });
 
     if (flashErr) throw flashErr;
     const allFlash = Array.isArray(flashRows) ? flashRows : [];
 
-    // Filter: active + date-valid (fallback to any active if few results)
-    const activeFlash = allFlash.filter((r) => String(r?.status || '').toLowerCase() === SPONSOR_FLASH_ACTIVE_STATUS);
-    let validFlash = activeFlash.filter((r) => isFlashDateValidForToday(r, today));
-
-    // Fallback: if date filter removes too many, use all active rows
-    if (validFlash.length < activeFlash.length && validFlash.length < 3) {
-      validFlash = activeFlash.length > 0 ? activeFlash : allFlash;
-    }
+    // Filter: strict active + date-valid only
+    const validFlash = allFlash.filter((r) => isRowActive(r) && isFlashDateValidForToday(r, today));
 
     if (validFlash.length === 0) {
       return { success: true, data: [], total: 0 };
@@ -890,20 +839,14 @@ export const getAllSponsorsForTrust = async (trustId) => {
     // ── Call 2: ALL sponsors in one query ──
     const { data: sponsorRows, error: sponsorErr } = await supabase
       .from('sponsors')
-      .select(`
-        id, name, position, about, photo_url, company_name, ref_no,
-        "ContactNumber1", email_id1, address, city, state,
-        whatsapp_number, website_url, catalog_url, coPartner,
-        contactNumber2, contactNumber3, emailId2, emailId3,
-        facebook, instagram, X, linkedin, address2, address3, position2
-      `)
+      .select('*')
       .in('id', orderedSponsorIds);
 
     if (sponsorErr) throw sponsorErr;
 
     const byId = {};
     (Array.isArray(sponsorRows) ? sponsorRows : []).forEach((s) => {
-      if (s?.id) byId[String(s.id)] = s;
+      if (s?.id && isRowActive(s)) byId[String(s.id)] = s;
     });
 
     // Build flash metadata map for duration etc.
@@ -922,8 +865,6 @@ export const getAllSponsorsForTrust = async (trustId) => {
           sponsor_id: sid,
           trust_id: flash?.trust_id || trustId,
           duration_seconds: flash?.duration_seconds || 5,
-          priority: flash?.priority || 0,
-          status: flash?.status || 'active',
           start_date: flash?.start_date || null,
           end_date: flash?.end_date || null,
         };
@@ -939,53 +880,14 @@ export const getAllSponsorsForTrust = async (trustId) => {
 };
 
 // Get specific sponsor by ID
-export const getSponsorById = async (id) => {
+export const getSponsorById = async (id, trustId = null) => {
   try {
-    const { supabase } = await import('./supabaseClient.js');
-    const { data, error } = await supabase
-      .from('sponsors')
-      .select(`
-        id,
-        name,
-        position,
-        about,
-        photo_url,
-        company_name,
-        ref_no,
-        "ContactNumber1",
-        email_id1,
-        address,
-        city,
-        state,
-        whatsapp_number,
-        website_url,
-        catalog_url,
-        coPartner,
-        contactNumber2,
-        contactNumber3,
-        emailId2,
-        emailId3,
-        facebook,
-        instagram,
-        X,
-        linkedin,
-        address2,
-        address3,
-        position2
-      `)
-      .eq('id', id)
-      .limit(1);
-
-    if (error) throw error;
-    const rawSponsor = Array.isArray(data) ? data[0] : data;
-    const sponsor = rawSponsor
-      ? {
-        ...rawSponsor,
-        ContactNumber1: rawSponsor.ContactNumber1 || null,
-        email_id1: rawSponsor.email_id1 || null,
-        X: rawSponsor.X || null
-      }
-      : null;
+    const params = {};
+    const normalizedTrustId = normalizeTrustId(trustId);
+    if (normalizedTrustId) params.trust_id = normalizedTrustId;
+    const response = await api.get(`/sponsors/${id}`, { params });
+    const payload = response?.data || {};
+    const sponsor = payload?.data || null;
     return { success: true, data: sponsor ? [sponsor] : [] };
   } catch (error) {
     console.error('Error fetching sponsor:', error);
@@ -1335,5 +1237,6 @@ export const preloadCommonData = async () => {
     return {};
   }
 };
+
 
 

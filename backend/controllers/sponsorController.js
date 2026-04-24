@@ -1,41 +1,303 @@
 import { supabase } from '../config/supabase.js';
 
-// Get all active sponsors
+const CACHE_TTL_MS = 120 * 1000;
+const DEFAULT_CAROUSEL_LIMIT = 6;
+const DEFAULT_LIST_LIMIT = 10;
+const MAX_LIMIT = 100;
+const SPONSOR_DATE_TIMEZONE = process.env.SPONSOR_DATE_TIMEZONE || 'Asia/Kolkata';
+
+const sponsorCache = new Map();
+const sponsorInFlight = new Map();
+
+const sanitizeId = (value) => {
+  if (value === null || value === undefined) return null;
+  const trimmed = String(value).trim();
+  return trimmed || null;
+};
+
+const toPositiveInt = (value, fallback) => {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
+  return Math.floor(parsed);
+};
+
+const getTodayLocalYmd = () => {
+  const formatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone: SPONSOR_DATE_TIMEZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  });
+  return formatter.format(new Date());
+};
+
+const toYmdOnly = (value) => {
+  if (value === null || value === undefined) return null;
+  const raw = String(value).trim();
+  if (!raw) return null;
+  const ymdMatch = raw.match(/^(\d{4}-\d{2}-\d{2})/);
+  if (ymdMatch) return ymdMatch[1];
+  const date = new Date(raw);
+  if (Number.isNaN(date.getTime())) return null;
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+const isDateValidForToday = (row, todayYmd) => {
+  const startYmd = toYmdOnly(row?.start_date);
+  const endYmd = toYmdOnly(row?.end_date);
+  const startOk = Boolean(startYmd) && startYmd <= todayYmd;
+  const endOk = !endYmd || endYmd >= todayYmd;
+  return startOk && endOk;
+};
+
+const isRowActive = (row) => {
+  const value = row?.is_active;
+  if (value === undefined || value === null) return true;
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'number') return value === 1;
+  const normalized = String(value).trim().toLowerCase();
+  if (!normalized) return true;
+  return !['false', '0', 'no', 'inactive'].includes(normalized);
+};
+
+const makeCacheKey = ({ trustId, today, view, page, limit, offset, all }) =>
+  `${trustId || 'none'}|${today || 'no-date'}|${view}|${page}|${limit}|${offset}|${all ? 'all' : 'paged'}`;
+
+const readCache = (key) => {
+  const entry = sponsorCache.get(key);
+  if (!entry) return null;
+  if (Date.now() - entry.ts > CACHE_TTL_MS) {
+    sponsorCache.delete(key);
+    return null;
+  }
+  return entry.data;
+};
+
+const writeCache = (key, data) => {
+  sponsorCache.set(key, { ts: Date.now(), data });
+};
+
+const getOrCompute = async (key, compute) => {
+  const cached = readCache(key);
+  if (cached) return { ...cached, _cached: true };
+
+  const running = sponsorInFlight.get(key);
+  if (running) return running;
+
+  const promise = (async () => {
+    try {
+      const result = await compute();
+      writeCache(key, result);
+      return { ...result, _cached: false };
+    } finally {
+      sponsorInFlight.delete(key);
+    }
+  })();
+
+  sponsorInFlight.set(key, promise);
+  return promise;
+};
+
+const clearSponsorCaches = () => {
+  sponsorCache.clear();
+  sponsorInFlight.clear();
+};
+
+const pruneStaleSponsorCaches = (today) => {
+  const todayMarker = `|${today || 'no-date'}|`;
+  for (const key of sponsorCache.keys()) {
+    if (!key.includes(todayMarker)) {
+      sponsorCache.delete(key);
+    }
+  }
+  for (const key of sponsorInFlight.keys()) {
+    if (!key.includes(todayMarker)) {
+      sponsorInFlight.delete(key);
+    }
+  }
+};
+
+const fetchSponsorFlashRowsForTrust = async (trustId) => {
+  const { data, error } = await supabase
+    .from('sponsor_flash')
+    // Select all columns to stay compatible with mixed schemas.
+    .select('*')
+    .eq('trust_id', trustId)
+    .order('start_date', { ascending: true, nullsFirst: true })
+    .order('created_at', { ascending: true })
+    .order('id', { ascending: true });
+  if (error) throw error;
+  return Array.isArray(data) ? data : [];
+};
+
+const resolveTrustId = async (trustIdInput, trustNameInput) => {
+  const trustId = sanitizeId(trustIdInput);
+  if (trustId) return trustId;
+  const trustName = String(trustNameInput || '').trim();
+  if (!trustName) return null;
+
+  const { data, error } = await supabase
+    .from('Trust')
+    .select('id')
+    .ilike('name', trustName)
+    .limit(1);
+
+  if (error) throw error;
+  return sanitizeId(Array.isArray(data) ? data[0]?.id : data?.id);
+};
+
+const buildSponsorPayload = async ({ trustId, today, view, page, limit, offset, all }) => {
+  const allTrustRows = await fetchSponsorFlashRowsForTrust(trustId);
+  const validRows = allTrustRows.filter((row) => isRowActive(row) && isDateValidForToday(row, today));
+
+  const uniqueSponsorIds = [];
+  const seen = new Set();
+  for (const row of validRows) {
+    const sid = sanitizeId(row?.sponsor_id);
+    if (!sid || seen.has(sid)) continue;
+    seen.add(sid);
+    uniqueSponsorIds.push(sid);
+  }
+
+  const pageNo = toPositiveInt(page, 1);
+  const safeLimit = Math.min(toPositiveInt(limit, view === 'carousel' ? DEFAULT_CAROUSEL_LIMIT : DEFAULT_LIST_LIMIT), MAX_LIMIT);
+  const rangeFrom = Number.isFinite(Number(offset)) ? Math.max(0, Math.floor(Number(offset))) : (pageNo - 1) * safeLimit;
+  const rangeTo = rangeFrom + safeLimit;
+  const pagedSponsorIds = all ? uniqueSponsorIds : uniqueSponsorIds.slice(rangeFrom, rangeTo);
+
+  let sponsorsById = {};
+  if (pagedSponsorIds.length > 0) {
+    const { data: sponsorRows, error: sponsorError } = await supabase
+      .from('sponsors')
+      // Schema-safe read to avoid 500 when optional columns differ across environments.
+      .select('*')
+      .in('id', pagedSponsorIds);
+
+    if (sponsorError) throw sponsorError;
+
+    sponsorsById = (Array.isArray(sponsorRows) ? sponsorRows : []).reduce((acc, sponsor) => {
+      const sid = sanitizeId(sponsor?.id);
+      if (sid && isRowActive(sponsor)) acc[sid] = sponsor;
+      return acc;
+    }, {});
+  }
+
+  const flashBySponsorId = {};
+  for (const row of validRows) {
+    const sid = sanitizeId(row?.sponsor_id);
+    if (sid && !flashBySponsorId[sid]) flashBySponsorId[sid] = row;
+  }
+
+  const data = pagedSponsorIds
+    .map((sid) => {
+      const sponsor = sponsorsById[sid];
+      const flash = flashBySponsorId[sid];
+      if (!sponsor || !flash) return null;
+      return {
+        ...sponsor,
+        flash_id: flash.id,
+        sponsor_id: sid,
+        trust_id: flash.trust_id,
+        duration_seconds: Number(flash.duration_seconds) > 0 ? Number(flash.duration_seconds) : 5,
+        start_date: flash.start_date ?? null,
+        end_date: flash.end_date ?? null,
+        flash_created_at: flash.created_at ?? null
+      };
+    })
+    .filter(Boolean);
+
+  return {
+    data,
+    hasMore: all ? false : uniqueSponsorIds.length > rangeTo,
+    debug: {
+      trustId,
+      today,
+      counts: {
+        trustRows: allTrustRows.length,
+        validDateRows: validRows.length,
+        uniqueSponsorIds: uniqueSponsorIds.length,
+        pagedSponsorIds: pagedSponsorIds.length,
+        joinedSponsors: Object.keys(sponsorsById).length,
+        finalRows: data.length
+      },
+      filters: {
+        byTrust: true,
+        activeOnly: true,
+        dateWindowOnly: true
+      }
+    }
+  };
+};
+
+// Public sponsor feed (strict trust + date-window logic)
 export const getSponsors = async (req, res) => {
   try {
-    const { trust_id: trustId } = req.query;
+    const {
+      trust_id: trustIdInput,
+      trust_name: trustNameInput,
+      view: rawView,
+      page,
+      limit,
+      offset,
+      all: allRaw
+    } = req.query;
 
-    let query = supabase
-      .from('sponsors')
-      .select('*')
-      .eq('is_active', true)
-      .order('priority', { ascending: true });
-
-    if (trustId) {
-      query = query.eq('trust_id', trustId);
-    }
-
-    const { data, error } = await query;
-
-    if (error) {
-      console.error('Error fetching sponsors:', error);
-      return res.status(500).json({
-        success: false,
-        message: 'Failed to fetch sponsors',
-        error: error.message
+    const trustId = await resolveTrustId(trustIdInput, trustNameInput);
+    if (!trustId) {
+      return res.status(200).json({
+        success: true,
+        data: [],
+        count: 0,
+        hasMore: false,
+        debug: { reason: 'No trust_id resolved' }
       });
     }
 
-    res.json({
+    const view = String(rawView || 'carousel').toLowerCase() === 'list' ? 'list' : 'carousel';
+    const all = String(allRaw || '').toLowerCase() === 'true';
+    const pageNo = toPositiveInt(page, 1);
+    const pageLimit = toPositiveInt(limit, view === 'carousel' ? DEFAULT_CAROUSEL_LIMIT : DEFAULT_LIST_LIMIT);
+    const offsetNo = Number.isFinite(Number(offset)) ? Math.max(0, Math.floor(Number(offset))) : null;
+    const today = getTodayLocalYmd();
+    pruneStaleSponsorCaches(today);
+    const cacheKey = makeCacheKey({
+      trustId,
+      today,
+      view,
+      page: pageNo,
+      limit: pageLimit,
+      offset: offsetNo === null ? 'auto' : offsetNo,
+      all
+    });
+
+    const result = await getOrCompute(cacheKey, async () =>
+      buildSponsorPayload({
+        trustId,
+        today,
+        view,
+        page: pageNo,
+        limit: pageLimit,
+        offset: offsetNo,
+        all
+      })
+    );
+
+    return res.status(200).json({
       success: true,
-      data: data || [],
-      count: data?.length || 0
+      data: result.data || [],
+      count: Array.isArray(result.data) ? result.data.length : 0,
+      hasMore: Boolean(result.hasMore),
+      cached: Boolean(result._cached),
+      debug: result.debug || null
     });
   } catch (error) {
     console.error('Error in getSponsors:', error);
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
-      message: 'Internal server error',
+      message: 'Failed to fetch sponsors',
       error: error.message
     });
   }
@@ -77,34 +339,48 @@ export const getAllSponsors = async (req, res) => {
 export const getSponsorById = async (req, res) => {
   try {
     const { id } = req.params;
-    const { trust_id: trustId } = req.query;
+    const { trust_id: trustIdInput, trust_name: trustNameInput } = req.query;
+    const trustId = await resolveTrustId(trustIdInput, trustNameInput);
 
-    let query = supabase
+    const { data, error } = await supabase
       .from('sponsors')
       .select('*')
       .eq('id', id)
-      .eq('is_active', true);
+      .maybeSingle();
 
-    if (trustId) {
-      query = query.eq('trust_id', trustId);
-    }
-
-    const { data, error } = await query.single();
-
-    if (error) {
-      console.error('Error fetching sponsor:', error);
-      return res.status(500).json({
-        success: false,
-        message: 'Failed to fetch sponsor',
-        error: error.message
-      });
-    }
+    if (error) throw error;
 
     if (!data) {
       return res.status(404).json({
         success: false,
         message: 'Sponsor not found'
       });
+    }
+
+    if (!isRowActive(data)) {
+      return res.status(404).json({
+        success: false,
+        message: 'Sponsor not found'
+      });
+    }
+
+    if (trustId) {
+      const { data: flashRows, error: flashError } = await supabase
+        .from('sponsor_flash')
+        .select('*')
+        .eq('trust_id', trustId)
+        .eq('sponsor_id', id);
+
+      if (flashError) throw flashError;
+
+      const today = getTodayLocalYmd();
+      const validRows = (Array.isArray(flashRows) ? flashRows : []).filter((row) => isRowActive(row) && isDateValidForToday(row, today));
+      if (validRows.length === 0) {
+        return res.status(404).json({
+          success: false,
+          message: 'Sponsor not found for current trust/date'
+        });
+      }
     }
 
     res.json({
@@ -159,7 +435,8 @@ export const addSponsor = async (req, res) => {
       });
     }
 
-    res.status(201).json({
+    clearSponsorCaches();
+    return res.status(201).json({
       success: true,
       message: 'Sponsor added successfully',
       data: data
@@ -181,11 +458,11 @@ export const updateSponsor = async (req, res) => {
     const { name, position, positions, about, photo_url, priority, is_active, updated_by = 'admin' } = req.body;
 
     const updateData = {};
-    if (name !== undefined) updateData.name = name.trim();
-    if (position !== undefined) updateData.position = position.trim();
+    if (name !== undefined) updateData.name = String(name || '').trim();
+    if (position !== undefined) updateData.position = String(position || '').trim();
     if (positions !== undefined) updateData.positions = positions;
-    if (about !== undefined) updateData.about = about.trim();
-    if (photo_url !== undefined) updateData.photo_url = photo_url.trim();
+    if (about !== undefined) updateData.about = about ? String(about).trim() : null;
+    if (photo_url !== undefined) updateData.photo_url = photo_url ? String(photo_url).trim() : null;
     if (priority !== undefined) updateData.priority = parseInt(priority);
     if (is_active !== undefined) updateData.is_active = Boolean(is_active);
     updateData.updated_by = updated_by;
@@ -214,7 +491,8 @@ export const updateSponsor = async (req, res) => {
       });
     }
 
-    res.json({
+    clearSponsorCaches();
+    return res.json({
       success: true,
       message: 'Sponsor updated successfully',
       data: data
@@ -248,7 +526,8 @@ export const deleteSponsor = async (req, res) => {
       });
     }
 
-    res.json({
+    clearSponsorCaches();
+    return res.json({
       success: true,
       message: 'Sponsor deleted successfully'
     });

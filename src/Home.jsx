@@ -35,6 +35,8 @@ import { applyOpacity } from './utils/colorUtils';
 const DEFAULT_TRUST_NAME = import.meta.env.VITE_DEFAULT_TRUST_NAME || 'Mahila Mandal';
 const DEFAULT_TRUST_LOGO = '/new_logo.png';
 const SPONSOR_CHUNK_SIZE = sponsorConfig.CAROUSEL_BATCH_SIZE;
+const getInitialSponsorTrustId = () =>
+  localStorage.getItem('selected_trust_id') || import.meta.env.VITE_DEFAULT_TRUST_ID || '';
 
 const buildNotificationContentKey = (notification) => {
   const title = String(notification?.title || '').trim().toLowerCase();
@@ -249,25 +251,35 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
     return [];
   });
 
+  const initialSponsorTrustId = getInitialSponsorTrustId();
+  const initialSponsorOrder = initialSponsorTrustId ? readSponsorOrder(initialSponsorTrustId) : [];
+  const initialSponsorProgress = initialSponsorTrustId ? readCarouselProgress(initialSponsorTrustId) : {
+    sponsorBatchesLoaded: [],
+    hasMoreSponsors: false
+  };
+
   // Sponsors: normalized cache-first state (order + byId, no index-based mapping to data)
   const [sponsorsById, setSponsorsById] = useState(() => {
-    const trustId = localStorage.getItem('selected_trust_id') || import.meta.env.VITE_DEFAULT_TRUST_ID || '';
-    return trustId ? readSponsorsById(trustId) : {};
+    return initialSponsorTrustId ? readSponsorsById(initialSponsorTrustId) : {};
   });
-  const [sponsorOrder, setSponsorOrder] = useState(() => {
-    const trustId = localStorage.getItem('selected_trust_id') || import.meta.env.VITE_DEFAULT_TRUST_ID || '';
-    return trustId ? readSponsorOrder(trustId) : [];
-  });
-  const [isSponsorsLoading, setIsSponsorsLoading] = useState(sponsorOrder.length === 0);
+  const [sponsorOrder, setSponsorOrder] = useState(initialSponsorOrder);
+  const [isSponsorsLoading, setIsSponsorsLoading] = useState(initialSponsorOrder.length === 0);
   const [isCarouselBatchLoading, setIsCarouselBatchLoading] = useState(false);
-  const [sponsorFetchSettledTrustId, setSponsorFetchSettledTrustId] = useState('');
-  const [loadedBatchCount, setLoadedBatchCount] = useState(0);
-  const [hasMoreSponsorBatches, setHasMoreSponsorBatches] = useState(true);
-  const [isCarouselReady, setIsCarouselReady] = useState(sponsorOrder.length > 0);
+  const [sponsorFetchSettledTrustId, setSponsorFetchSettledTrustId] = useState(
+    initialSponsorOrder.length > 0 ? initialSponsorTrustId : ''
+  );
+  const [loadedBatchCount, setLoadedBatchCount] = useState(
+    Array.isArray(initialSponsorProgress.sponsorBatchesLoaded) ? initialSponsorProgress.sponsorBatchesLoaded.length : 0
+  );
+  const [hasMoreSponsorBatches, setHasMoreSponsorBatches] = useState(
+    Boolean(initialSponsorProgress.hasMoreSponsors)
+  );
+  const [isCarouselReady, setIsCarouselReady] = useState(initialSponsorOrder.length > 0);
   const [sponsorIndex, setSponsorIndex] = useState(0);
   const sponsorTouchStartRef = useRef(null);
   const sponsorTouchEndRef = useRef(null);
   const sponsorListPreloadRef = useRef({});
+  const sponsorBootstrapInFlightRef = useRef('');
   const sponsors = useMemo(
     () => sponsorOrder.map((id) => sponsorsById[id]).filter(Boolean),
     [sponsorOrder, sponsorsById]
@@ -919,8 +931,17 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
       return;
     }
 
+    if (sponsorBootstrapInFlightRef.current === trustId) {
+      return;
+    }
+    sponsorBootstrapInFlightRef.current = trustId;
+
     const cachedFirstBatch = getCachedCarouselBatch(trustId, 0);
-    if (cachedFirstBatch.sponsors.length > 0) {
+    const cachedOrder = readSponsorOrder(trustId);
+    const hasAnyCachedSponsors =
+      cachedFirstBatch.sponsors.length > 0 ||
+      (Array.isArray(cachedOrder) && cachedOrder.length > 0);
+    if (hasAnyCachedSponsors) {
       syncSponsorStoreSnapshot(trustId);
       setIsSponsorsLoading(false);
       setSponsorFetchSettledTrustId(trustId);
@@ -929,66 +950,92 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
       setIsCarouselReady(false);
     }
 
-    preloadCarouselBatchImages({ trustId, batchIndex: 0 })
-      .then((firstBatch) => {
-        if (!isActive) return;
-        syncSponsorStoreSnapshot(trustId);
-        const incomingSponsors = Array.isArray(firstBatch?.sponsors) ? firstBatch.sponsors : [];
-        const currentOrder = readSponsorOrder(trustId);
-        if (incomingSponsors.length > 0 && (!Array.isArray(currentOrder) || currentOrder.length === 0)) {
-          const byId = {};
-          const order = [];
-          for (const sponsor of incomingSponsors) {
-            const id = sponsor?.id ? String(sponsor.id).trim() : '';
-            if (!id) continue;
-            byId[id] = sponsor;
-            order.push(id);
-          }
-          if (order.length > 0) {
-            console.error('[SponsorFlash][HomeMismatch] API returned sponsors but store snapshot was empty. Hydrating UI from incoming batch.', {
-              trustId,
-              incomingCount: incomingSponsors.length,
-              incomingIds: order
-            });
-            setSponsorsById(byId);
-            setSponsorOrder(order);
-            setIsCarouselReady(true);
-          }
-        }
-        const currentById = readSponsorsById(trustId);
-        const currentByIdCount = currentById && typeof currentById === 'object' ? Object.keys(currentById).length : 0;
-        if (incomingSponsors.length > 0 && currentByIdCount === 0) {
-          const byId = {};
-          const order = Array.isArray(currentOrder) ? [...currentOrder] : [];
-          for (const sponsor of incomingSponsors) {
-            const id = sponsor?.id ? String(sponsor.id).trim() : '';
-            if (!id) continue;
-            byId[id] = sponsor;
-            if (!order.includes(id)) order.push(id);
-          }
-          if (Object.keys(byId).length > 0) {
-            setSponsorsById(byId);
-            setSponsorOrder(order);
-            setIsCarouselReady(true);
-          }
-        }
-        setSponsorIndex(0);
-        setIsSponsorsLoading(false);
-        setSponsorFetchSettledTrustId(trustId);
-
-        // Next batches are fetched by the progressive loader effect.
-      })
-      .catch((err) => {
-        console.error('Error loading sponsors:', err);
-        if (!cachedFirstBatch.sponsors.length) {
+    const loadInitialSponsorBatch = (attempt = 0) => {
+      preloadCarouselBatchImages({ trustId, batchIndex: 0 })
+        .then((firstBatch) => {
+          if (!isActive) return;
           syncSponsorStoreSnapshot(trustId);
-        }
-        setIsSponsorsLoading(false);
-        setSponsorFetchSettledTrustId(trustId);
-      });
+          const incomingSponsors = Array.isArray(firstBatch?.sponsors) ? firstBatch.sponsors : [];
+          const currentOrder = readSponsorOrder(trustId);
+          if (incomingSponsors.length > 0 && (!Array.isArray(currentOrder) || currentOrder.length === 0)) {
+            const byId = {};
+            const order = [];
+            for (const sponsor of incomingSponsors) {
+              const id = sponsor?.id ? String(sponsor.id).trim() : '';
+              if (!id) continue;
+              byId[id] = sponsor;
+              order.push(id);
+            }
+            if (order.length > 0) {
+              console.error('[SponsorFlash][HomeMismatch] API returned sponsors but store snapshot was empty. Hydrating UI from incoming batch.', {
+                trustId,
+                incomingCount: incomingSponsors.length,
+                incomingIds: order
+              });
+              setSponsorsById(byId);
+              setSponsorOrder(order);
+              setIsCarouselReady(true);
+            }
+          }
+          const currentById = readSponsorsById(trustId);
+          const currentByIdCount = currentById && typeof currentById === 'object' ? Object.keys(currentById).length : 0;
+          if (incomingSponsors.length > 0 && currentByIdCount === 0) {
+            const byId = {};
+            const order = Array.isArray(currentOrder) ? [...currentOrder] : [];
+            for (const sponsor of incomingSponsors) {
+              const id = sponsor?.id ? String(sponsor.id).trim() : '';
+              if (!id) continue;
+              byId[id] = sponsor;
+              if (!order.includes(id)) order.push(id);
+            }
+            if (Object.keys(byId).length > 0) {
+              setSponsorsById(byId);
+              setSponsorOrder(order);
+              setIsCarouselReady(true);
+            }
+          }
+          setSponsorIndex(0);
+          setIsSponsorsLoading(false);
+          setSponsorFetchSettledTrustId(trustId);
+          sponsorBootstrapInFlightRef.current = '';
+
+          // Next batches are fetched by the progressive loader effect.
+        })
+        .catch((err) => {
+          console.error('Error loading sponsors:', err);
+          if (!isActive) return;
+
+          if (!hasAnyCachedSponsors && attempt < 2) {
+            const retryDelayMs = 700 * (attempt + 1);
+            setTimeout(() => {
+              if (!isActive) return;
+              loadInitialSponsorBatch(attempt + 1);
+            }, retryDelayMs);
+            return;
+          }
+
+          if (!hasAnyCachedSponsors) {
+            syncSponsorStoreSnapshot(trustId);
+            // Keep skeleton instead of showing a false "no sponsor" empty state on transient failures.
+            setIsSponsorsLoading(true);
+            setSponsorFetchSettledTrustId('');
+            sponsorBootstrapInFlightRef.current = '';
+            return;
+          }
+
+          setIsSponsorsLoading(false);
+          setSponsorFetchSettledTrustId(trustId);
+          sponsorBootstrapInFlightRef.current = '';
+        });
+    };
+
+    loadInitialSponsorBatch(0);
 
     return () => {
       isActive = false;
+      if (sponsorBootstrapInFlightRef.current === trustId) {
+        sponsorBootstrapInFlightRef.current = '';
+      }
     };
   }, [selectedTrustId, trustInfo?.id]);
 
@@ -1072,7 +1119,8 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
   const hasSettledSponsorsForCurrentTrust =
     Boolean(currentSponsorTrustId) &&
     sponsorFetchSettledTrustId === currentSponsorTrustId;
-  const isSponsorSectionLoading = !hasSettledSponsorsForCurrentTrust || isSponsorsLoading;
+  const hasRenderableSponsors = sponsors.length > 0;
+  const isSponsorSectionLoading = !hasRenderableSponsors && (!hasSettledSponsorsForCurrentTrust || isSponsorsLoading);
   const sponsorDebugInfo = currentSponsorTrustId ? getSponsorDebugInfo(currentSponsorTrustId) : null;
   const sponsorEmptyDebugReason = !isSponsorSectionLoading && sponsors.length === 0
     ? sponsorDebugInfo?.reason || ''
@@ -1082,6 +1130,7 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
     : 0;
   const visibleSponsors = sponsors.slice(sponsorChunkStart, sponsorChunkStart + SPONSOR_CHUNK_SIZE);
   const activeVisibleSponsorIndex = sponsorIndex - sponsorChunkStart;
+  const sponsorSkeletonRows = [0, 1, 2];
 
   useEffect(() => {
     if (isSponsorSectionLoading) return;
@@ -1109,16 +1158,13 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
     const trustId = currentSponsorTrustId;
     if (!trustId) return;
     if (sponsorListPreloadRef.current[trustId]) return;
-    if (isSponsorsLoading) return;
-    if (!isCarouselReady) return;
-    if (sponsors.length < SPONSOR_CHUNK_SIZE) return;
 
     const timer = setTimeout(() => {
-      preloadSponsorListFirstPage(trustId);
+      preloadSponsorListFirstPage(trustId).catch(() => {});
       sponsorListPreloadRef.current[trustId] = true;
-    }, 1800);
+    }, 250);
     return () => clearTimeout(timer);
-  }, [currentSponsorTrustId, isSponsorsLoading, isCarouselReady, sponsors.length]);
+  }, [currentSponsorTrustId]);
 
   // Gallery trust-sync and reload are handled centrally in GalleryContext.
 
@@ -2076,7 +2122,7 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
                   </div>
                 )}
               </div>
-              ) : (
+              ) : isSponsorSectionLoading ? (
                 <div
                   className="relative overflow-hidden rounded-3xl"
                   style={{
@@ -2110,16 +2156,60 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
                       />
                       <div className="relative z-10 h-full flex items-center gap-4">
                         <div className="w-20 h-20 rounded-[1.2rem] animate-pulse flex-shrink-0" style={{ background: sponsorTheme.skeletonColor }} />
+                        <div className="flex-1 min-w-0 space-y-2.5">
+                          {sponsorSkeletonRows.map((row) => (
+                            <div
+                              key={`sponsor-skeleton-${row}`}
+                              className={`rounded-full animate-pulse ${row === 1 ? 'h-6 w-52' : row === 2 ? 'h-4 w-40' : 'h-4 w-32'}`}
+                              style={{ background: sponsorTheme.skeletonColor }}
+                            />
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div
+                  className="relative overflow-hidden rounded-3xl"
+                  style={{
+                    boxShadow: `0 8px 24px ${applyOpacity(theme.secondary, 0.07)}`
+                  }}
+                >
+                  <div
+                    className="absolute inset-0 pointer-events-none"
+                    style={{
+                      background: sponsorOverlayBackground,
+                    }}
+                  />
+                  <div
+                    className="relative rounded-3xl p-[1px]"
+                    style={{
+                      background: `linear-gradient(130deg, ${sponsorTheme.borderColor1}44 0%, ${sponsorTheme.borderColor2}33 40%, ${sponsorTheme.borderColor1}2E 100%)`,
+                    }}
+                  >
+                    <div
+                      className="relative rounded-3xl p-4 min-h-[168px] overflow-hidden"
+                      style={{
+                        background: applyOpacity(sponsorTheme.cardBgColor, sponsorTheme.cardBgOpacity),
+                        backdropFilter: 'blur(8px)',
+                      }}
+                    >
+                      <div
+                        className="absolute inset-0 pointer-events-none opacity-45"
+                        style={{
+                          background: `repeating-linear-gradient(135deg, transparent 0 13px, ${sponsorTheme.patternColor}44 13px 14px)`,
+                        }}
+                      />
+                      <div className="relative z-10 h-full flex items-center gap-4">
+                        <div className="w-20 h-20 rounded-[1.2rem] flex items-center justify-center flex-shrink-0" style={{ background: sponsorTheme.skeletonColor }}>
+                          <Star className="h-6 w-6" style={{ color: sponsorTheme.badgeTextColor }} />
+                        </div>
                         <div className="flex-1 min-w-0">
-                          <div className="h-4 w-28 rounded-full animate-pulse mb-2" style={{ background: sponsorTheme.skeletonColor }} />
-                          <div className="h-6 w-52 rounded-full animate-pulse mb-2.5" style={{ background: sponsorTheme.skeletonColor }} />
-                          <div className="h-4 w-36 rounded-full animate-pulse mb-3.5" style={{ background: sponsorTheme.skeletonColor }} />
-                          <p className="text-[12px] font-medium" style={{ color: sponsorTheme.emptyTextColor }}>
-                            {isSponsorSectionLoading
-                              ? 'Loading sponsors...'
-                              : 'No active sponsors available right now.'}
+                          <p className="text-[13px] font-semibold" style={{ color: sponsorTheme.emptyTextColor }}>
+                            No active sponsors available right now.
                           </p>
-                          {!isSponsorSectionLoading && !sponsors.length && import.meta.env.DEV && sponsorEmptyDebugReason && (
+                          {!sponsors.length && import.meta.env.DEV && sponsorEmptyDebugReason && (
                             <p className="text-[11px] mt-1 font-medium break-words" style={{ color: getThemeToken(theme, 'typography.component_overrides.error_text', theme.primary) }}>
                               Debug: {sponsorEmptyDebugReason}
                             </p>

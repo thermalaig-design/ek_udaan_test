@@ -53,6 +53,7 @@ import {
 
 const LAST_THEME_CACHE_KEY = 'last_theme_cache_v2';
 const LEGACY_LAST_THEME_CACHE_KEY = 'last_theme_cache_v1';
+const getPersistTrustCacheIndexKey = (trustId) => `theme_cache_persist_trust_v2_${trustId}`;
 
 const safeParse = (value) => {
   try {
@@ -81,6 +82,15 @@ const readBootThemeCache = (trustId) => {
       return legacyEntry.theme;
     }
     return legacyEntry;
+  }
+
+  const persistIndexKey = getPersistTrustCacheIndexKey(normalizedTrustId);
+  const persistEntryKey = localStorage.getItem(persistIndexKey);
+  if (persistEntryKey) {
+    const parsedPersist = safeParse(localStorage.getItem(persistEntryKey) || '');
+    if (parsedPersist?.theme && typeof parsedPersist.theme === 'object') {
+      return parsedPersist.theme;
+    }
   }
 
   const lastTheme = safeParse(localStorage.getItem(LAST_THEME_CACHE_KEY) || '')

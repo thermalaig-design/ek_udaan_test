@@ -105,13 +105,18 @@ export function readNoticeboardProgress(trustId) {
 }
 
 export function getNoticeboardSnapshot(trustId) {
+  const memberId = resolveCurrentMemberId();
+  const activeScope = readJson(KEY_ACTIVE_SCOPE(trustId, memberId), null);
+  const hasCachedData = Boolean(activeScope);
   const byId = readNoticesById(trustId);
   const order = readNoticeOrder(trustId);
   const state = readNoticeboardProgress(trustId);
+  const notices = order.map((id) => byId[id]).filter(Boolean);
   return {
     noticesById: byId,
     noticeOrder: order,
-    notices: order.map((id) => byId[id]).filter(Boolean),
+    notices,
+    hasCachedData,          // true = scope exists in cache, false = never fetched
     hasMoreNotices: Boolean(state.hasMoreNotices),
     isNoticeboardLoading: Boolean(state.isNoticeboardLoading),
     nextPage: Number(state.nextPage) || 1
@@ -343,6 +348,21 @@ export function clearNoticeboardCache(trustId) {
     }
     localStorage.removeItem(KEY_CONTEXT(normalizedTrustId, memberId));
     localStorage.removeItem(KEY_ACTIVE_SCOPE(normalizedTrustId, memberId));
+  } catch {
+    // ignore
+  }
+}
+
+/** Wipes ALL noticeboard-related keys from localStorage (for debugging / hard reset) */
+export function clearAllNoticeboardCache() {
+  try {
+    const keysToRemove = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && (k.startsWith('nb_') || k.startsWith('noticeboard'))) keysToRemove.push(k);
+    }
+    keysToRemove.forEach((k) => localStorage.removeItem(k));
+    console.log('[Noticeboard] Cleared', keysToRemove.length, 'cache keys');
   } catch {
     // ignore
   }

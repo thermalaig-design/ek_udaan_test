@@ -7,7 +7,8 @@ import {
   getNoticeboardSnapshot,
   loadNoticeboardPage,
   noticeboardConfig,
-  readNoticeboardProgress
+  readNoticeboardProgress,
+  clearAllNoticeboardCache
 } from './services/noticeboardStore';
 
 const LEGACY_ATTACHMENT_SEPARATOR = '||::||';
@@ -189,6 +190,7 @@ const Notices = ({ onNavigate }) => {
       const trustId = localStorage.getItem('selected_trust_id') || null;
       const trustName = localStorage.getItem('selected_trust_name') || null;
       setSelectedTrustId(trustId || '');
+
       if (!trustId) {
         setNotices([]);
         setHasMoreNotices(false);
@@ -196,16 +198,31 @@ const Notices = ({ onNavigate }) => {
         return;
       }
 
+      // Show cached notices immediately if available (avoids blank flash)
       const snapshot = getNoticeboardSnapshot(trustId);
-      if (!forceRefresh && Array.isArray(snapshot.notices) && snapshot.notices.length > 0) {
+      if (!forceRefresh && snapshot.hasCachedData && Array.isArray(snapshot.notices) && snapshot.notices.length > 0) {
         setNotices(snapshot.notices);
         setHasMoreNotices(Boolean(snapshot.hasMoreNotices));
         setLoading(false);
       } else {
+        // No valid cache or forceRefresh → show spinner
         setLoading(true);
       }
 
       await loadPage({ trustId, trustName, page: 1, forceRefresh });
+
+      // Always sync from store after fetch to pick up latest data
+      syncFromStore(trustId);
+
+      // If still empty after first fetch, bust cache and retry once
+      if (!forceRefresh) {
+        const afterSnapshot = getNoticeboardSnapshot(trustId);
+        if (!Array.isArray(afterSnapshot.notices) || afterSnapshot.notices.length === 0) {
+          console.log('[Noticeboard] Empty result after first fetch, retrying with forceRefresh=true');
+          await loadPage({ trustId, trustName, page: 1, forceRefresh: true });
+          syncFromStore(trustId);
+        }
+      }
     } catch (err) {
       setError(err?.message || 'Failed to fetch notices');
       setNotices([]);
@@ -453,6 +470,16 @@ const Notices = ({ onNavigate }) => {
               </div>
               <h3 className="text-gray-800 font-bold">No active notices right now</h3>
               <p className="text-gray-500 text-sm mt-1">You're all caught up.</p>
+              <button
+                onClick={() => {
+                  clearAllNoticeboardCache();
+                  loadNotices({ forceRefresh: true });
+                }}
+                className="mt-5 px-5 py-2 rounded-xl text-sm font-semibold transition-all active:scale-95"
+                style={{ background: 'var(--app-accent-bg)', color: 'var(--brand-navy, #1e3a5f)' }}
+              >
+                🔄 Refresh Notices
+              </button>
             </div>
           )}
 
