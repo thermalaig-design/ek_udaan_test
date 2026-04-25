@@ -20,6 +20,7 @@ import FacilityDetail from './FacilityDetail';
 import Events from './Events';
 import EventDetail from './EventDetail';
 import Donation from './Donation';
+import DonationForm from './DonationForm';
 import Notifications from './Notifications';
 import HealthcareTrusteeDirectory from './HealthcareTrusteeDirectory';
 import MemberDetails from './MemberDetails';
@@ -750,6 +751,7 @@ const HospitalTrusteeApp = () => {
         'facilities': '/facilities',
         'events': '/events',
         'donation': '/donation',
+        'donation-form': '/donation-form',
         'notifications': '/notifications',
         'committee-members': '/committee-members',
         'sponsor-details': '/sponsor-details',
@@ -1012,6 +1014,16 @@ const HospitalTrusteeApp = () => {
             <ProtectedRoute>
               <FeatureGuard featureKey="feature_donation">
                 <Donation onNavigate={handleNavigate} />
+              </FeatureGuard>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/donation-form"
+          element={
+            <ProtectedRoute>
+              <FeatureGuard featureKey="feature_donation">
+                <DonationForm />
               </FeatureGuard>
             </ProtectedRoute>
           }

@@ -1477,6 +1477,42 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
     defaultTrust ||
     null;
 
+  const currentUser = useMemo(() => {
+    try {
+      const raw = localStorage.getItem('user');
+      return raw ? JSON.parse(raw) : null;
+    } catch {
+      return null;
+    }
+  }, [selectedTrustId, activeTrust?.id, userProfile?.name]);
+
+  const selectedTrustMembership = useMemo(() => {
+    const memberships = Array.isArray(currentUser?.hospital_memberships)
+      ? currentUser.hospital_memberships
+      : [];
+    const normalizedSelectedTrustId =
+      normalizeTrustId(selectedTrustId) ||
+      normalizeTrustId(activeTrust?.id) ||
+      normalizeTrustId(localStorage.getItem('selected_trust_id'));
+
+    if (!normalizedSelectedTrustId) return null;
+
+    return (
+      memberships.find((membership) =>
+        normalizeTrustId(membership?.trust_id || membership?.id) === normalizedSelectedTrustId &&
+        membership?.is_active !== false
+      ) ||
+      memberships.find((membership) =>
+        normalizeTrustId(membership?.trust_id || membership?.id) === normalizedSelectedTrustId
+      ) ||
+      null
+    );
+  }, [activeTrust?.id, currentUser?.hospital_memberships, selectedTrustId]);
+
+  const selectedTrustMemberLabel = String(selectedTrustMembership?.role || '').trim() || 'Registered Member';
+  const selectedTrustMemberBadge = String(selectedTrustMembership?.role || '').trim() || 'VIP Access';
+  const showSelectedTrustMemberBanner = Boolean(selectedTrustMembership?.trust_id || selectedTrustMembership?.id);
+
   const shouldShowTrustSelector = trustList.length > 0;
   const showTrustSelector = shouldShowTrustSelector;
   const surfaceColor = getThemeToken(theme, 'accent_bg', null)
@@ -1788,34 +1824,95 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
           </div>
         </div>
 
-        {/* Welcome strip */}
-        {userProfile?.name && (
+        {/* Welcome strip / member banner */}
+        {(userProfile?.name || showSelectedTrustMemberBanner) && (
           <div className="px-4 pb-3">
             <div
-              className="flex items-center gap-2.5 rounded-2xl px-3.5 py-2"
+              className="rounded-[22px] px-3.5 py-3"
               style={{
-                background: `linear-gradient(135deg, ${applyOpacity(theme.accent, 0.6)}, ${theme.accentBg})`,
-                border: `1px solid ${applyOpacity(theme.primary, 0.08)}`,
+                background: showSelectedTrustMemberBanner
+                  ? `linear-gradient(135deg, ${applyOpacity('#fff4c2', 0.98)} 0%, ${applyOpacity(theme.accent, 0.96)} 52%, ${applyOpacity(theme.accentBg, 0.98)} 100%)`
+                  : `linear-gradient(135deg, ${applyOpacity(theme.accent, 0.6)}, ${theme.accentBg})`,
+                border: `1px solid ${showSelectedTrustMemberBanner ? applyOpacity('#d4a017', 0.45) : applyOpacity(theme.primary, 0.08)}`,
+                boxShadow: showSelectedTrustMemberBanner
+                  ? `0 14px 32px ${applyOpacity('#d4a017', 0.18)}`
+                  : 'none',
               }}
             >
-              {userProfile.profilePhotoUrl ? (
-                <img
-                  src={userProfile.profilePhotoUrl}
-                  alt={userProfile.name}
-                  className="w-6 h-6 rounded-full object-cover flex-shrink-0"
-                  style={{ border: `1.5px solid ${theme.primary}` }}
-                />
-              ) : (
+              <div className="flex items-center justify-between gap-3">
                 <div
-                  className="w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-bold flex-shrink-0"
-                  style={{ background: appButtonBg, color: onPrimaryText }}
+                  className="flex items-center gap-2.5 min-w-0"
                 >
-                  {userProfile.name.charAt(0).toUpperCase()}
+                  {userProfile?.profilePhotoUrl ? (
+                    <img
+                      src={userProfile.profilePhotoUrl}
+                      alt={userProfile.name}
+                      className="w-8 h-8 rounded-full object-cover flex-shrink-0"
+                      style={{ border: `1.5px solid ${showSelectedTrustMemberBanner ? '#d4a017' : theme.primary}` }}
+                    />
+                  ) : (
+                    <div
+                      className="w-8 h-8 rounded-full flex items-center justify-center text-[12px] font-bold flex-shrink-0"
+                      style={{
+                        background: showSelectedTrustMemberBanner
+                          ? 'linear-gradient(135deg, #7c5a00 0%, #d4a017 100%)'
+                          : appButtonBg,
+                        color: showSelectedTrustMemberBanner ? '#fffdf5' : onPrimaryText
+                      }}
+                    >
+                      {(userProfile?.name || currentUser?.name || 'M').charAt(0).toUpperCase()}
+                    </div>
+                  )}
+
+                  <div className="min-w-0">
+                    {showSelectedTrustMemberBanner ? (
+                      <div className="flex items-center gap-2 mb-1 flex-wrap">
+                        <span
+                          className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-extrabold uppercase tracking-[0.18em]"
+                          style={{
+                            background: 'linear-gradient(135deg, #fff8db 0%, #ffe082 100%)',
+                            color: '#7c5200',
+                            border: '1px solid rgba(212, 160, 23, 0.35)',
+                          }}
+                        >
+                          <Crown className="h-3.5 w-3.5" />
+                          {selectedTrustMemberBadge}
+                        </span>
+                      </div>
+                    ) : null}
+
+                    {userProfile?.name ? (
+                      <p className="text-[12px] font-semibold truncate" style={{ color: headingColor }}>
+                        Welcome, <span className="font-extrabold">{userProfile.name}</span>
+                      </p>
+                    ) : null}
+
+                    {showSelectedTrustMemberBanner ? (
+                      <p className="text-[11px] font-semibold truncate" style={{ color: '#7b5b12' }}>
+                        {selectedTrustMemberLabel} of {activeTrust?.name || defaultTrust?.name || DEFAULT_TRUST_NAME}
+                        {selectedTrustMembership?.membership_number ? ` • ${selectedTrustMembership.membership_number}` : ''}
+                      </p>
+                    ) : null}
+                  </div>
                 </div>
-              )}
-              <p className="text-[12px] font-semibold truncate" style={{ color: headingColor }}>
-                Welcome, <span className="font-extrabold">{userProfile.name}</span>
-              </p>
+
+                {showSelectedTrustMemberBanner ? (
+                  <div
+                    className="flex-shrink-0 rounded-2xl px-3 py-2 text-right"
+                    style={{
+                      background: 'linear-gradient(135deg, rgba(124, 90, 0, 0.08) 0%, rgba(212, 160, 23, 0.18) 100%)',
+                      border: '1px solid rgba(212, 160, 23, 0.28)',
+                    }}
+                  >
+                    <p className="text-[9px] font-bold uppercase tracking-[0.2em]" style={{ color: '#8a6308' }}>
+                      Premium
+                    </p>
+                    <p className="text-[11px] font-extrabold" style={{ color: '#6f4d00' }}>
+                      Trust Member
+                    </p>
+                  </div>
+                ) : null}
+              </div>
             </div>
           </div>
         )}
