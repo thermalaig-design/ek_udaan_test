@@ -20,12 +20,44 @@ const removeLocalStorageByPrefix = (prefixes = []) => {
 const compactMembership = (membership = {}) => ({
   trust_id: membership?.trust_id || null,
   trust_name: membership?.trust_name || null,
+  trust_icon_url: membership?.trust_icon_url || null,
+  trust_remark: membership?.trust_remark || null,
   role: membership?.role || null,
   is_active: Boolean(membership?.is_active),
   member_id: membership?.member_id || membership?.members_id || null,
   members_id: membership?.members_id || membership?.member_id || null,
   membership_number: membership?.membership_number || membership?.['Membership number'] || null,
 });
+
+const normalizeTrustId = (value) => String(value || '').trim();
+
+export const getUserHospitalMemberships = (user = {}) =>
+  Array.isArray(user?.hospital_memberships) ? user.hospital_memberships : [];
+
+export const resolveSelectedTrustMembership = (user = {}, selectedTrustId = null) => {
+  const memberships = getUserHospitalMemberships(user);
+  if (!memberships.length) return null;
+
+  const normalizedSelectedTrustId = normalizeTrustId(selectedTrustId);
+  if (normalizedSelectedTrustId) {
+    const selectedTrustMatch =
+      memberships.find((membership) =>
+        normalizeTrustId(membership?.trust_id) === normalizedSelectedTrustId && membership?.is_active !== false
+      ) ||
+      memberships.find((membership) =>
+        normalizeTrustId(membership?.trust_id) === normalizedSelectedTrustId
+      );
+    if (selectedTrustMatch) return selectedTrustMatch;
+  }
+
+  return memberships.find((membership) => membership?.is_active && membership?.trust_id) ||
+    memberships.find((membership) => membership?.trust_id) ||
+    memberships[0] ||
+    null;
+};
+
+export const hasAnyTrustMembership = (user = {}) =>
+  getUserHospitalMemberships(user).some((membership) => Boolean(membership?.trust_id));
 
 export const compactUserForStorage = (user = {}) => {
   const memberships = Array.isArray(user?.hospital_memberships) ? user.hospital_memberships : [];
@@ -50,6 +82,16 @@ export const compactUserForStorage = (user = {}) => {
         name: user.primary_trust.name || null,
       }
       : null,
+    trust: user?.trust
+      ? {
+        id: user.trust.id || null,
+        name: user.trust.name || null,
+      }
+      : null,
+    type: user?.type || '',
+    isRegisteredMember: Boolean(user?.isRegisteredMember),
+    vip_status: user?.vip_status || null,
+    reg_member_id: user?.reg_member_id || null,
     hospital_memberships: compactMemberships,
   };
 };

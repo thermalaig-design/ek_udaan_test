@@ -5,6 +5,8 @@ import {
   AlertCircle, Building2, Hash, Tag, FileText, Loader2, Save
 } from 'lucide-react';
 import { useAppTheme } from './context/ThemeContext';
+import { applyOpacity } from './utils/colorUtils';
+import { getNavbarThemeStyles, getThemeToken } from './utils/themeUtils';
 
 // ─── Supabase helpers ──────────────────────────────────────────────────────
 
@@ -63,26 +65,11 @@ const deleteOtherMembership = async (id) => {
   if (error) throw error;
 };
 
-// ─── Styles — use CSS variables so theme updates automatically ────────────
-const colors = {
-  primary:   'var(--brand-red)',
-  secondary: 'var(--brand-navy)',
-  accent:    'var(--app-accent)',
-  bg:        'var(--app-page-bg)',
-  card: 'color-mix(in srgb, #ffffff 92%, var(--app-accent-bg))',
-  border: 'color-mix(in srgb, var(--brand-navy) 14%, transparent)',
-  muted: 'var(--body-text-color)',
-  success: 'color-mix(in srgb, var(--brand-red) 35%, #16a34a)',
-  successBg: 'color-mix(in srgb, var(--app-accent-bg) 65%, #DCFCE7)',
-  error: 'var(--brand-red-dark)',
-  errorBg: 'var(--brand-red-light)',
-};
-
 // ─── Small reusable components ─────────────────────────────────────────────
 
 const Label = ({ children }) => (
   <p style={{
-    fontSize: '11px', fontWeight: 700, color: colors.muted,
+    fontSize: '11px', fontWeight: 700, color: 'var(--body-text-color)',
     textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 5px'
   }}>{children}</p>
 );
@@ -90,7 +77,7 @@ const Label = ({ children }) => (
 const inputStyle = {
   width: '100%',
   padding: '11px 14px',
-  border: `1.5px solid ${colors.border}`,
+  border: '1.5px solid color-mix(in srgb, var(--brand-navy) 14%, transparent)',
   borderRadius: '12px',
   fontSize: '14px',
   fontFamily: "var(--font-family, 'Inter', sans-serif)",
@@ -111,16 +98,161 @@ const EMPTY_FORM = {
   remark: '',
 };
 
+const normalizeText = (value) => String(value || '').trim();
+
+const normalizeId = (value) => normalizeText(value).toLowerCase();
+
+const getStoredUser = () => {
+  try {
+    return JSON.parse(localStorage.getItem('user') || '{}');
+  } catch {
+    return {};
+  }
+};
+
+const TRUST_LINKS_CACHE_KEY_PREFIX = 'other_memberships_trust_links_v1_';
+const TRUST_LINKS_LAST_CACHE_KEY = 'other_memberships_trust_links_v1_last';
+
+const getTrustLinksCacheKey = (memberId) => `${TRUST_LINKS_CACHE_KEY_PREFIX}${normalizeText(memberId || 'anonymous')}`;
+
+const readTrustLinksCache = (memberId) => {
+  try {
+    const raw = localStorage.getItem(getTrustLinksCacheKey(memberId));
+    if (!raw) {
+      const fallback = localStorage.getItem(TRUST_LINKS_LAST_CACHE_KEY);
+      if (!fallback) return [];
+      const parsedFallback = JSON.parse(fallback);
+      return Array.isArray(parsedFallback) ? parsedFallback : [];
+    }
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+};
+
+const writeTrustLinksCache = (memberId, links) => {
+  try {
+    const safeLinks = JSON.stringify(Array.isArray(links) ? links : []);
+    localStorage.setItem(getTrustLinksCacheKey(memberId), safeLinks);
+    localStorage.setItem(TRUST_LINKS_LAST_CACHE_KEY, safeLinks);
+  } catch {
+    // Ignore cache write failures (quota/private mode)
+  }
+};
+
+const buildTrustLinksFromUserPayload = (parsedUser = {}) => {
+  const selectedTrustId = normalizeText(localStorage.getItem('selected_trust_id'));
+  const selectedTrustName = normalizeText(localStorage.getItem('selected_trust_name'));
+  const selectedTrustMembershipNo = normalizeText(
+    parsedUser?.['Membership number']
+    || parsedUser?.membership_number
+    || parsedUser?.membershipNumber
+  );
+
+  const hospitalMemberships = Array.isArray(parsedUser?.hospital_memberships)
+    ? parsedUser.hospital_memberships
+    : [];
+
+  const normalizedSelectedTrustId = normalizeId(selectedTrustId);
+  const merged = hospitalMemberships.map((hm, idx) => {
+    const trustId = normalizeText(hm?.trust_id);
+    const isCurrentTrust = normalizedSelectedTrustId && normalizeId(trustId) === normalizedSelectedTrustId;
+    const membershipNo = normalizeText(hm?.membership_number) || (isCurrentTrust ? selectedTrustMembershipNo : '');
+
+    return {
+      _key: hm.trust_id || `hm-${idx}`,
+      id: hm?.reg_id || hm?.id || hm?.trust_id || `hm-${idx}`,
+      trust_id: hm.trust_id || null,
+      Trust: {
+        id: hm.trust_id,
+        name: hm.trust_name,
+        icon_url: hm.trust_icon_url,
+      },
+      membership_no: membershipNo || '-',
+      location: null,
+      remark1: hm.trust_remark || null,
+      remark2: null,
+      is_active: hm.is_active !== false,
+      role: hm.role || null,
+      source: 'reg_members',
+      is_vip: true,
+      is_current_trust: isCurrentTrust,
+    };
+  });
+
+  const hasSelectedTrustCard = merged.some((item) => normalizeId(item?.trust_id) === normalizedSelectedTrustId);
+  if (!hasSelectedTrustCard && (selectedTrustId || selectedTrustName) && selectedTrustMembershipNo) {
+    merged.unshift({
+      _key: `selected-${selectedTrustId || selectedTrustName}`,
+      id: `selected-${selectedTrustId || selectedTrustName}`,
+      trust_id: selectedTrustId || null,
+      Trust: {
+        id: selectedTrustId || null,
+        name: selectedTrustName || 'Current Trust',
+        icon_url: null,
+      },
+      membership_no: selectedTrustMembershipNo,
+      location: null,
+      remark1: null,
+      remark2: null,
+      is_active: true,
+      role: null,
+      source: 'reg_members',
+      is_vip: true,
+      is_current_trust: true,
+    });
+  }
+
+  merged.sort((a, b) => Number(Boolean(b.is_current_trust)) - Number(Boolean(a.is_current_trust)));
+  return merged;
+};
+
+const areMembershipCollectionsEqual = (left = [], right = []) => {
+  if (left === right) return true;
+  if (!Array.isArray(left) || !Array.isArray(right)) return false;
+  if (left.length !== right.length) return false;
+
+  return JSON.stringify(left) === JSON.stringify(right);
+};
+
 
 
 const OtherMemberships = ({ onNavigate }) => {
   const navigate = useNavigate();
-  useAppTheme();
+  const theme = useAppTheme();
+  const navbarTheme = getNavbarThemeStyles(theme);
+  const bootUser = getStoredUser();
+  const bootMemberId = bootUser?.members_id || bootUser?.id || 'anonymous';
+  const bootTrustLinksFromUser = buildTrustLinksFromUserPayload(bootUser);
+  const bootTrustLinks = readTrustLinksCache(bootMemberId);
+  const initialTrustLinks = bootTrustLinksFromUser.length > 0 ? bootTrustLinksFromUser : bootTrustLinks;
+
+  const colors = {
+    primary: theme.primary || 'var(--brand-red)',
+    secondary: theme.secondary || 'var(--brand-navy)',
+    accent: theme.accent || 'var(--app-accent)',
+    accentBg: theme.accentBg || 'var(--app-accent-bg)',
+    bg: getThemeToken(theme, 'page_bg.background_color', 'var(--app-page-bg)'),
+    surface: 'var(--surface-color)',
+    card: `linear-gradient(180deg, ${applyOpacity('var(--surface-color)', 0.96)} 0%, ${applyOpacity(theme.accentBg || 'var(--app-accent-bg)', 0.72)} 100%)`,
+    cardInner: applyOpacity(theme.accentBg || 'var(--app-accent-bg)', 0.42),
+    border: applyOpacity(theme.secondary || 'var(--brand-navy)', 0.13),
+    muted: 'var(--body-text-color)',
+    success: 'color-mix(in srgb, #16a34a 82%, var(--brand-red) 18%)',
+    successBg: 'color-mix(in srgb, var(--app-accent-bg) 58%, #DCFCE7)',
+    error: 'var(--brand-red-dark)',
+    errorBg: 'var(--brand-red-light)',
+    vipText: '#8A5A00',
+    vipBg: 'linear-gradient(135deg, #FFE7A3 0%, #FFD36A 52%, #F5B700 100%)',
+    vipBorder: '#E0A11B',
+  };
 
   // ── state ──
-  const [trustLinks, setTrustLinks] = useState([]);     // from reg_members-backed user payload
+  const [trustLinks, setTrustLinks] = useState(initialTrustLinks); // from reg_members-backed user payload
   const [otherMems, setOtherMems] = useState([]);        // from other_memberships table
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(initialTrustLinks.length === 0);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState('');
   const [memberName, setMemberName] = useState('');
   const [memberPhone, setMemberPhone] = useState('');
@@ -136,53 +268,35 @@ const OtherMemberships = ({ onNavigate }) => {
   const [deletingId, setDeletingId] = useState(null);
 
   // ── derived ──
-  const user = (() => {
-    try { return JSON.parse(localStorage.getItem('user') || '{}'); } catch { return {}; }
-  })();
+  const user = getStoredUser();
 
   // ── fetch data ──
-  const loadData = useCallback(async () => {
-    setLoading(true);
+  const loadData = useCallback(async (opts = {}) => {
+    const { silent = false } = opts;
+    if (!silent) setLoading(true);
+    if (silent) setIsRefreshing(true);
     setError('');
     try {
-      const userStr = localStorage.getItem('user');
-      const parsedUser = userStr ? JSON.parse(userStr) : null;
+      const parsedUser = getStoredUser();
       const id = parsedUser?.members_id || parsedUser?.id;
       const name = parsedUser?.Name || parsedUser?.name || parsedUser?.full_name || '';
       const phone = parsedUser?.Mobile || parsedUser?.mobile || parsedUser?.phone || parsedUser?.Phone || '';
       setMemberName(name);
       setMemberPhone(phone);
 
-      // ── Source 1: hospital_memberships from localStorage (authoritative — has ALL trusts) ──
-      const hospitalMemberships = Array.isArray(parsedUser?.hospital_memberships)
-        ? parsedUser.hospital_memberships
-        : [];
+      const merged = buildTrustLinksFromUserPayload(parsedUser);
 
-      const merged = hospitalMemberships.map((hm, idx) => {
-        return {
-          _key: hm.trust_id || `hm-${idx}`,
-          trust_id: hm.trust_id || null,
-          Trust: {
-            id: hm.trust_id,
-            name: hm.trust_name,
-            icon_url: hm.trust_icon_url,
-          },
-          membership_no: hm.membership_number || '—',
-          location: null,
-          remark1: hm.trust_remark || null,
-          remark2: null,
-          is_active: hm.is_active !== false,
-          role: hm.role || null,
-        };
-      });
-
-      setTrustLinks(merged);
+      setTrustLinks((prev) => (areMembershipCollectionsEqual(prev, merged) ? prev : merged));
+      writeTrustLinksCache(id || 'anonymous', merged);
 
       // ── other_memberships table ──
       if (id) {
         try {
           const otherMemsData = await fetchOtherMemberships(id);
-          setOtherMems(otherMemsData || []);
+          setOtherMems((prev) => {
+            const next = otherMemsData || [];
+            return areMembershipCollectionsEqual(prev, next) ? prev : next;
+          });
         } catch (e) {
           console.warn('other_memberships fetch failed:', e);
         }
@@ -193,7 +307,8 @@ const OtherMemberships = ({ onNavigate }) => {
       console.error('OtherMemberships load error:', err);
       setError('Something went wrong. Please try again.');
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
+      setIsRefreshing(false);
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -212,7 +327,35 @@ const OtherMemberships = ({ onNavigate }) => {
     return () => { clearInterval(t); unlock(); };
   }, []);
 
-  useEffect(() => { loadData(); }, [loadData]);
+  useEffect(() => {
+    const normalizeShell = () => {
+      const routeShell = document.querySelector('.app-route-shell');
+      const rootShell = document.querySelector('.app-root-shell');
+
+      if (rootShell instanceof HTMLElement) {
+        rootShell.style.display = 'flex';
+        rootShell.style.justifyContent = 'center';
+        rootShell.style.width = '100%';
+      }
+
+      if (routeShell instanceof HTMLElement) {
+        routeShell.style.marginLeft = 'auto';
+        routeShell.style.marginRight = 'auto';
+        routeShell.style.marginInline = 'auto';
+        routeShell.style.width = '100%';
+        routeShell.style.maxWidth = '430px';
+      }
+    };
+
+    normalizeShell();
+    const rafId = requestAnimationFrame(normalizeShell);
+    return () => cancelAnimationFrame(rafId);
+  }, []);
+
+  useEffect(() => {
+    const hasCachedTrustLinks = initialTrustLinks.length > 0;
+    loadData({ silent: hasCachedTrustLinks });
+  }, [loadData, initialTrustLinks.length]);
 
   // ── handlers ──
   const handleBack = () => {
@@ -298,9 +441,13 @@ const OtherMemberships = ({ onNavigate }) => {
 
   const MembershipCard = ({ m, index }) => {
     const trustName = m.Trust?.name || m.organisation_name || '—';
+    const isVip = m.source === 'reg_members' || m.is_vip;
+    const showDelete = !isVip;
+    const membershipLabel = m.is_current_trust ? 'This Trust Membership No.' : 'Membership No.';
+
     return (
-      <div key={m.id} style={{ background: colors.card, borderRadius: '20px', border: `1.5px solid ${colors.border}`, boxShadow: '0 4px 16px rgba(43,47,126,0.07)', overflow: 'hidden', animation: `fadeUp 0.35s ease-out ${index * 0.07}s both` }}>
-        <div style={{ height: '3px', background: `linear-gradient(90deg, ${colors.primary}, ${colors.accent})` }} />
+      <div key={m.id} style={{ background: colors.card, borderRadius: '24px', border: `1.5px solid ${colors.border}`, boxShadow: `0 12px 28px ${applyOpacity(colors.secondary, 0.08)}`, overflow: 'hidden' }}>
+        <div style={{ height: '3px', background: isVip ? colors.vipBg : `linear-gradient(90deg, ${colors.primary}, ${colors.accent})` }} />
         <div style={{ padding: '16px' }}>
           {/* Header row */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '14px' }}>
@@ -315,28 +462,40 @@ const OtherMemberships = ({ onNavigate }) => {
                     <span style={{ width: 5, height: 5, borderRadius: '50%', background: colors.success, display: 'inline-block' }} /> Active
                   </span>
                 )}
+                {isVip && (
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', fontSize: '10px', fontWeight: 800, color: colors.vipText, background: colors.vipBg, border: `1px solid ${colors.vipBorder}`, padding: '2px 9px', borderRadius: '999px', letterSpacing: '0.04em' }}>
+                    VIP
+                  </span>
+                )}
+                {m.is_current_trust && (
+                  <span style={{ fontSize: '10px', fontWeight: 700, color: colors.secondary, background: applyOpacity(colors.accentBg, 0.92), padding: '2px 8px', borderRadius: '20px' }}>
+                    Current Trust
+                  </span>
+                )}
                 {m.membership_type && (
-                  <span style={{ fontSize: '10px', fontWeight: 700, color: colors.primary, background: '#EEF1FF', padding: '2px 8px', borderRadius: '20px' }}>
+                  <span style={{ fontSize: '10px', fontWeight: 700, color: colors.primary, background: applyOpacity(colors.accentBg, 0.9), padding: '2px 8px', borderRadius: '20px' }}>
                     {m.membership_type}
                   </span>
                 )}
               </div>
             </div>
             {/* Delete button */}
-            <button
-              onClick={() => handleDelete(m.id)}
-              disabled={deletingId === m.id}
-              style={{ width: 32, height: 32, borderRadius: '10px', border: 'none', background: '#FEF2F2', color: colors.error, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}
-              title="Remove"
-            >
-              {deletingId === m.id ? <Loader2 size={14} style={{ animation: 'spin 0.8s linear infinite' }} /> : <X size={14} />}
-            </button>
+            {showDelete && (
+              <button
+                onClick={() => handleDelete(m.id)}
+                disabled={deletingId === m.id}
+                style={{ width: 32, height: 32, borderRadius: '10px', border: 'none', background: '#FEF2F2', color: colors.error, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}
+                title="Remove"
+              >
+                {deletingId === m.id ? <Loader2 size={14} style={{ animation: 'spin 0.8s linear infinite' }} /> : <X size={14} />}
+              </button>
+            )}
           </div>
 
           {/* Details grid */}
-          <div style={{ background: '#F8F9FF', borderRadius: '12px', padding: '12px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+          <div style={{ background: colors.cardInner, borderRadius: '16px', padding: '13px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', border: `1px solid ${applyOpacity(colors.secondary, 0.06)}` }}>
             <div style={{ gridColumn: '1/-1' }}>
-              <Label>Membership No.</Label>
+              <Label>{membershipLabel}</Label>
               <p style={{ fontSize: '15px', fontWeight: 800, color: colors.primary, margin: 0, letterSpacing: '0.05em' }}>{m.membership_no}</p>
             </div>
             {m.organisation_name && m.organisation_name !== trustName && (
@@ -359,28 +518,51 @@ const OtherMemberships = ({ onNavigate }) => {
 
   // ── render ──
   return (
-    <div style={{ minHeight: '100vh', background: colors.bg, fontFamily: "'Inter', sans-serif" }}>
+    <div
+      style={{
+        minHeight: '100vh',
+        width: '100%',
+        background: `radial-gradient(circle at top, ${applyOpacity(colors.accentBg, 0.9)} 0%, ${applyOpacity(colors.bg, 0.96)} 28%, ${colors.bg} 100%)`,
+        fontFamily: "var(--font-family, 'Inter', sans-serif)",
+      }}
+    >
       {/* ── Header ── */}
-      <div style={{ background: `linear-gradient(135deg, ${colors.primary} 0%, ${colors.secondary} 100%)`, paddingTop: 'max(52px, calc(env(safe-area-inset-top, 0px) + 52px))', paddingBottom: '20px', paddingLeft: '16px', paddingRight: '16px', position: 'sticky', top: 0, zIndex: 50, boxShadow: '0 4px 24px rgba(43,47,126,0.25)' }}>
-        <div style={{ maxWidth: '430px', margin: '0 auto' }}>
+      <div
+        className="theme-navbar"
+        style={{
+          background: navbarTheme.backgroundStyle,
+          paddingTop: 'max(52px, calc(env(safe-area-inset-top, 0px) + 52px))',
+          paddingBottom: '20px',
+          paddingLeft: '16px',
+          paddingRight: '16px',
+          position: 'sticky',
+          top: 0,
+          zIndex: 50,
+          boxShadow: `0 8px 24px ${applyOpacity(colors.secondary, 0.18)}`,
+          backdropFilter: `blur(${navbarTheme.blurPx})`,
+          WebkitBackdropFilter: `blur(${navbarTheme.blurPx})`,
+          borderBottom: `1px solid ${applyOpacity(colors.secondary, 0.12)}`,
+        }}
+      >
+        <div style={{ width: '100%', margin: '0 auto' }}>
           <div style={{ height: '3px', background: `linear-gradient(90deg, ${colors.accent}, #fff4, ${colors.accent})`, borderRadius: '2px', marginBottom: '16px' }} />
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <button onClick={handleBack} style={{ width: 40, height: 40, borderRadius: '12px', border: 'none', background: 'rgba(255,255,255,0.15)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0, backdropFilter: 'blur(8px)' }}>
+            <button onClick={handleBack} style={{ width: 40, height: 40, borderRadius: '12px', border: 'none', background: applyOpacity(navbarTheme.textColor, 0.12), color: navbarTheme.textColor, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0, backdropFilter: 'blur(8px)' }}>
               <ArrowLeft size={20} />
             </button>
             <div style={{ flex: 1 }}>
-              <h1 style={{ color: '#fff', fontSize: '18px', fontWeight: 800, margin: 0, letterSpacing: '-0.3px' }}>Other Memberships</h1>
-              <p style={{ color: 'rgba(255,255,255,0.65)', fontSize: '12px', margin: '2px 0 0' }}>Manage your trust memberships</p>
+              <h1 style={{ color: navbarTheme.textColor, fontSize: '18px', fontWeight: 800, margin: 0, letterSpacing: '-0.3px' }}>Other Memberships</h1>
+              <p style={{ color: applyOpacity(navbarTheme.textColor, 0.7), fontSize: '12px', margin: '2px 0 0' }}>Manage your trust memberships</p>
             </div>
-            <button onClick={loadData} style={{ width: 36, height: 36, borderRadius: '10px', border: 'none', background: 'rgba(255,255,255,0.15)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
-              <RefreshCw size={16} style={loading ? { animation: 'spin 0.8s linear infinite' } : {}} />
+            <button onClick={() => loadData()} style={{ width: 36, height: 36, borderRadius: '10px', border: 'none', background: applyOpacity(navbarTheme.textColor, 0.12), color: navbarTheme.textColor, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+              <RefreshCw size={16} style={loading || isRefreshing ? { animation: 'spin 0.8s linear infinite' } : {}} />
             </button>
           </div>
         </div>
       </div>
 
       {/* ── Content ── */}
-      <div style={{ maxWidth: '430px', margin: '0 auto', padding: '20px 16px 40px' }}>
+      <div style={{ width: '100%', margin: '0 auto', padding: '20px 16px 40px', boxSizing: 'border-box' }}>
 
         {/* Success banner */}
         {submitSuccess && (
@@ -391,7 +573,7 @@ const OtherMemberships = ({ onNavigate }) => {
         )}
 
         {/* Loading spinner */}
-        {loading && (
+        {loading && trustLinks.length === 0 && (
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '60px 0' }}>
             <div style={{ width: 48, height: 48, border: `3px solid #E0E7FF`, borderTop: `3px solid ${colors.primary}`, borderRadius: '50%', animation: 'spin 0.8s linear infinite', marginBottom: '16px' }} />
             <p style={{ fontSize: '14px', color: colors.muted, fontWeight: 500 }}>Loading memberships...</p>
@@ -399,7 +581,7 @@ const OtherMemberships = ({ onNavigate }) => {
         )}
 
         {/* Error state */}
-        {!loading && error && (
+        {error && (
           <div style={{ background: colors.errorBg, border: `1.5px solid #FECACA`, borderRadius: '16px', padding: '20px', textAlign: 'center', marginBottom: '16px' }}>
             <AlertCircle size={24} color={colors.error} style={{ margin: '0 auto 8px', display: 'block' }} />
             <p style={{ color: colors.error, fontSize: '14px', fontWeight: 600, margin: '0 0 12px' }}>{error}</p>
@@ -407,13 +589,13 @@ const OtherMemberships = ({ onNavigate }) => {
           </div>
         )}
 
-        {!loading && !error && (
+        {!error && (
           <>
             {/* ── ADD MEMBERSHIP BUTTON ── */}
             {!showForm && (
               <button
                 onClick={() => { setShowForm(true); setSubmitError(''); setSubmitSuccess(''); }}
-                style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px', padding: '14px 20px', background: `linear-gradient(135deg, ${colors.primary}, ${colors.secondary})`, color: '#fff', border: 'none', borderRadius: '16px', fontSize: '15px', fontWeight: 700, cursor: 'pointer', marginBottom: '20px', boxShadow: `0 4px 16px ${colors.primary}40`, letterSpacing: '-0.2px', animation: 'fadeUp 0.3s ease-out' }}
+                style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px', padding: '14px 20px', background: `linear-gradient(135deg, ${colors.primary}, ${colors.secondary})`, color: '#fff', border: 'none', borderRadius: '16px', fontSize: '15px', fontWeight: 700, cursor: 'pointer', marginBottom: '20px', boxShadow: `0 8px 18px ${applyOpacity(colors.primary, 0.26)}`, letterSpacing: '-0.2px', animation: 'fadeUp 0.3s ease-out' }}
               >
                 <Plus size={20} />
                 Add New Membership
@@ -422,7 +604,7 @@ const OtherMemberships = ({ onNavigate }) => {
 
             {/* ── ADD MEMBERSHIP FORM ── */}
             {showForm && (
-              <div style={{ background: '#fff', borderRadius: '20px', border: `2px solid ${colors.primary}20`, boxShadow: `0 8px 32px ${colors.primary}15`, marginBottom: '24px', overflow: 'hidden', animation: 'fadeUp 0.35s ease-out' }}>
+              <div style={{ background: colors.surface, borderRadius: '20px', border: `2px solid ${applyOpacity(colors.primary, 0.12)}`, boxShadow: `0 12px 32px ${applyOpacity(colors.primary, 0.12)}`, marginBottom: '24px', overflow: 'hidden', animation: 'fadeUp 0.35s ease-out' }}>
                 <div style={{ background: `linear-gradient(135deg, ${colors.primary}, ${colors.secondary})`, padding: '16px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                     <div style={{ width: 36, height: 36, borderRadius: '10px', background: 'rgba(255,255,255,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -506,7 +688,7 @@ const OtherMemberships = ({ onNavigate }) => {
                       Cancel
                     </button>
                     <button type="submit" disabled={submitting}
-                      style={{ flex: 2, padding: '12px', background: submitting ? 'var(--body-text-color)' : `linear-gradient(135deg, ${colors.primary}, ${colors.secondary})`, color: '#fff', border: 'none', borderRadius: '12px', fontSize: '14px', fontWeight: 700, cursor: submitting ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', boxShadow: submitting ? 'none' : `0 4px 14px ${colors.primary}35` }}>
+                      style={{ flex: 2, padding: '12px', background: submitting ? 'var(--body-text-color)' : `linear-gradient(135deg, ${colors.primary}, ${colors.secondary})`, color: '#fff', border: 'none', borderRadius: '12px', fontSize: '14px', fontWeight: 700, cursor: submitting ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', boxShadow: submitting ? 'none' : `0 8px 16px ${applyOpacity(colors.primary, 0.22)}` }}>
                       {submitting
                         ? <><Loader2 size={16} style={{ animation: 'spin 0.8s linear infinite' }} /> Saving…</>
                         : <><Save size={16} /> Save Membership</>}
@@ -548,30 +730,7 @@ const OtherMemberships = ({ onNavigate }) => {
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                   {trustLinks.map((link, index) => (
-                    <div key={link.id || index} style={{ background: colors.card, borderRadius: '20px', border: `1.5px solid ${colors.border}`, boxShadow: '0 4px 16px rgba(43,47,126,0.07)', overflow: 'hidden', animation: `fadeUp 0.35s ease-out ${index * 0.07}s both` }}>
-                      <div style={{ height: '3px', background: `linear-gradient(90deg, ${colors.primary}, ${colors.secondary})` }} />
-                      <div style={{ padding: '16px' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '12px' }}>
-                          <TrustAvatar trust={link.Trust || { name: 'Trust', icon_url: null }} />
-                          <div style={{ flex: 1 }}>
-                            <h3 style={{ fontSize: '15px', fontWeight: 800, color: 'var(--heading-color)', margin: '0 0 5px', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
-                              {link.Trust?.name || 'Trust'}
-                            </h3>
-                            {link.is_active && (
-                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '10px', fontWeight: 700, color: colors.success, background: colors.successBg, padding: '2px 8px', borderRadius: '20px' }}>
-                                <span style={{ width: 5, height: 5, borderRadius: '50%', background: colors.success, display: 'inline-block' }} /> Active
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                        <div style={{ background: '#F8F9FF', borderRadius: '12px', padding: '12px' }}>
-                          <Label>Membership No.</Label>
-                          <p style={{ fontSize: '15px', fontWeight: 800, color: colors.primary, margin: 0, letterSpacing: '0.05em' }}>
-                            {link.membership_no || '—'}
-                          </p>
-                        </div>
-                      </div>
-                    </div>
+                    <MembershipCard key={link.id || index} m={link} index={index} />
                   ))}
                 </div>
               </div>
@@ -594,7 +753,6 @@ const OtherMemberships = ({ onNavigate }) => {
       </div>
 
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
         @keyframes spin { to { transform: rotate(360deg); } }
         @keyframes fadeUp {
           from { opacity: 0; transform: translateY(16px); }

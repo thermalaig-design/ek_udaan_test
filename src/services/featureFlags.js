@@ -3,6 +3,24 @@ import { supabase } from './supabaseClient';
 const CACHE_KEY = 'feature_flags_cache_v2';
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
+const FEATURE_KEY_ALIASES = {
+  donation: 'feature_donation',
+  feature_donation: 'feature_donation',
+};
+
+const normalizeFeatureKey = (...values) => {
+  for (const value of values) {
+    const normalized = String(value || '')
+      .trim()
+      .toLowerCase()
+      .replace(/\s+/g, '_');
+    if (!normalized) continue;
+    if (FEATURE_KEY_ALIASES[normalized]) return FEATURE_KEY_ALIASES[normalized];
+    if (normalized.startsWith('feature_')) return normalized;
+  }
+  return null;
+};
+
 const resolveCacheKey = (trustId = null, tier = 'general') => {
   const trustPart = trustId ? String(trustId) : 'global';
   const tierPart = tier ? String(tier) : 'general';
@@ -62,7 +80,7 @@ export const fetchFeatureFlags = async (trustId = null, opts = {}) => {
 
     const { data: rows, error } = await supabase
       .from('feature_flags')
-      .select('is_enabled, display_name, tagline, icon_url, route, quick_order, name, features(name)')
+      .select('is_enabled, display_name, tagline, icon_url, route, quick_order, name, features(name, subname)')
       .eq('trust_id', trustId)
       .eq('tier', tier);
 
@@ -77,7 +95,11 @@ export const fetchFeatureFlags = async (trustId = null, opts = {}) => {
     const flagsData = {};
     (rows || []).forEach((row) => {
       // Prefer features.name (join), fallback to name column
-      const key = row?.features?.name || row?.name;
+      const key = normalizeFeatureKey(
+        row?.features?.name,
+        row?.name,
+        row?.features?.subname
+      );
       if (key) {
         flags[key] = !!row.is_enabled;
         flagsData[key] = {

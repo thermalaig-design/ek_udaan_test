@@ -19,6 +19,7 @@ import Facilities from './Facilities';
 import FacilityDetail from './FacilityDetail';
 import Events from './Events';
 import EventDetail from './EventDetail';
+import Donation from './Donation';
 import Notifications from './Notifications';
 import HealthcareTrusteeDirectory from './HealthcareTrusteeDirectory';
 import MemberDetails from './MemberDetails';
@@ -34,6 +35,7 @@ import PrivacyPolicy from './PrivacyPolicy';
 import Gallery from './Gallery';
 import OtherMemberships from './OtherMemberships';
 import AdminUserProfiles from './admin/AdminUserProfiles';
+import ContactUs from './ContactUs';
 import { getCurrentNotificationContext, matchesNotificationForContext } from './services/notificationAudience';
 import { applyThemeCssVariables, scopeCustomCss } from './utils/themeUtils';
 import { colorToHex } from './utils/colorUtils';
@@ -747,6 +749,7 @@ const HospitalTrusteeApp = () => {
         'notices': '/notices',
         'facilities': '/facilities',
         'events': '/events',
+        'donation': '/donation',
         'notifications': '/notifications',
         'committee-members': '/committee-members',
         'sponsor-details': '/sponsor-details',
@@ -754,6 +757,8 @@ const HospitalTrusteeApp = () => {
         'developers': '/developers',
         'gallery': '/gallery',
         'admin-profiles': '/admin-profiles',
+        'contact-us': '/contact-us',
+        'other-memberships': '/other-memberships',
       };
       const route = routeMap[screen] || '/';
       console.log('Navigating to route:', screen, '->', route);
@@ -802,7 +807,7 @@ const HospitalTrusteeApp = () => {
 
   const appContent = shouldShowThemeGate ? (
     <div
-      className="min-h-screen relative shadow-2xl overflow-hidden w-full max-w-[430px] flex items-center justify-center px-6"
+      className="min-h-screen relative shadow-2xl overflow-hidden w-full max-w-[430px] mx-auto flex items-center justify-center px-6"
       style={{
         background: 'var(--page-bg, var(--app-page-bg))',
         color: 'var(--body-text-color)',
@@ -822,11 +827,12 @@ const HospitalTrusteeApp = () => {
   ) : (
     <div
       className={`min-h-screen relative shadow-2xl overflow-x-hidden app-route-shell ${(location.pathname === '/login' || location.pathname === '/otp-verification' || location.pathname === '/profile' || location.pathname === '/vip-login') ? 'overflow-hidden' : 'overflow-y-auto'
-        } w-full max-w-[430px]`}
+        } w-full max-w-[430px] mx-auto`}
       style={{
         background: 'var(--page-bg, var(--app-page-bg))',
         color: 'var(--body-text-color)',
         fontFamily: "var(--font-family, 'Inter', sans-serif)",
+        marginInline: 'auto',
       }}
     >
       <Routes>
@@ -1001,6 +1007,16 @@ const HospitalTrusteeApp = () => {
           }
         />
         <Route
+          path="/donation"
+          element={
+            <ProtectedRoute>
+              <FeatureGuard featureKey="feature_donation">
+                <Donation onNavigate={handleNavigate} />
+              </FeatureGuard>
+            </ProtectedRoute>
+          }
+        />
+        <Route
           path="/notifications"
           element={
             <ProtectedRoute>
@@ -1097,6 +1113,18 @@ const HospitalTrusteeApp = () => {
               <FeatureGuard featureKey="feature_gallery">
                 <Gallery
                   onNavigate={handleNavigate}
+                  onNavigateBack={() => navigate('/')}
+                />
+              </FeatureGuard>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/contact-us"
+          element={
+            <ProtectedRoute>
+              <FeatureGuard featureKey="ContactUs">
+                <ContactUs
                   onNavigateBack={() => navigate('/')}
                 />
               </FeatureGuard>

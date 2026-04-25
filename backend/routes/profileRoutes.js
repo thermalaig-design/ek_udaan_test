@@ -3,6 +3,7 @@ import multer from 'multer';
 import { supabase } from '../config/supabase.js';
 
 const router = express.Router();
+const PROFILE_PHOTO_BUCKET = 'profile_photo';
 
 // Configure multer for memory storage
 const storage = multer.memoryStorage();
@@ -31,6 +32,12 @@ const readMemberValue = (member, keys = []) => {
     }
   }
   return '';
+};
+
+const sanitizeMemberUpdateValue = (value) => {
+  if (value === undefined || value === null) return null;
+  const trimmed = String(value).trim();
+  return trimmed === '' ? null : trimmed;
 };
 
 const resolveMemberContext = async ({ userIdHeader, membersIdHeader, trustIdHeader, profileData = null }) => {
@@ -200,16 +207,6 @@ router.get('/', async (req, res) => {
       return res.status(500).json({ success: false, message: 'Failed to fetch profile' });
     }
 
-    const { data: familyRows, error: famErr } = await supabase
-      .from('family_members')
-      .select('*')
-      .eq('members_id', membersId)
-      .order('created_at', { ascending: true });
-
-    if (famErr) {
-      console.error('Fetch family_members error:', famErr);
-    }
-
     const mergedProfile = {
       name: readMemberValue(member, ['Name', 'name', 'Full Name', 'full_name']),
       role: activeMembership?.role || member?.role || member?.Role || 'Trustee',
@@ -238,7 +235,6 @@ router.get('/', async (req, res) => {
       instagram: profile?.instagram || '',
       linkedin: profile?.linkedin || '',
       whatsapp: profile?.whatsapp || '',
-      family_members: familyRows || [],
       members_id: membersId
     };
 
@@ -283,11 +279,13 @@ router.post('/save', upload.single('profilePhoto'), async (req, res) => {
 
     // Upload profile picture if provided
     if (profilePhotoFile) {
-      const fileName = `profiles/${membersId}/${Date.now()}_${profilePhotoFile.originalname}`;
+      const safeOriginalName = String(profilePhotoFile.originalname || 'profile_photo')
+        .replace(/[^a-zA-Z0-9._-]/g, '_');
+      const fileName = `profiles/${membersId}/${Date.now()}_${safeOriginalName}`;
       console.log('Attempting to upload profile photo to:', fileName);
       
       const { error: uploadError } = await supabase.storage
-        .from('profiles')
+        .from(PROFILE_PHOTO_BUCKET)
         .upload(fileName, profilePhotoFile.buffer, {
           contentType: profilePhotoFile.mimetype,
           upsert: true
@@ -302,7 +300,7 @@ router.post('/save', upload.single('profilePhoto'), async (req, res) => {
         });
         return res.status(500).json({ 
           success: false, 
-          message: 'Failed to upload profile photo',
+          message: `Failed to upload profile photo: ${uploadError.message || 'unknown storage error'}`,
           error: uploadError.message,
           details: uploadError
         });
@@ -310,11 +308,48 @@ router.post('/save', upload.single('profilePhoto'), async (req, res) => {
 
       // Get public URL
       const { data: urlData } = supabase.storage
-        .from('profiles')
+        .from(PROFILE_PHOTO_BUCKET)
         .getPublicUrl(fileName);
 
       console.log('Successfully uploaded profile photo, public URL:', urlData.publicUrl);
       profilePhotoUrl = urlData.publicUrl;
+    }
+
+    const memberPatch = {
+      Name: sanitizeMemberUpdateValue(profileData.name),
+      Email: sanitizeMemberUpdateValue(profileData.email),
+      'Address Home': sanitizeMemberUpdateValue(profileData.address_home),
+      'Address Office': sanitizeMemberUpdateValue(profileData.address_office),
+      'Company Name': sanitizeMemberUpdateValue(profileData.company_name),
+      'Resident Landline': sanitizeMemberUpdateValue(profileData.resident_landline),
+      'Office Landline': sanitizeMemberUpdateValue(profileData.office_landline)
+    };
+
+    const memberUpdatePayload = Object.fromEntries(
+      Object.entries(memberPatch).filter(([, value]) => value !== null)
+    );
+
+    let mergedMember = member;
+    if (Object.keys(memberUpdatePayload).length > 0) {
+      const { data: updatedMember, error: memberUpdateErr } = await supabase
+        .from('Members')
+        .update(memberUpdatePayload)
+        .eq('members_id', membersId)
+        .select('*')
+        .maybeSingle();
+
+      if (memberUpdateErr) {
+        console.error('Members update error:', memberUpdateErr);
+        return res.status(500).json({
+          success: false,
+          message: 'Failed to save profile',
+          error: memberUpdateErr.message
+        });
+      }
+
+      if (updatedMember?.members_id) {
+        mergedMember = updatedMember;
+      }
     }
 
     const dbProfileData = {
@@ -354,52 +389,17 @@ router.post('/save', upload.single('profilePhoto'), async (req, res) => {
       });
     }
 
-    // Sync family members
-    const familyMembers = Array.isArray(profileData.family_members)
-      ? profileData.family_members
-      : [];
-
-    const { error: deleteErr } = await supabase
-      .from('family_members')
-      .delete()
-      .eq('members_id', membersId);
-
-    if (deleteErr) {
-      console.error('Family delete error:', deleteErr);
-    }
-
-    const cleanedFamily = familyMembers
-      .filter(m => m && m.name && m.relation)
-      .map(m => ({
-        members_id: membersId,
-        name: m.name,
-        relation: m.relation,
-        gender: m.gender || null,
-        age: m.age ? parseInt(m.age, 10) : null,
-        blood_group: m.blood_group || null,
-        contact_no: m.contact_no || null
-      }));
-
-    if (cleanedFamily.length > 0) {
-      const { error: famInsertErr } = await supabase
-        .from('family_members')
-        .insert(cleanedFamily);
-      if (famInsertErr) {
-        console.error('Family insert error:', famInsertErr);
-      }
-    }
-
     const responseProfile = {
-      name: readMemberValue(member, ['Name', 'name', 'Full Name', 'full_name']),
-      role: activeMembership?.role || member?.role || member?.Role || 'Trustee',
-      memberId: activeMembership?.['Membership number'] || member?.['Membership number'] || '',
-      mobile: readMemberValue(member, ['Mobile', 'mobile']),
-      email: readMemberValue(member, ['Email', 'email']),
-      address_home: member?.['Address Home'] || '',
-      address_office: member?.['Address Office'] || '',
-      company_name: member?.['Company Name'] || '',
-      resident_landline: member?.['Resident Landline'] || '',
-      office_landline: member?.['Office Landline'] || '',
+      name: readMemberValue(mergedMember, ['Name', 'name', 'Full Name', 'full_name']),
+      role: activeMembership?.role || mergedMember?.role || mergedMember?.Role || 'Trustee',
+      memberId: activeMembership?.['Membership number'] || mergedMember?.['Membership number'] || '',
+      mobile: readMemberValue(mergedMember, ['Mobile', 'mobile']),
+      email: readMemberValue(mergedMember, ['Email', 'email']),
+      address_home: mergedMember?.['Address Home'] || '',
+      address_office: mergedMember?.['Address Office'] || '',
+      company_name: mergedMember?.['Company Name'] || '',
+      resident_landline: mergedMember?.['Resident Landline'] || '',
+      office_landline: mergedMember?.['Office Landline'] || '',
       gender: upsertedProfile?.gender || '',
       marital_status: upsertedProfile?.marital_status || '',
       nationality: upsertedProfile?.nationality || '',
@@ -417,7 +417,6 @@ router.post('/save', upload.single('profilePhoto'), async (req, res) => {
       instagram: upsertedProfile?.instagram || '',
       linkedin: upsertedProfile?.linkedin || '',
       whatsapp: upsertedProfile?.whatsapp || '',
-      family_members: cleanedFamily,
       members_id: membersId
     };
 

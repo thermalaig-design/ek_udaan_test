@@ -269,6 +269,12 @@ export const deleteReferral = async (referralId) => {
 const isUuid = (value) =>
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value || '').trim());
 
+const sanitizeMemberUpdateValue = (value) => {
+  if (value === undefined || value === null) return null;
+  const trimmed = String(value).trim();
+  return trimmed === '' ? null : trimmed;
+};
+
 const resolveMembersIdForProfile = async (parsedUser, profileData = {}, trustId = null) => {
   const directIds = [
     parsedUser?.members_id,
@@ -333,6 +339,13 @@ const fetchProfileDirectFromSupabase = async (parsedUser, trustId = null) => {
     };
   }
 
+  const { data: member, error: memberError } = await supabase
+    .from('Members')
+    .select('*')
+    .eq('members_id', membersId)
+    .maybeSingle();
+  if (memberError) throw memberError;
+
   const { data: profile, error } = await supabase
     .from('member_profiles')
     .select('*')
@@ -343,10 +356,15 @@ const fetchProfileDirectFromSupabase = async (parsedUser, trustId = null) => {
   return {
     success: true,
     profile: {
-      name: parsedUser?.name || parsedUser?.Name || '',
-      mobile: parsedUser?.mobile || parsedUser?.Mobile || '',
-      email: parsedUser?.email || parsedUser?.Email || '',
+      name: member?.Name || member?.name || parsedUser?.name || parsedUser?.Name || '',
+      mobile: member?.Mobile || member?.mobile || parsedUser?.mobile || parsedUser?.Mobile || '',
+      email: member?.Email || member?.email || parsedUser?.email || parsedUser?.Email || '',
       members_id: membersId,
+      address_home: member?.['Address Home'] || '',
+      address_office: member?.['Address Office'] || '',
+      company_name: member?.['Company Name'] || '',
+      resident_landline: member?.['Resident Landline'] || '',
+      office_landline: member?.['Office Landline'] || '',
       profile_photo_url: profile?.profile_photo_url || '',
       gender: profile?.gender || '',
       dob: profile?.date_of_birth || '',
@@ -373,6 +391,28 @@ const saveProfileDirectToSupabase = async (profileData, parsedUser, trustId = nu
   const membersId = await resolveMembersIdForProfile(parsedUser, profileData, trustId);
   if (!membersId) {
     throw new Error('Member not found');
+  }
+
+  const memberPatch = {
+    Name: sanitizeMemberUpdateValue(profileData.name),
+    Email: sanitizeMemberUpdateValue(profileData.email),
+    'Address Home': sanitizeMemberUpdateValue(profileData.address_home),
+    'Address Office': sanitizeMemberUpdateValue(profileData.address_office),
+    'Company Name': sanitizeMemberUpdateValue(profileData.company_name),
+    'Resident Landline': sanitizeMemberUpdateValue(profileData.resident_landline),
+    'Office Landline': sanitizeMemberUpdateValue(profileData.office_landline),
+  };
+
+  const memberUpdatePayload = Object.fromEntries(
+    Object.entries(memberPatch).filter(([, value]) => value !== null)
+  );
+
+  if (Object.keys(memberUpdatePayload).length > 0) {
+    const { error: memberUpdateError } = await supabase
+      .from('Members')
+      .update(memberUpdatePayload)
+      .eq('members_id', membersId);
+    if (memberUpdateError) throw memberUpdateError;
   }
 
   const upsertPayload = {

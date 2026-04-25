@@ -1355,6 +1355,7 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
     if (value === 'noticeboard' || value === 'notices') return 'notices';
     if (value === 'facility' || value === 'facilities') return 'facilities';
     if (value === 'event' || value === 'events') return 'events';
+    if (value === 'donation' || value === 'donations') return 'donation';
     if (value === 'opd' || value === 'appointment' || value === 'appointments') return 'appointment';
     if (value === 'referral' || value === 'reference' || value === 'references') return 'reference';
     if (value === 'report' || value === 'reports') return 'reports';
@@ -1370,6 +1371,7 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
       notices: '/icons/quick-access/noticeboard.svg',
       facilities: '/icons/quick-access/facilities.svg',
       events: '/icons/quick-access/events.svg',
+      donation: '/icons/quick-access/donation.svg',
       directory: '/icons/quick-access/directory.svg',
       appointment: '/icons/quick-access/opd.svg',
       reference: '/icons/quick-access/referral.svg',
@@ -1447,6 +1449,14 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
       tagline: 'Upcoming activities',
       icon_url: '/icons/quick-access/events.svg',
       quick_order: 90,
+    } : null,
+    ff('feature_donation') ? {
+      id: 'feature_donation_fallback',
+      route: 'donation',
+      displayName: 'Donation',
+      tagline: 'Support trust causes',
+      icon_url: '/icons/quick-access/donation.svg',
+      quick_order: 95,
     } : null,
   ].filter(Boolean);
 

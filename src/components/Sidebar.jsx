@@ -1,12 +1,35 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Users, ChevronRight, LogOut, Share2 } from 'lucide-react';
+import { flushSync } from 'react-dom';
+import { Users, ChevronRight, LogOut, Share2, PhoneCall } from 'lucide-react';
 import { Capacitor } from '@capacitor/core';
 import { Share } from '@capacitor/share';
 import { getProfile } from '../services/api';
 import { fetchFeatureFlags, isFeatureEnabled } from '../services/featureFlags';
 import { useAppTheme } from '../context/ThemeContext';
 import { applyOpacity } from '../utils/colorUtils';
+import { getThemeToken } from '../utils/themeUtils';
+
+const normalizeSidebarRoute = (route = '', featureKey = '') => {
+  const routeValue = String(route || '').trim().toLowerCase();
+  const featureValue = String(featureKey || '').trim().toLowerCase();
+
+  if (routeValue === 'contact-us' || routeValue === 'contactus') return 'contact-us';
+  if (featureValue === 'contactus' || featureValue === 'feature_contact_us') return 'contact-us';
+  return routeValue;
+};
+
+const resolveSidebarIcon = (featureKey, route) => {
+  const normalizedRoute = normalizeSidebarRoute(route, featureKey);
+  if (normalizedRoute === 'contact-us') return PhoneCall;
+  return PhoneCall;
+};
+
+const toTitleCase = (value = '') =>
+  String(value || '')
+    .trim()
+    .replace(/\s+/g, ' ')
+    .replace(/\w\S*/g, (word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase());
 
 // Calculate profile completion % based on filled fields
 const calcCompletion = (profile, user) => {
@@ -23,12 +46,23 @@ const calcCompletion = (profile, user) => {
   return Math.round((filled / fields.length) * 100);
 };
 
+const releaseGlobalScrollLocks = () => {
+  document.documentElement.style.overflow = '';
+  document.documentElement.style.position = '';
+  document.body.style.overflow = '';
+  document.body.style.position = '';
+  document.body.style.width = '';
+  document.body.style.top = '';
+  document.body.style.touchAction = 'auto';
+};
+
 const Sidebar = ({ isOpen, onClose, onNavigate, currentPage, onLogout }) => {
   const theme = useAppTheme();
   const primary = theme.primary || 'var(--brand-red)';
   const secondary = theme.secondary || 'var(--brand-navy)';
   const accent = theme.accent || 'var(--app-accent)';
   const accentBg = theme.accentBg || 'var(--app-accent-bg)';
+  const contactUsTextColor = getThemeToken(theme, 'sidebar.contact_us_text_color', 'var(--sidebar-text)');
   const sidebarRef = useRef(null);
   const touchStartX = useRef(0);
   const touchEndX = useRef(0);
@@ -37,6 +71,7 @@ const Sidebar = ({ isOpen, onClose, onNavigate, currentPage, onLogout }) => {
   const [userData, setUserData] = useState(null);
   const [shareToast, setShareToast] = useState(false);
   const [featureFlags, setFeatureFlags] = useState({});
+  const [flagsData, setFlagsData] = useState({});
   const [memberTrustLinks, setMemberTrustLinks] = useState([]);
   const [loadingTrustLinks, setLoadingTrustLinks] = useState(false);
 
@@ -45,7 +80,10 @@ const Sidebar = ({ isOpen, onClose, onNavigate, currentPage, onLogout }) => {
     if (!isOpen) return;
     const trustId = localStorage.getItem('selected_trust_id') || null;
     fetchFeatureFlags(trustId, { force: false }).then((result) => {
-      if (result.success) setFeatureFlags(result.flags || {});
+      if (result.success) {
+        setFeatureFlags(result.flags || {});
+        setFlagsData(result.flagsData || {});
+      }
     });
   }, [isOpen]);
 
@@ -180,7 +218,34 @@ const Sidebar = ({ isOpen, onClose, onNavigate, currentPage, onLogout }) => {
   const completion = calcCompletion(profile, userData);
   const completionColor = primary;
 
-  const menuItems = [];
+  const handleOtherMembershipNavigation = () => {
+    // Some screens temporarily lock body/html scrolling. Unlock before route change
+    // so the centered app shell layout is preserved during client-side navigation.
+    releaseGlobalScrollLocks();
+    if (onClose) {
+      flushSync(() => {
+        onClose();
+      });
+    }
+    requestAnimationFrame(() => {
+      if (typeof onNavigate === 'function') onNavigate('other-memberships');
+      else navigate('/other-memberships');
+    });
+  };
+
+  const menuItems = Object.entries(flagsData)
+    .filter(([key, meta]) => {
+      const resolvedRoute = normalizeSidebarRoute(meta?.route, key);
+      return Boolean(key) && meta?.is_enabled && resolvedRoute === 'contact-us';
+    })
+    .map(([key, meta]) => ({
+      id: normalizeSidebarRoute(meta?.route, key),
+      label: normalizeSidebarRoute(meta?.route, key) === 'contact-us'
+        ? toTitleCase(meta?.display_name || meta?.name || key)
+        : (meta?.display_name || meta?.name || key),
+      icon: resolveSidebarIcon(key, meta?.route),
+    }))
+    .sort((a, b) => String(a.label).localeCompare(String(b.label)));
 
   return (
     <>
@@ -219,6 +284,7 @@ const Sidebar = ({ isOpen, onClose, onNavigate, currentPage, onLogout }) => {
         {/* Brand accent at top */}
         <div style={{ height: '4px', background: 'var(--sidebar-accent)' }} />
         {/* ── Profile Card Header ── */}
+        {ff('feature_profile') && (
         <div
           className="px-5 pt-14 pb-5 flex-shrink-0 cursor-pointer"
           style={{ borderBottom: `1px solid ${applyOpacity(primary, 0.08)}` }}
@@ -291,6 +357,7 @@ const Sidebar = ({ isOpen, onClose, onNavigate, currentPage, onLogout }) => {
             </div>
           </div>
         </div>
+        )}
 
         {/* ── Scrollable area: nav + extras + logout ── */}
         <div 
@@ -325,12 +392,13 @@ const Sidebar = ({ isOpen, onClose, onNavigate, currentPage, onLogout }) => {
                 if (!normalized) normalized = '';
                 if (!aliasMap[cp] && normalized.endsWith('s')) normalized = normalized.slice(0, -1);
                 const isActive = normalized === String(item.id).toLowerCase();
+                const itemTextColor = item.id === 'contact-us' ? contactUsTextColor : 'var(--sidebar-text)';
                 return (
                   <button
                     key={item.id}
                     onClick={() => { onNavigate(item.id); onClose(); }}
                     className="w-full flex items-center gap-3 px-4 rounded-xl transition-all text-left active:scale-95 select-none"
-                    style={{
+                  style={{
                       minHeight: '52px',
                       WebkitTapHighlightColor: applyOpacity(primary, 0.06),
                       background: isActive ? accent : 'transparent',
@@ -349,7 +417,7 @@ const Sidebar = ({ isOpen, onClose, onNavigate, currentPage, onLogout }) => {
                       style={{
                         color: isActive
                           ? primary
-                          : 'var(--sidebar-text)'
+                          : itemTextColor
                       }}
                     >
                       {item.label}
@@ -389,7 +457,7 @@ const Sidebar = ({ isOpen, onClose, onNavigate, currentPage, onLogout }) => {
                   }
                   if (navigator.share) { await navigator.share(shareData); return; }
                   if (navigator.clipboard?.writeText) {
-                    await navigator.clipboard.writeText(`${shareText} ${APP_URL}`);
+                      await navigator.clipboard.writeText(`${shareText} ${APP_URL}`);
                     setShareToast(true);
                     setTimeout(() => setShareToast(false), 2500);
                   } else {
@@ -422,7 +490,7 @@ const Sidebar = ({ isOpen, onClose, onNavigate, currentPage, onLogout }) => {
 
             {/* Other Membership Details — Navigate to full page */}
             <button
-              onClick={() => { navigate('/other-memberships'); onClose(); }}
+              onClick={handleOtherMembershipNavigation}
               className="w-full flex items-center gap-3 px-4 rounded-xl font-semibold transition-all active:scale-95 select-none relative"
               style={{
                 minHeight: '50px',

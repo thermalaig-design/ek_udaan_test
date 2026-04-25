@@ -9,6 +9,7 @@ import Sidebar from './components/Sidebar';
 import { getAllElectedMembers, getProfile, saveProfile } from './services/api';
 import { useAppTheme } from './context/ThemeContext';
 import { getNavbarThemeStyles } from './utils/themeUtils';
+import { hasAnyTrustMembership, resolveSelectedTrustMembership } from './utils/storageUtils';
 
 // Classy input field — label on top, styled bordered input
 const RowField = ({ label, type = 'text', value, onChange, placeholder, disabled = false, icon: Icon }) => (
@@ -89,19 +90,21 @@ const SectionHeader = ({ title, color = 'var(--brand-red)' }) => (
   </div>
 );
 
+const resolveNameValue = (...candidates) => {
+  for (const candidate of candidates) {
+    if (candidate === undefined || candidate === null) continue;
+    const trimmed = String(candidate).trim();
+    if (trimmed) return trimmed;
+  }
+  return '';
+};
+
 const Profile = ({ onNavigate, onProfileUpdate }) => {
   const theme = useAppTheme();
   const navbarTheme = getNavbarThemeStyles(theme);
   const navbarTextColor = navbarTheme?.textColor || 'var(--navbar-text)';
-  // Check if user is a registered member
-  const isRegisteredMember = (() => {
-    try {
-      const user = JSON.parse(localStorage.getItem('user') || '{}');
-      return !!user?.isRegisteredMember;
-    } catch { return false; }
-  })();
 
-  const TABS = isRegisteredMember ? ['Details', 'Family Members'] : ['Details'];
+  const TABS = ['Details'];
 
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const mainContainerRef = useRef(null);
@@ -116,6 +119,7 @@ const Profile = ({ onNavigate, onProfileUpdate }) => {
   const [originalData, setOriginalData] = useState(null);
   const [activeTab, setActiveTab] = useState('Details');
   const [expandedMember, setExpandedMember] = useState(null);
+  const [allowManualNameEntry, setAllowManualNameEntry] = useState(false);
   const [selectedTrustId, setSelectedTrustId] = useState(() => localStorage.getItem('selected_trust_id') || '');
 
   const [profileData, setProfileData] = useState({
@@ -129,7 +133,6 @@ const Profile = ({ onNavigate, onProfileUpdate }) => {
     profile_photo_url: '',
     spouse_name: '', spouse_contact_number: '', children_count: '',
     facebook: '', twitter: '', instagram: '', linkedin: '', whatsapp: '',
-    family_members: [],
     position: '', location: '', isElectedMember: false
   });
 
@@ -183,10 +186,10 @@ const Profile = ({ onNavigate, onProfileUpdate }) => {
   useEffect(() => {
     // Deep-link: if another page asked to open a specific tab, honour it once
     const requestedTab = localStorage.getItem('openProfileTab');
-    if (requestedTab) {
+    if (requestedTab && TABS.includes(requestedTab)) {
       setActiveTab(requestedTab);
-      localStorage.removeItem('openProfileTab');
     }
+    localStorage.removeItem('openProfileTab');
   }, []);
 
   useEffect(() => {
@@ -216,13 +219,7 @@ const Profile = ({ onNavigate, onProfileUpdate }) => {
   }, [selectedTrustId]);
 
   const getSelectedMembershipFromUser = (user) => {
-    const memberships = Array.isArray(user?.hospital_memberships) ? user.hospital_memberships : [];
-    if (!memberships.length) return null;
-    if (selectedTrustId) {
-      const forSelectedTrust = memberships.find((m) => String(m?.trust_id || '') === String(selectedTrustId));
-      if (forSelectedTrust) return forSelectedTrust;
-    }
-    return memberships.find((m) => m?.is_active) || memberships[0] || null;
+    return resolveSelectedTrustMembership(user, selectedTrustId);
   };
 
   const loadProfile = async () => {
@@ -232,9 +229,20 @@ const Profile = ({ onNavigate, onProfileUpdate }) => {
       const p = response?.profile;
       const user = JSON.parse(localStorage.getItem('user') || '{}');
       const selectedMembership = getSelectedMembershipFromUser(user);
+      const selectedTrustMember = Boolean(selectedMembership?.trust_id);
       if (response?.success && p) {
+        const resolvedName = resolveNameValue(
+          p.name,
+          p.full_name,
+          p['Full Name'],
+          user.name,
+          user.Name,
+          user.full_name,
+          user['Full Name']
+        );
+        setAllowManualNameEntry(!selectedTrustMember && !String(resolvedName || '').trim());
         setProfileData({
-          name: p.name || user.name || user.Name || '',
+          name: resolvedName,
           role: p.role || selectedMembership?.role || user.type || '',
           memberId: p.memberId || p.member_id || selectedMembership?.membership_number || user.membershipNumber || user['Membership number'] || '',
           members_id: p.members_id || user.members_id || user.member_id || user.id || '',
@@ -251,7 +259,6 @@ const Profile = ({ onNavigate, onProfileUpdate }) => {
           children_count: p.children_count ?? '',
           facebook: p.facebook || '', twitter: p.twitter || '', instagram: p.instagram || '',
           linkedin: p.linkedin || '', whatsapp: p.whatsapp || '',
-          family_members: Array.isArray(p.family_members) ? p.family_members : [],
           position: p.position || '', location: p.location || '',
           isElectedMember: p.isElectedMember || false
         });
@@ -267,21 +274,40 @@ const Profile = ({ onNavigate, onProfileUpdate }) => {
   const loadFromLS = () => {
     const user = JSON.parse(localStorage.getItem('user') || '{}');
     const selectedMembership = getSelectedMembershipFromUser(user);
+    const selectedTrustMember = Boolean(selectedMembership?.trust_id);
     const key = `userProfile_${user.Mobile || user.mobile || user.id || 'default'}`;
     const saved = localStorage.getItem(key);
     if (saved) {
       const p = JSON.parse(saved);
+      const resolvedName = resolveNameValue(
+        p?.name,
+        p?.full_name,
+        p?.['Full Name'],
+        user.name,
+        user['Name'],
+        user.full_name,
+        user['Full Name']
+      );
+      setAllowManualNameEntry(!selectedTrustMember && !String(resolvedName || '').trim());
       setProfileData(prev => ({
         ...prev,
         ...p,
+        name: resolvedName,
         role: selectedMembership?.role || p?.role || prev.role || '',
         memberId: selectedMembership?.membership_number || p?.memberId || p?.member_id || prev.memberId || ''
       }));
       if (p.profile_photo_url) setPhotoPreview(p.profile_photo_url);
     } else {
+      const resolvedName = resolveNameValue(
+        user.name,
+        user['Name'],
+        user.full_name,
+        user['Full Name']
+      );
+      setAllowManualNameEntry(!selectedTrustMember && !String(resolvedName || '').trim());
       setProfileData(prev => ({
         ...prev,
-        name: user.name || user['Name'] || '',
+        name: resolvedName,
         role: selectedMembership?.role || user.type || '',
         memberId: selectedMembership?.membership_number || user.membershipNumber || user['Membership number'] || user.membership_number || '',
         members_id: user.members_id || user.member_id || user.id || '',
@@ -300,7 +326,9 @@ const Profile = ({ onNavigate, onProfileUpdate }) => {
         const res = await getAllElectedMembers();
         const found = res.data?.find(e => String(e.membership_number || e['Membership number'] || '').trim().toLowerCase() === String(profileData.memberId).trim().toLowerCase());
         if (found) setProfileData(prev => ({ ...prev, position: found.position || prev.position, location: found.location || prev.location, isElectedMember: true }));
-      } catch { }
+      } catch (err) {
+        console.debug('Unable to fetch elected member metadata:', err?.message || err);
+      }
     };
     fetch();
   }, [profileData.memberId]);
@@ -323,18 +351,43 @@ const Profile = ({ onNavigate, onProfileUpdate }) => {
       const response = await saveProfile(profileData, photoFile);
       if (!response?.success) throw new Error(response?.message || 'Failed to save');
 
-      // Also save to localStorage backup
       const user = JSON.parse(localStorage.getItem('user') || '{}');
+      const selectedMembership = getSelectedMembershipFromUser(user);
+      const shouldTreatAsTrustMember =
+        Boolean(selectedMembership?.trust_id) || Boolean(profileData.memberId) || hasAnyTrustMembership(user);
+
+      const mergedProfile = {
+        ...profileData,
+        ...(response?.profile || {}),
+        name: resolveNameValue(response?.profile?.name, profileData.name),
+        memberId: response?.profile?.memberId || response?.profile?.member_id || profileData.memberId,
+        mobile: response?.profile?.mobile || profileData.mobile,
+        email: response?.profile?.email || profileData.email,
+      };
+
+      // Also save to localStorage backup
       const userId = user['Mobile'] || user.mobile || user.id || user['Membership number'] || '';
       const key = `userProfile_${userId || 'default'}`;
-      localStorage.setItem(key, JSON.stringify(profileData));
-      setOriginalData(JSON.parse(JSON.stringify(profileData)));
+      localStorage.setItem(key, JSON.stringify(mergedProfile));
+
+      const updatedUser = {
+        ...user,
+        Name: mergedProfile.name || user.Name || '',
+        name: mergedProfile.name || user.name || '',
+        Email: mergedProfile.email || user.Email || '',
+        email: mergedProfile.email || user.email || '',
+      };
+      localStorage.setItem('user', JSON.stringify(updatedUser));
+
+      setProfileData(mergedProfile);
+      setAllowManualNameEntry(!shouldTreatAsTrustMember && !String(mergedProfile.name || '').trim());
+      setOriginalData(JSON.parse(JSON.stringify(mergedProfile)));
       setHasUnsavedChanges(false); setPhotoFile(null);
       if (response?.profile?.profile_photo_url) {
         setPhotoPreview(response.profile.profile_photo_url);
       }
-      if (onProfileUpdate) onProfileUpdate(profileData);
-      if (!isRegisteredMember) {
+      if (onProfileUpdate) onProfileUpdate(mergedProfile);
+      if (!shouldTreatAsTrustMember) {
         // Non-member: show "under review" message
         setShowUnderReviewPopup(true);
       } else {
@@ -493,7 +546,7 @@ const Profile = ({ onNavigate, onProfileUpdate }) => {
           {/* Basic — locked fields */}
           <SectionHeader title="Basic Info" color="color-mix(in srgb, var(--body-text-color) 45%, var(--surface-color))" />
           <div className="space-y-3">
-            <RowField label="Name" value={profileData.name} onChange={set('name')} disabled />
+            <RowField label="Name" value={profileData.name} onChange={set('name')} disabled={!allowManualNameEntry} />
             <RowField label="Contact Number" value={profileData.mobile} onChange={set('mobile')} disabled />
             <RowField label="Member ID" value={profileData.memberId} onChange={set('memberId')} disabled />
           </div>

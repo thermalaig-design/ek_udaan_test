@@ -230,6 +230,7 @@ export const DEFAULT_THEME_CONFIG = {
     bg_color_1: '#ffffff',
     bg_color_2: null,
     text_color: '#111827',
+    contact_us_text_color: '#111827',
     button_color: '#4B5563',
     gradient_type: 'none',
     button_text_color: '#ffffff'

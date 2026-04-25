@@ -21,11 +21,17 @@
 /* Global themed shell so all child routes inherit Home-like theme tokens */
 .app-root-shell {
 	background: var(--page-bg, var(--app-page-bg));
+	display: flex !important;
+	justify-content: center !important;
+	align-items: stretch;
+	width: 100% !important;
 }
 
 .app-route-shell {
 	background: var(--page-bg, var(--app-page-bg));
 	color: var(--body-text-color, #374151);
+	margin-left: auto !important;
+	margin-right: auto !important;
 }
 
 .app-route-shell h1,
