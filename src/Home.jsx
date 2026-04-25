@@ -1831,11 +1831,11 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
               className="rounded-[22px] px-3.5 py-3"
               style={{
                 background: showSelectedTrustMemberBanner
-                  ? `linear-gradient(135deg, ${applyOpacity('#fff4c2', 0.98)} 0%, ${applyOpacity(theme.accent, 0.96)} 52%, ${applyOpacity(theme.accentBg, 0.98)} 100%)`
+                  ? 'linear-gradient(135deg, #121212 0%, #1b1b1b 55%, #2a2a2a 100%)'
                   : `linear-gradient(135deg, ${applyOpacity(theme.accent, 0.6)}, ${theme.accentBg})`,
-                border: `1px solid ${showSelectedTrustMemberBanner ? applyOpacity('#d4a017', 0.45) : applyOpacity(theme.primary, 0.08)}`,
+                border: `1px solid ${showSelectedTrustMemberBanner ? 'rgba(212, 160, 23, 0.5)' : applyOpacity(theme.primary, 0.08)}`,
                 boxShadow: showSelectedTrustMemberBanner
-                  ? `0 14px 32px ${applyOpacity('#d4a017', 0.18)}`
+                  ? '0 14px 32px rgba(212, 160, 23, 0.18)'
                   : 'none',
               }}
             >
@@ -1870,9 +1870,9 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
                         <span
                           className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-extrabold uppercase tracking-[0.18em]"
                           style={{
-                            background: 'linear-gradient(135deg, #fff8db 0%, #ffe082 100%)',
-                            color: '#7c5200',
-                            border: '1px solid rgba(212, 160, 23, 0.35)',
+                            background: 'linear-gradient(135deg, #5a3f00 0%, #d4a017 100%)',
+                            color: '#fff8db',
+                            border: '1px solid rgba(255, 227, 133, 0.5)',
                           }}
                         >
                           <Crown className="h-3.5 w-3.5" />
@@ -1882,15 +1882,15 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
                     ) : null}
 
                     {userProfile?.name ? (
-                      <p className="text-[12px] font-semibold truncate" style={{ color: headingColor }}>
+                      <p className="text-[12px] font-semibold truncate" style={{ color: showSelectedTrustMemberBanner ? '#f8f0c5' : headingColor }}>
                         Welcome, <span className="font-extrabold">{userProfile.name}</span>
                       </p>
                     ) : null}
 
                     {showSelectedTrustMemberBanner ? (
-                      <p className="text-[11px] font-semibold truncate" style={{ color: '#7b5b12' }}>
-                        {selectedTrustMemberLabel} of {activeTrust?.name || defaultTrust?.name || DEFAULT_TRUST_NAME}
-                        {selectedTrustMembership?.membership_number ? ` • ${selectedTrustMembership.membership_number}` : ''}
+                      <p className="text-[11px] font-semibold truncate" style={{ color: '#d4a017' }}>
+                        {selectedTrustMemberLabel}
+                        {selectedTrustMembership?.membership_number ? ` | ${selectedTrustMembership.membership_number}` : ''}
                       </p>
                     ) : null}
                   </div>
@@ -1900,14 +1900,14 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
                   <div
                     className="flex-shrink-0 rounded-2xl px-3 py-2 text-right"
                     style={{
-                      background: 'linear-gradient(135deg, rgba(124, 90, 0, 0.08) 0%, rgba(212, 160, 23, 0.18) 100%)',
-                      border: '1px solid rgba(212, 160, 23, 0.28)',
+                      background: 'linear-gradient(135deg, rgba(74, 53, 0, 0.55) 0%, rgba(212, 160, 23, 0.28) 100%)',
+                      border: '1px solid rgba(212, 160, 23, 0.45)',
                     }}
                   >
-                    <p className="text-[9px] font-bold uppercase tracking-[0.2em]" style={{ color: '#8a6308' }}>
+                    <p className="text-[9px] font-bold uppercase tracking-[0.2em]" style={{ color: '#f1cf75' }}>
                       Premium
                     </p>
-                    <p className="text-[11px] font-extrabold" style={{ color: '#6f4d00' }}>
+                    <p className="text-[11px] font-extrabold" style={{ color: '#fff4cf' }}>
                       Trust Member
                     </p>
                   </div>
