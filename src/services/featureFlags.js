@@ -6,14 +6,19 @@ const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 const FEATURE_KEY_ALIASES = {
   donation: 'feature_donation',
   feature_donation: 'feature_donation',
+  contactus: 'feature_contact_us',
+  contact_us: 'feature_contact_us',
+  feature_contact_us: 'feature_contact_us',
+  'contact-us': 'feature_contact_us',
+  ContactUs: 'feature_contact_us',
 };
 
-const normalizeFeatureKey = (...values) => {
+export const normalizeFeatureKey = (...values) => {
   for (const value of values) {
     const normalized = String(value || '')
       .trim()
       .toLowerCase()
-      .replace(/\s+/g, '_');
+      .replace(/[-\s]+/g, '_');
     if (!normalized) continue;
     if (FEATURE_KEY_ALIASES[normalized]) return FEATURE_KEY_ALIASES[normalized];
     if (normalized.startsWith('feature_')) return normalized;
@@ -148,6 +153,7 @@ export const subscribeFeatureFlags = (trustId, onChange) => {
 // Usage: isFeatureEnabled(featureFlags, 'feature_gallery')
 export const isFeatureEnabled = (flags, key) => {
   if (!flags || typeof flags !== 'object') return true;
-  if (!(key in flags)) return true; // not configured = enabled by default
-  return flags[key] !== false;
+  const normalizedKey = normalizeFeatureKey(key) || String(key || '').trim();
+  if (!(normalizedKey in flags)) return true; // not configured = enabled by default
+  return flags[normalizedKey] !== false;
 };

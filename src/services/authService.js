@@ -28,6 +28,7 @@ const normalizeMemberName = (value) => {
     'aaaaa',
     'gau grass',
     'guest user',
+    'test',
     'test user',
     'null',
     'undefined',
@@ -56,6 +57,22 @@ const pickPrimaryMembership = (memberships = [], preferredTrustId = '') => {
     list[0] ||
     null
   );
+};
+
+const hasValue = (value) => value !== undefined && value !== null && String(value).trim() !== '';
+
+const scoreMemberCandidate = (member, membershipStats = null) => {
+  let score = 0;
+  if (membershipStats?.activeInPreferredTrust) score += 120;
+  if (membershipStats?.anyInPreferredTrust) score += 90;
+  if (membershipStats?.hasActiveMembership) score += 70;
+  if (membershipStats?.hasAnyMembership) score += 50;
+  if (hasValue(member?.['Name'])) score += 15;
+  if (hasValue(member?.['Email'])) score += 8;
+  if (hasValue(member?.contact)) score += 4;
+  const serial = Number(member?.['S.No.'] || 0);
+  if (Number.isFinite(serial)) score += Math.min(serial / 100000, 1);
+  return score;
 };
 
 /**
@@ -126,7 +143,6 @@ export const checkPhoneNumber = async (phoneNumber) => {
       };
     }
 
-    const member = members[0];
     const membersIds = members.map((m) => m.members_id).filter(Boolean).map(String);
 
     // 2) Membership lookup from reg_members
@@ -232,6 +248,32 @@ export const checkPhoneNumber = async (phoneNumber) => {
     }
 
     const primaryTrust = pickPrimaryMembership(hospitalMemberships, BASE_TRUST_ID);
+
+    const preferredTrustId = String(BASE_TRUST_ID || '').trim();
+    const membershipStatsByMemberId = (Array.isArray(membersIds) ? membersIds : []).reduce((acc, memberId) => {
+      const linkedMemberships = hospitalMemberships.filter((hm) => String(hm?.members_id || '') === String(memberId));
+      const hasAnyMembership = linkedMemberships.length > 0;
+      const hasActiveMembership = linkedMemberships.some((hm) => hm?.is_active);
+      const anyInPreferredTrust = preferredTrustId
+        ? linkedMemberships.some((hm) => String(hm?.trust_id || '') === preferredTrustId)
+        : false;
+      const activeInPreferredTrust = preferredTrustId
+        ? linkedMemberships.some((hm) => String(hm?.trust_id || '') === preferredTrustId && hm?.is_active)
+        : false;
+      acc[String(memberId)] = {
+        hasAnyMembership,
+        hasActiveMembership,
+        anyInPreferredTrust,
+        activeInPreferredTrust
+      };
+      return acc;
+    }, {});
+
+    const member = [...members].sort((a, b) => {
+      const aStats = membershipStatsByMemberId[String(a?.members_id)] || null;
+      const bStats = membershipStatsByMemberId[String(b?.members_id)] || null;
+      return scoreMemberCandidate(b, bStats) - scoreMemberCandidate(a, aStats);
+    })[0] || members[0];
     const trust = primaryTrust?.trust_id
       ? {
         id: primaryTrust.trust_id,

@@ -275,6 +275,81 @@ const sanitizeMemberUpdateValue = (value) => {
   return trimmed === '' ? null : trimmed;
 };
 
+const PROFILE_IMAGE_BUCKET = 'profile-images';
+
+const getPublicStorageUrl = (bucket, storagePath) => {
+  if (!storagePath) return '';
+  const { data } = supabase.storage.from(bucket).getPublicUrl(storagePath);
+  const baseUrl = data?.publicUrl || '';
+  // Add cache-busting timestamp for profile images
+  if (bucket === PROFILE_IMAGE_BUCKET) {
+    return `${baseUrl}?t=${Date.now()}`;
+  }
+  return baseUrl;
+};
+
+const normalizeMemberProfilePayload = (member = {}, profile = {}, parsedUser = {}) => {
+  const resolvedName = member?.Name || member?.name || parsedUser?.name || parsedUser?.Name || '';
+  const memberId =
+    member?.['Membership number'] ||
+    member?.membership_number ||
+    parsedUser?.membershipNumber ||
+    parsedUser?.['Membership number'] ||
+    parsedUser?.membership_number ||
+    '';
+
+  return {
+    name: resolvedName,
+    name_locked: Boolean(String(member?.Name || member?.name || '').trim()),
+    mobile: member?.Mobile || member?.mobile || parsedUser?.mobile || parsedUser?.Mobile || '',
+    email: member?.Email || member?.email || parsedUser?.email || parsedUser?.Email || '',
+    memberId,
+    membership_number: memberId,
+    members_id: member?.members_id || profile?.members_id || parsedUser?.members_id || parsedUser?.member_id || parsedUser?.id || null,
+    address_home: member?.['Address Home'] || '',
+    address_office: member?.['Address Office'] || '',
+    company_name: member?.['Company Name'] || '',
+    resident_landline: member?.['Resident Landline'] || '',
+    office_landline: member?.['Office Landline'] || '',
+    profile_photo_url: profile?.profile_photo_url || '',
+    gender: profile?.gender || '',
+    dob: profile?.date_of_birth || '',
+    blood_group: profile?.blood_group || '',
+    marital_status: profile?.marital_status || '',
+    nationality: profile?.nationality || 'Indian',
+    aadhaar_id: profile?.aadhaar_id || '',
+    emergency_contact_name: profile?.emergency_contact_name || '',
+    emergency_contact_number: profile?.emergency_contact_number || '',
+    spouse_name: profile?.spouse_name || '',
+    spouse_contact_number: profile?.spouse_contact || '',
+    children_count: profile?.no_of_children ?? '',
+    facebook: profile?.facebook || '',
+    twitter: profile?.twitter || '',
+    instagram: profile?.instagram || '',
+    linkedin: profile?.linkedin || '',
+    whatsapp: profile?.whatsapp || ''
+  };
+};
+
+const uploadProfilePhotoToSupabase = async (membersId, profilePhotoFile) => {
+  if (!membersId || !profilePhotoFile) return '';
+
+  const extension = String(profilePhotoFile.name || 'jpg').split('.').pop()?.toLowerCase() || 'jpg';
+  const safeExt = extension.replace(/[^a-z0-9]/gi, '') || 'jpg';
+  const storagePath = `${membersId}/profile-${Date.now()}.${safeExt}`;
+
+  const { error: uploadError } = await supabase.storage
+    .from(PROFILE_IMAGE_BUCKET)
+    .upload(storagePath, profilePhotoFile, {
+      cacheControl: '60',
+      upsert: true,
+      contentType: profilePhotoFile.type || 'image/jpeg'
+    });
+
+  if (uploadError) throw uploadError;
+  return getPublicStorageUrl(PROFILE_IMAGE_BUCKET, storagePath);
+};
+
 const resolveMembersIdForProfile = async (parsedUser, profileData = {}, trustId = null) => {
   const directIds = [
     parsedUser?.members_id,
@@ -325,17 +400,11 @@ const resolveMembersIdForProfile = async (parsedUser, profileData = {}, trustId 
 };
 
 const fetchProfileDirectFromSupabase = async (parsedUser, trustId = null) => {
-  const { supabase } = await import('./supabaseClient.js');
   const membersId = await resolveMembersIdForProfile(parsedUser, {}, trustId);
   if (!membersId) {
     return {
       success: true,
-      profile: {
-        name: parsedUser?.name || parsedUser?.Name || '',
-        mobile: parsedUser?.mobile || parsedUser?.Mobile || '',
-        email: parsedUser?.email || parsedUser?.Email || '',
-        members_id: null
-      }
+      profile: normalizeMemberProfilePayload({}, {}, parsedUser)
     };
   }
 
@@ -355,39 +424,11 @@ const fetchProfileDirectFromSupabase = async (parsedUser, trustId = null) => {
 
   return {
     success: true,
-    profile: {
-      name: member?.Name || member?.name || parsedUser?.name || parsedUser?.Name || '',
-      mobile: member?.Mobile || member?.mobile || parsedUser?.mobile || parsedUser?.Mobile || '',
-      email: member?.Email || member?.email || parsedUser?.email || parsedUser?.Email || '',
-      members_id: membersId,
-      address_home: member?.['Address Home'] || '',
-      address_office: member?.['Address Office'] || '',
-      company_name: member?.['Company Name'] || '',
-      resident_landline: member?.['Resident Landline'] || '',
-      office_landline: member?.['Office Landline'] || '',
-      profile_photo_url: profile?.profile_photo_url || '',
-      gender: profile?.gender || '',
-      dob: profile?.date_of_birth || '',
-      blood_group: profile?.blood_group || '',
-      marital_status: profile?.marital_status || '',
-      nationality: profile?.nationality || 'Indian',
-      aadhaar_id: profile?.aadhaar_id || '',
-      emergency_contact_name: profile?.emergency_contact_name || '',
-      emergency_contact_number: profile?.emergency_contact_number || '',
-      spouse_name: profile?.spouse_name || '',
-      spouse_contact_number: profile?.spouse_contact || '',
-      children_count: profile?.no_of_children ?? '',
-      facebook: profile?.facebook || '',
-      twitter: profile?.twitter || '',
-      instagram: profile?.instagram || '',
-      linkedin: profile?.linkedin || '',
-      whatsapp: profile?.whatsapp || ''
-    }
+    profile: normalizeMemberProfilePayload({ ...member, members_id: membersId }, profile, parsedUser)
   };
 };
 
-const saveProfileDirectToSupabase = async (profileData, parsedUser, trustId = null) => {
-  const { supabase } = await import('./supabaseClient.js');
+const saveProfileDirectToSupabase = async (profileData, parsedUser, trustId = null, profilePhotoFile = null) => {
   const membersId = await resolveMembersIdForProfile(parsedUser, profileData, trustId);
   if (!membersId) {
     throw new Error('Member not found');
@@ -415,9 +456,11 @@ const saveProfileDirectToSupabase = async (profileData, parsedUser, trustId = nu
     if (memberUpdateError) throw memberUpdateError;
   }
 
+  const uploadedPhotoUrl = await uploadProfilePhotoToSupabase(membersId, profilePhotoFile);
+
   const upsertPayload = {
     members_id: membersId,
-    profile_photo_url: profileData.profile_photo_url || null,
+    profile_photo_url: uploadedPhotoUrl || profileData.profile_photo_url || null,
     gender: profileData.gender || null,
     date_of_birth: profileData.dob || null,
     blood_group: profileData.blood_group || null,
@@ -445,10 +488,22 @@ const saveProfileDirectToSupabase = async (profileData, parsedUser, trustId = nu
 
   return {
     success: true,
-    profile: {
-      ...profileData,
-      members_id: membersId
-    }
+    profile: normalizeMemberProfilePayload(
+      {
+        members_id: membersId,
+        Name: memberUpdatePayload.Name ?? profileData.name,
+        Mobile: parsedUser?.Mobile || parsedUser?.mobile || profileData.mobile,
+        Email: memberUpdatePayload.Email ?? profileData.email,
+        'Membership number': profileData.memberId || parsedUser?.['Membership number'] || parsedUser?.membership_number || '',
+        'Address Home': memberUpdatePayload['Address Home'] ?? profileData.address_home,
+        'Address Office': memberUpdatePayload['Address Office'] ?? profileData.address_office,
+        'Company Name': memberUpdatePayload['Company Name'] ?? profileData.company_name,
+        'Resident Landline': memberUpdatePayload['Resident Landline'] ?? profileData.resident_landline,
+        'Office Landline': memberUpdatePayload['Office Landline'] ?? profileData.office_landline,
+      },
+      upsertPayload,
+      parsedUser
+    )
   };
 };
 
@@ -528,7 +583,7 @@ export const saveProfile = async (profileData, profilePhotoFile) => {
       const user = localStorage.getItem('user');
       const parsedUser = user ? JSON.parse(user) : null;
       if (parsedUser) {
-        return await saveProfileDirectToSupabase(profileData, parsedUser, localStorage.getItem('selected_trust_id') || null);
+        return await saveProfileDirectToSupabase(profileData, parsedUser, localStorage.getItem('selected_trust_id') || null, profilePhotoFile);
       }
     }
 

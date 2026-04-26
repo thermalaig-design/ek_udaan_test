@@ -11,11 +11,18 @@ import { applyOpacity } from '../utils/colorUtils';
 import { getThemeToken } from '../utils/themeUtils';
 
 const normalizeSidebarRoute = (route = '', featureKey = '') => {
-  const routeValue = String(route || '').trim().toLowerCase();
-  const featureValue = String(featureKey || '').trim().toLowerCase();
+  const routeValue = String(route || '')
+    .trim()
+    .toLowerCase()
+    .replace(/^\/+/, '')
+    .replace(/_/g, '-');
+  const featureValue = String(featureKey || '')
+    .trim()
+    .toLowerCase()
+    .replace(/_/g, '-');
 
   if (routeValue === 'contact-us' || routeValue === 'contactus') return 'contact-us';
-  if (featureValue === 'contactus' || featureValue === 'feature_contact_us') return 'contact-us';
+  if (featureValue === 'contactus' || featureValue === 'contact-us' || featureValue === 'feature-contact-us' || featureValue === 'feature_contact_us') return 'contact-us';
   return routeValue;
 };
 
@@ -30,6 +37,44 @@ const toTitleCase = (value = '') =>
     .trim()
     .replace(/\s+/g, ' ')
     .replace(/\w\S*/g, (word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase());
+
+const sanitizeMemberName = (value) => {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  const lowered = raw.toLowerCase();
+  const blockedNames = new Set([
+    'aaaaa',
+    'gau grass',
+    'guest user',
+    'test',
+    'test user',
+    'null',
+    'undefined',
+    'n/a',
+    'na'
+  ]);
+  const compact = raw.replace(/\s+/g, '');
+  const repeatedSingleChar = /^([a-zA-Z])\1{2,}$/.test(compact);
+  if (blockedNames.has(lowered) || repeatedSingleChar) return '';
+  return raw;
+};
+
+const getCachedSidebarProfile = () => {
+  try {
+    const user = localStorage.getItem('user');
+    if (!user) return null;
+    const parsedUser = JSON.parse(user);
+    const key = `userProfile_${parsedUser.Mobile || parsedUser.mobile || parsedUser.id || 'default'}`;
+    const saved = localStorage.getItem(key);
+    const parsedProfile = saved ? JSON.parse(saved) : null;
+    return {
+      name: sanitizeMemberName(parsedProfile?.name || parsedUser?.Name || parsedUser?.name || ''),
+      profilePhotoUrl: parsedProfile?.profile_photo_url || parsedProfile?.profilePhotoUrl || '',
+    };
+  } catch {
+    return null;
+  }
+};
 
 // Calculate profile completion % based on filled fields
 const calcCompletion = (profile, user) => {
@@ -67,8 +112,15 @@ const Sidebar = ({ isOpen, onClose, onNavigate, currentPage, onLogout }) => {
   const touchStartX = useRef(0);
   const touchEndX = useRef(0);
   const navigate = useNavigate();
-  const [profile, setProfile] = useState(null);
-  const [userData, setUserData] = useState(null);
+  const [profile, setProfile] = useState(() => getCachedSidebarProfile());
+  const [userData, setUserData] = useState(() => {
+    try {
+      const user = localStorage.getItem('user');
+      return user ? JSON.parse(user) : null;
+    } catch {
+      return null;
+    }
+  });
   const [shareToast, setShareToast] = useState(false);
   const [featureFlags, setFeatureFlags] = useState({});
   const [flagsData, setFlagsData] = useState({});
@@ -97,30 +149,56 @@ const Sidebar = ({ isOpen, onClose, onNavigate, currentPage, onLogout }) => {
         const user = localStorage.getItem('user');
         const parsedUser = user ? JSON.parse(user) : null;
         setUserData(parsedUser);
+        const cachedProfile = getCachedSidebarProfile();
+        if (cachedProfile) setProfile(cachedProfile);
 
         const response = await getProfile();
         if (response.success && response.profile) {
+          const resolvedName = sanitizeMemberName(response.profile.name || parsedUser?.Name || parsedUser?.name || '');
           setProfile({
-            name: response.profile.name || parsedUser?.Name || parsedUser?.name || '',
+            name: resolvedName,
             profilePhotoUrl: response.profile.profile_photo_url || '',
           });
         } else if (parsedUser) {
           const key = `userProfile_${parsedUser.Mobile || parsedUser.mobile || parsedUser.id || 'default'}`;
           const saved = localStorage.getItem(key);
-          if (saved) setProfile(JSON.parse(saved));
-          else setProfile({ name: parsedUser.Name || parsedUser.name || '', profilePhotoUrl: '' });
+          if (saved) {
+            const parsedProfile = JSON.parse(saved);
+            setProfile({
+              ...parsedProfile,
+              name: sanitizeMemberName(parsedProfile?.name || parsedUser?.Name || parsedUser?.name || '')
+            });
+          } else {
+            setProfile({ name: sanitizeMemberName(parsedUser.Name || parsedUser.name || ''), profilePhotoUrl: '' });
+          }
         }
       } catch {
         const user = localStorage.getItem('user');
         if (user) {
           const parsedUser = JSON.parse(user);
           setUserData(parsedUser);
-          setProfile({ name: parsedUser?.Name || parsedUser?.name || '', profilePhotoUrl: '' });
+          setProfile({ name: sanitizeMemberName(parsedUser?.Name || parsedUser?.name || ''), profilePhotoUrl: '' });
         }
       }
     };
     load();
   }, [isOpen]);
+
+  useEffect(() => {
+    const syncProfileFromCache = () => {
+      const cachedProfile = getCachedSidebarProfile();
+      if (cachedProfile) setProfile(cachedProfile);
+      try {
+        const user = localStorage.getItem('user');
+        setUserData(user ? JSON.parse(user) : null);
+      } catch {
+        // ignore malformed cache
+      }
+    };
+
+    window.addEventListener('user-profile-updated', syncProfileFromCache);
+    return () => window.removeEventListener('user-profile-updated', syncProfileFromCache);
+  }, []);
 
   // Load member trusts when sidebar opens (reg_members based payload from login)
   useEffect(() => {
@@ -236,7 +314,12 @@ const Sidebar = ({ isOpen, onClose, onNavigate, currentPage, onLogout }) => {
   const menuItems = Object.entries(flagsData)
     .filter(([key, meta]) => {
       const resolvedRoute = normalizeSidebarRoute(meta?.route, key);
-      return Boolean(key) && meta?.is_enabled && resolvedRoute === 'contact-us';
+      const normalizedKey = String(key || '').trim().toLowerCase().replace(/_/g, '-');
+      const isContactUs = resolvedRoute === 'contact-us'
+        || normalizedKey === 'contactus'
+        || normalizedKey === 'contact-us'
+        || normalizedKey === 'feature-contact-us';
+      return Boolean(key) && meta?.is_enabled && isContactUs;
     })
     .map(([key, meta]) => ({
       id: normalizeSidebarRoute(meta?.route, key),
@@ -359,9 +442,9 @@ const Sidebar = ({ isOpen, onClose, onNavigate, currentPage, onLogout }) => {
         </div>
         )}
 
-        {/* ── Scrollable area: nav + extras + logout ── */}
+        {/* ── Scrollable area: nav + extras ── */}
         <div 
-          className="flex-1 overflow-y-auto overflow-x-hidden"
+          className="flex-1 overflow-y-auto overflow-x-hidden pb-20"
           style={{ 
             touchAction: 'pan-y', 
             WebkitOverflowScrolling: 'touch', 
@@ -371,7 +454,7 @@ const Sidebar = ({ isOpen, onClose, onNavigate, currentPage, onLogout }) => {
             overscrollBehavior: 'contain'
           }}
         >
-          {/* Nav items */}
+          {/* Nav items + More Options */}
           <div className="py-3 px-3">
             <div className="space-y-1">
               {menuItems.map((item) => {
@@ -426,16 +509,9 @@ const Sidebar = ({ isOpen, onClose, onNavigate, currentPage, onLogout }) => {
                   </button>
                 );
               })}
-            </div>
-          </div>
 
-          {/* ── More Options ── */}
-          <div
-            className="px-3 pt-2 pb-3 space-y-2"
-            style={{ borderTop: '1px solid color-mix(in srgb, var(--sidebar-text) 10%, var(--surface-color))' }}
-          >
-            {/* Share Button - controlled by feature_share_app */}
-            {ff('feature_share_app') && <button
+              {/* Share Button - controlled by feature_share_app */}
+              {ff('feature_share_app') && <button
               onClick={async () => {
                 const APP_URL = 'https://play.google.com/store/apps/details?id=com.maharajaagarsen.app';
                 const appName = localStorage.getItem('selected_trust_name') || import.meta.env.VITE_DEFAULT_TRUST_NAME || 'Ek Udaan';
@@ -475,11 +551,25 @@ const Sidebar = ({ isOpen, onClose, onNavigate, currentPage, onLogout }) => {
                   } catch { /* nothing */ }
                 }
               }}
-              className="w-full flex items-center gap-3 px-4 rounded-xl font-semibold active:opacity-80 transition-all active:scale-95 select-none relative"
-              style={{ minHeight: '48px', background: accentBg, color: secondary, WebkitTapHighlightColor: applyOpacity(secondary, 0.08) }}
+              className="w-full flex items-center gap-3 px-4 rounded-xl transition-all text-left active:scale-95 select-none relative"
+              style={{
+                minHeight: '52px',
+                background: 'transparent',
+                WebkitTapHighlightColor: applyOpacity(primary, 0.06),
+              }}
             >
-              <Share2 className="h-5 w-5 flex-shrink-0" />
-              <span>Share App</span>
+              <Share2
+                className="h-5 w-5 flex-shrink-0"
+                style={{
+                  color: 'color-mix(in srgb, var(--sidebar-text) 72%, var(--surface-color))'
+                }}
+              />
+              <span
+                className="font-semibold flex-1"
+                style={{ color: 'var(--sidebar-text)' }}
+              >
+                Share App
+              </span>
               {shareToast && (
                 <span className="absolute right-4 text-xs px-2 py-0.5 rounded-full"
                   style={{ color: 'var(--surface-color)', background: secondary }}>
@@ -491,23 +581,23 @@ const Sidebar = ({ isOpen, onClose, onNavigate, currentPage, onLogout }) => {
             {/* Other Membership Details — Navigate to full page */}
             <button
               onClick={handleOtherMembershipNavigation}
-              className="w-full flex items-center gap-3 px-4 rounded-xl font-semibold transition-all active:scale-95 select-none relative"
+              className="w-full flex items-center gap-3 px-4 rounded-xl transition-all text-left active:scale-95 select-none"
               style={{
-                minHeight: '50px',
-                background: `linear-gradient(135deg, ${applyOpacity(accentBg, 0.6)} 0%, ${applyOpacity(accentBg, 0.8)} 100%)`,
-                color: secondary,
-                border: `1.5px solid ${applyOpacity(secondary, 0.15)}`,
-                WebkitTapHighlightColor: applyOpacity(secondary, 0.08),
+                minHeight: '52px',
+                background: 'transparent',
+                WebkitTapHighlightColor: applyOpacity(primary, 0.06),
               }}
             >
-              <div
-                className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0"
-                style={{ background: applyOpacity(secondary, 0.12) }}
-              >
-                <Users className="h-4 w-4" style={{ color: secondary }} />
-              </div>
+              <Users
+                className="h-5 w-5 flex-shrink-0"
+                style={{
+                  color: 'color-mix(in srgb, var(--sidebar-text) 72%, var(--surface-color))'
+                }}
+              />
               <div className="flex-1 text-left">
-                <span className="text-sm font-bold">Other Membership Details</span>
+                <span className="font-semibold" style={{ color: 'var(--sidebar-text)' }}>
+                  Other Membership Details
+                </span>
                 {loadingTrustLinks && (
                   <span
                     className="ml-2 text-[10px]"
@@ -525,41 +615,67 @@ const Sidebar = ({ isOpen, onClose, onNavigate, currentPage, onLogout }) => {
                   </span>
                 )}
               </div>
-              <ChevronRight className="h-4 w-4 flex-shrink-0" style={{ color: secondary }} />
+              <ChevronRight
+                className="h-4 w-4 flex-shrink-0"
+                style={{ color: 'color-mix(in srgb, var(--sidebar-text) 45%, var(--surface-color))' }}
+              />
             </button>
-
-          </div>
-
-          {/* ── Logout ── */}
-          <div className="px-3 pb-8" style={{ borderTop: `1px solid ${applyOpacity(primary, 0.08)}` }}>
-            <button
-              onClick={() => {
-                if (typeof onLogout === 'function') onLogout();
-                else {
-                  localStorage.removeItem('user');
-                  localStorage.removeItem('isLoggedIn');
-                  localStorage.removeItem('lastVisitedRoute');
-                  localStorage.removeItem('selected_trust_id');
-                  localStorage.removeItem('selected_trust_name');
-                  sessionStorage.removeItem('selectedMember');
-                  sessionStorage.removeItem('previousScreen');
-                  sessionStorage.removeItem('previousScreenName');
-                  sessionStorage.removeItem('trust_selected_in_session');
-                  navigate('/login', { replace: true });
-                }
-                if (onClose) onClose();
-              }}
-              className="w-full flex items-center justify-between px-4 rounded-xl font-bold active:opacity-80 transition-all active:scale-95 select-none"
-              style={{ minHeight: '52px', background: accent, color: primary, WebkitTapHighlightColor: applyOpacity(primary, 0.08) }}
-            >
-              <div className="flex items-center gap-3">
-                <LogOut className="h-5 w-5 flex-shrink-0" />
-                <span>Logout</span>
-              </div>
-              <ChevronRight className="h-4 w-4 flex-shrink-0" />
-            </button>
+            </div>
           </div>
         </div>
+
+      {/* ── Fixed Logout Button at Bottom ── */}
+      <div
+        className="absolute left-0 right-0 bottom-0 px-3 py-3 z-50"
+        style={{
+          background: 'var(--sidebar-bg)',
+          borderTop: `1px solid ${applyOpacity(primary, 0.08)}`,
+          backdropFilter: 'blur(var(--sidebar-blur, 12px))',
+          WebkitBackdropFilter: 'blur(var(--sidebar-blur, 12px))',
+        }}
+      >
+        <button
+          onClick={() => {
+            if (typeof onLogout === 'function') onLogout();
+            else {
+              localStorage.removeItem('user');
+              localStorage.removeItem('isLoggedIn');
+              localStorage.removeItem('lastVisitedRoute');
+              localStorage.removeItem('selected_trust_id');
+              localStorage.removeItem('selected_trust_name');
+              sessionStorage.removeItem('selectedMember');
+              sessionStorage.removeItem('previousScreen');
+              sessionStorage.removeItem('previousScreenName');
+              sessionStorage.removeItem('trust_selected_in_session');
+              navigate('/login', { replace: true });
+            }
+            if (onClose) onClose();
+          }}
+          className="w-full flex items-center gap-3 px-4 rounded-xl transition-all text-left active:scale-95 select-none"
+          style={{
+            minHeight: '52px',
+            background: 'transparent',
+            WebkitTapHighlightColor: applyOpacity(primary, 0.06),
+          }}
+        >
+          <LogOut
+            className="h-5 w-5 flex-shrink-0"
+            style={{
+              color: 'color-mix(in srgb, var(--sidebar-text) 72%, var(--surface-color))'
+            }}
+          />
+          <span
+            className="font-semibold flex-1"
+            style={{ color: 'var(--sidebar-text)' }}
+          >
+            Logout
+          </span>
+          <ChevronRight
+            className="h-4 w-4 flex-shrink-0"
+            style={{ color: 'color-mix(in srgb, var(--sidebar-text) 45%, var(--surface-color))' }}
+          />
+        </button>
+      </div>
       </div>
     </>
   );

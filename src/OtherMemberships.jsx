@@ -328,31 +328,6 @@ const OtherMemberships = ({ onNavigate }) => {
   }, []);
 
   useEffect(() => {
-    const normalizeShell = () => {
-      const routeShell = document.querySelector('.app-route-shell');
-      const rootShell = document.querySelector('.app-root-shell');
-
-      if (rootShell instanceof HTMLElement) {
-        rootShell.style.display = 'flex';
-        rootShell.style.justifyContent = 'center';
-        rootShell.style.width = '100%';
-      }
-
-      if (routeShell instanceof HTMLElement) {
-        routeShell.style.marginLeft = 'auto';
-        routeShell.style.marginRight = 'auto';
-        routeShell.style.marginInline = 'auto';
-        routeShell.style.width = '100%';
-        routeShell.style.maxWidth = '430px';
-      }
-    };
-
-    normalizeShell();
-    const rafId = requestAnimationFrame(normalizeShell);
-    return () => cancelAnimationFrame(rafId);
-  }, []);
-
-  useEffect(() => {
     const hasCachedTrustLinks = initialTrustLinks.length > 0;
     loadData({ silent: hasCachedTrustLinks });
   }, [loadData, initialTrustLinks.length]);
@@ -520,10 +495,18 @@ const OtherMemberships = ({ onNavigate }) => {
   return (
     <div
       style={{
-        minHeight: '100vh',
-        width: '100%',
+        position: 'fixed',
+        top: 0,
+        left: '50%',
+        transform: 'translateX(-50%)',
+        width: 'min(100vw, 430px)',
+        height: '100vh',
+        overflowY: 'auto',
+        overflowX: 'hidden',
         background: `radial-gradient(circle at top, ${applyOpacity(colors.accentBg, 0.9)} 0%, ${applyOpacity(colors.bg, 0.96)} 28%, ${colors.bg} 100%)`,
         fontFamily: "var(--font-family, 'Inter', sans-serif)",
+        boxSizing: 'border-box',
+        zIndex: 1,
       }}
     >
       {/* ── Header ── */}

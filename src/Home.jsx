@@ -153,6 +153,7 @@ const normalizeMemberName = (value) => {
     'aaaaa',
     'gau grass',
     'guest user',
+    'test',
     'test user',
     'null',
     'undefined',
@@ -163,6 +164,25 @@ const normalizeMemberName = (value) => {
   const repeatedSingleChar = /^([a-zA-Z])\1{2,}$/.test(compact);
   if (blockedNames.has(lowered) || repeatedSingleChar) return '';
   return raw;
+};
+
+const getCachedUserProfileSnapshot = () => {
+  try {
+    const user = localStorage.getItem('user');
+    if (!user) return null;
+    const parsed = JSON.parse(user);
+    const fallbackName = normalizeMemberName(parsed.name || parsed.Name || parsed['Name'] || '');
+    const userKey = `userProfile_${parsed.Mobile || parsed.mobile || parsed.id || 'default'}`;
+    const savedProfile = localStorage.getItem(userKey);
+    const cachedProfile = savedProfile ? JSON.parse(savedProfile) : null;
+    const cachedName = normalizeMemberName(cachedProfile?.name || '');
+    const resolvedName = cachedName || fallbackName;
+    const profilePhotoUrl = cachedProfile?.profile_photo_url || cachedProfile?.profilePhotoUrl || '';
+    if (!resolvedName && !profilePhotoUrl) return null;
+    return { name: resolvedName, profilePhotoUrl };
+  } catch {
+    return null;
+  }
 };
 
 /* eslint-disable react-refresh/only-export-components */
@@ -180,16 +200,7 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
   const channelRef = useRef(null);
 
   // Welcome strip: initialize from localStorage instantly to avoid delay
-  const [userProfile, setUserProfile] = useState(() => {
-    try {
-      const user = localStorage.getItem('user');
-      if (!user) return null;
-      const parsed = JSON.parse(user);
-      const fallbackName = normalizeMemberName(parsed.name || parsed.Name || parsed['Name'] || '');
-      if (!fallbackName) return null;
-      return { name: fallbackName, profilePhotoUrl: '' };
-    } catch { return null; }
-  });
+  const [userProfile, setUserProfile] = useState(() => getCachedUserProfileSnapshot());
 
   // Trust: prefer user's last selection; fall back to env trust id.
   const [selectedTrustId, setSelectedTrustId] = useState(() => {
@@ -535,7 +546,12 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
           const savedProfile = localStorage.getItem(userKey);
           if (savedProfile) {
             const parsed = JSON.parse(savedProfile);
-            setUserProfile((prev) => ({ ...prev, ...parsed }));
+            const normalizedName = normalizeMemberName(parsed?.name || '');
+            setUserProfile((prev) => ({
+              ...prev,
+              ...parsed,
+              name: normalizedName || prev?.name || ''
+            }));
           }
           const userId = parsedUser['Membership number'] || parsedUser.mobile || parsedUser.id;
           if (userId) {
@@ -556,6 +572,16 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
       }
     };
     loadProfile();
+  }, []);
+
+  useEffect(() => {
+    const syncProfileFromCache = () => {
+      const snapshot = getCachedUserProfileSnapshot();
+      if (snapshot) setUserProfile(snapshot);
+    };
+
+    window.addEventListener('user-profile-updated', syncProfileFromCache);
+    return () => window.removeEventListener('user-profile-updated', syncProfileFromCache);
   }, []);
 
   // Load trusts from user localStorage

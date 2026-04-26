@@ -40,6 +40,42 @@ const sanitizeMemberUpdateValue = (value) => {
   return trimmed === '' ? null : trimmed;
 };
 
+const hasFilledValue = (value) =>
+  value !== undefined && value !== null && String(value).trim() !== '';
+
+const buildMembershipLookup = (memberships = []) => {
+  const byMemberId = {};
+  (memberships || []).forEach((membership) => {
+    const memberId = String(membership?.members_id || '').trim();
+    if (!memberId) return;
+    if (!byMemberId[memberId]) byMemberId[memberId] = [];
+    byMemberId[memberId].push(membership);
+  });
+  return byMemberId;
+};
+
+const scoreMemberCandidate = (member = {}, membershipsByMemberId = {}, trustIdHeader = '') => {
+  const memberId = String(member?.members_id || '').trim();
+  const memberships = membershipsByMemberId[memberId] || [];
+  let score = 0;
+
+  const normalizedTrustId = String(trustIdHeader || '').trim();
+  if (normalizedTrustId) {
+    if (memberships.some((m) => String(m?.trust_id || '') === normalizedTrustId && m?.is_active === true)) score += 120;
+    if (memberships.some((m) => String(m?.trust_id || '') === normalizedTrustId)) score += 90;
+  }
+  if (memberships.some((m) => m?.is_active === true)) score += 70;
+  if (memberships.length > 0) score += 50;
+
+  if (hasFilledValue(member?.Name)) score += 15;
+  if (hasFilledValue(member?.Email)) score += 8;
+  if (hasFilledValue(member?.Mobile) || hasFilledValue(member?.contact)) score += 4;
+
+  const serial = Number(member?.['S.No.'] || 0);
+  if (Number.isFinite(serial)) score += Math.min(serial / 100000, 1);
+  return score;
+};
+
 const resolveMemberContext = async ({ userIdHeader, membersIdHeader, trustIdHeader, profileData = null }) => {
   const identifiers = [
     userIdHeader,
@@ -48,104 +84,143 @@ const resolveMemberContext = async ({ userIdHeader, membersIdHeader, trustIdHead
     profileData?.mobile
   ].filter(Boolean).map((v) => String(v).trim());
 
-  let member = null;
+  const memberCandidates = new Map();
+  const addCandidate = (candidate) => {
+    const id = String(candidate?.members_id || '').trim();
+    if (!id) return;
+    if (!memberCandidates.has(id)) {
+      memberCandidates.set(id, candidate);
+    }
+  };
 
-  // 1) Direct by members_id (most reliable)
+  // 1) Direct by members_id header(s)
   for (const candidate of [membersIdHeader, userIdHeader, profileData?.members_id, profileData?.id]) {
-    if (!candidate) continue;
-    if (!isUuid(candidate)) continue;
+    if (!candidate || !isUuid(candidate)) continue;
     const { data } = await supabase
       .from('Members')
       .select('*')
       .eq('members_id', String(candidate).trim())
       .maybeSingle();
-    if (data?.members_id) {
-      member = data;
+    if (data?.members_id) addCandidate(data);
+  }
+
+  // 2) Membership number in Members table (optional schema support)
+  for (const candidate of identifiers) {
+    const { data, error } = await supabase
+      .from('Members')
+      .select('*')
+      .eq('Membership number', candidate)
+      .limit(5);
+    if (error && /does not exist/i.test(String(error?.message || ''))) {
       break;
     }
+    (data || []).forEach(addCandidate);
   }
 
-  // 2) By membership number in Members table
-  if (!member) {
-    for (const candidate of identifiers) {
+  // 3) Mobile/contact in Members table (duplicate-safe)
+  const digits = Array.from(new Set(identifiers.map(normalizeDigits).filter(Boolean)));
+  for (const d of digits) {
+    const tenDigit = d.slice(-10);
+    const variants = Array.from(new Set([d, tenDigit, `+91${tenDigit}`, `91${tenDigit}`].filter(Boolean)));
+    for (const variant of variants) {
       const { data } = await supabase
         .from('Members')
         .select('*')
-        .eq('Membership number', candidate)
-        .maybeSingle();
-      if (data?.members_id) {
-        member = data;
-        break;
-      }
+        .or(`Mobile.eq.${variant},contact.eq.${variant}`)
+        .order('S.No.', { ascending: false })
+        .limit(20);
+      (data || []).forEach(addCandidate);
     }
   }
 
-  // 3) By mobile in Members table (handle formatting differences)
-  if (!member) {
-    const digits = Array.from(new Set(identifiers.map(normalizeDigits).filter(Boolean)));
-    for (const d of digits) {
-      const variants = Array.from(new Set([d, d.slice(-10), `+91${d.slice(-10)}`].filter(Boolean)));
-      for (const variant of variants) {
-        const { data } = await supabase
-          .from('Members')
-          .select('*')
-          .eq('Mobile', variant)
-          .maybeSingle();
-        if (data?.members_id) {
-          member = data;
-          break;
-        }
-      }
-      if (member) break;
-    }
+  // 4) Resolve via reg_members membership number and fetch Members row(s)
+  for (const candidate of identifiers) {
+    let regQuery = supabase
+      .from('reg_members')
+      .select('members_id')
+      .eq('Membership number', candidate)
+      .limit(20);
+    if (trustIdHeader) regQuery = regQuery.eq('trust_id', trustIdHeader);
+    const { data: regByMembership } = await regQuery;
+    const resolvedMemberIds = Array.from(new Set((regByMembership || []).map((row) => row?.members_id).filter(Boolean)));
+    if (!resolvedMemberIds.length) continue;
+    const { data: resolvedMembers } = await supabase
+      .from('Members')
+      .select('*')
+      .in('members_id', resolvedMemberIds)
+      .limit(20);
+    (resolvedMembers || []).forEach(addCandidate);
   }
 
-  // 4) If still not found, resolve via reg_members membership and then fetch Members by members_id
-  if (!member) {
-    for (const candidate of identifiers) {
-      let regQuery = supabase
-        .from('reg_members')
-        .select('members_id')
-        .eq('Membership number', candidate)
-        .limit(1);
-      if (trustIdHeader) {
-        regQuery = regQuery.eq('trust_id', trustIdHeader);
-      }
-      const { data: regByMembership } = await regQuery;
-      const resolvedMembersId = regByMembership?.[0]?.members_id;
-      if (!resolvedMembersId) continue;
-      const { data } = await supabase
-        .from('Members')
-        .select('*')
-        .eq('members_id', resolvedMembersId)
-        .maybeSingle();
-      if (data?.members_id) {
-        member = data;
-        break;
-      }
-    }
+  let member = null;
+  const memberList = Array.from(memberCandidates.values());
+  if (memberList.length > 0) {
+    const candidateIds = Array.from(new Set(memberList.map((row) => row?.members_id).filter(Boolean)));
+    const { data: linkedMemberships } = await supabase
+      .from('reg_members')
+      .select('members_id, trust_id, is_active')
+      .in('members_id', candidateIds);
+
+    const membershipsByMemberId = buildMembershipLookup(linkedMemberships || []);
+    member = [...memberList].sort(
+      (a, b) => scoreMemberCandidate(b, membershipsByMemberId, trustIdHeader) - scoreMemberCandidate(a, membershipsByMemberId, trustIdHeader)
+    )[0] || null;
   }
 
   if (!member?.members_id) {
     const mobileDigits = normalizeDigits(profileData?.mobile || userIdHeader);
     if (mobileDigits && mobileDigits.length >= 10) {
       const normalizedMobile = mobileDigits.slice(-10);
-      // Last-resort fallback: create/find minimal Members row so profile can be saved.
-      const { data: insertedMember, error: insertErr } = await supabase
+      const variants = Array.from(new Set([normalizedMobile, `+91${normalizedMobile}`, `91${normalizedMobile}`]));
+
+      const { data: existingByMobile } = await supabase
         .from('Members')
-        .insert({ Mobile: normalizedMobile })
         .select('*')
-        .maybeSingle();
-      if (!insertErr && insertedMember?.members_id) {
-        member = insertedMember;
-      } else {
-        const { data: existingByMobile } = await supabase
+        .or(variants.map((variant) => `Mobile.eq.${variant}`).join(','))
+        .order('S.No.', { ascending: false })
+        .limit(20);
+
+      if ((existingByMobile || []).length > 0) {
+        const existingIds = Array.from(new Set((existingByMobile || []).map((row) => row?.members_id).filter(Boolean)));
+        const { data: existingMemberships } = await supabase
+          .from('reg_members')
+          .select('members_id, trust_id, is_active')
+          .in('members_id', existingIds);
+        const membershipsByMemberId = buildMembershipLookup(existingMemberships || []);
+        member = [...existingByMobile].sort(
+          (a, b) => scoreMemberCandidate(b, membershipsByMemberId, trustIdHeader) - scoreMemberCandidate(a, membershipsByMemberId, trustIdHeader)
+        )[0] || null;
+      }
+
+      if (!member?.members_id) {
+        // Last-resort fallback: create/find minimal Members row so profile can be saved.
+        const { data: insertedMember, error: insertErr } = await supabase
+          .from('Members')
+          .insert({ Mobile: normalizedMobile })
+          .select('*')
+          .maybeSingle();
+        if (!insertErr && insertedMember?.members_id) {
+          member = insertedMember;
+        } else {
+          const { data: existingByMobileSingle } = await supabase
+            .from('Members')
+            .select('*')
+            .eq('Mobile', normalizedMobile)
+            .limit(1);
+          if (existingByMobileSingle?.[0]?.members_id) {
+            member = existingByMobileSingle[0];
+          }
+        }
+      }
+
+      if (!member?.members_id) {
+        const { data: existingByContact } = await supabase
           .from('Members')
           .select('*')
-          .eq('Mobile', normalizedMobile)
+          .eq('contact', normalizedMobile)
           .limit(1);
-        if (existingByMobile?.[0]?.members_id) {
-          member = existingByMobile[0];
+        if (existingByContact?.[0]?.members_id) {
+          member = existingByContact[0];
         }
       }
     }

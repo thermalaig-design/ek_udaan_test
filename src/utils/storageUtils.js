@@ -1,6 +1,27 @@
 const USER_STORAGE_KEY = 'user';
 const LOGGED_IN_STORAGE_KEY = 'isLoggedIn';
 
+const sanitizeMemberName = (value) => {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  const lowered = raw.toLowerCase();
+  const blockedNames = new Set([
+    'aaaaa',
+    'gau grass',
+    'guest user',
+    'test',
+    'test user',
+    'null',
+    'undefined',
+    'n/a',
+    'na'
+  ]);
+  const compact = raw.replace(/\s+/g, '');
+  const repeatedSingleChar = /^([a-zA-Z])\1{2,}$/.test(compact);
+  if (blockedNames.has(lowered) || repeatedSingleChar) return '';
+  return raw;
+};
+
 const removeLocalStorageByPrefix = (prefixes = []) => {
   try {
     const keysToRemove = [];
@@ -62,13 +83,14 @@ export const hasAnyTrustMembership = (user = {}) =>
 export const compactUserForStorage = (user = {}) => {
   const memberships = Array.isArray(user?.hospital_memberships) ? user.hospital_memberships : [];
   const compactMemberships = memberships.slice(0, 25).map(compactMembership);
+  const sanitizedName = sanitizeMemberName(user?.Name || user?.name || '');
 
   return {
     id: user?.id || user?.members_id || null,
     members_id: user?.members_id || user?.id || null,
     member_id: user?.member_id || user?.members_id || user?.id || null,
-    Name: user?.Name || user?.name || '',
-    name: user?.name || user?.Name || '',
+    Name: sanitizedName,
+    name: sanitizedName,
     Mobile: user?.Mobile || user?.mobile || user?.phone || '',
     mobile: user?.mobile || user?.Mobile || user?.phone || '',
     phone: user?.phone || user?.Mobile || user?.mobile || '',

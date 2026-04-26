@@ -1,9 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
-  User, Users, Mail, Calendar, MapPin, Briefcase, Camera, Save,
+  User, Mail, Calendar, MapPin, Briefcase, Camera, Save,
   Shield, BadgeCheck, Phone, Droplet, UserCircle,
   Home as HomeIcon, Menu, X, Award, CheckCircle, AlertCircle,
-  Plus, Trash2, ChevronDown, ChevronUp
 } from 'lucide-react';
 import Sidebar from './components/Sidebar';
 import { getAllElectedMembers, getProfile, saveProfile } from './services/api';
@@ -118,7 +117,6 @@ const Profile = ({ onNavigate, onProfileUpdate }) => {
   const [navTarget, setNavTarget] = useState(null);
   const [originalData, setOriginalData] = useState(null);
   const [activeTab, setActiveTab] = useState('Details');
-  const [expandedMember, setExpandedMember] = useState(null);
   const [allowManualNameEntry, setAllowManualNameEntry] = useState(false);
   const [selectedTrustId, setSelectedTrustId] = useState(() => localStorage.getItem('selected_trust_id') || '');
 
@@ -127,13 +125,13 @@ const Profile = ({ onNavigate, onProfileUpdate }) => {
     members_id: '',
     address_home: '', address_office: '', company_name: '',
     resident_landline: '', office_landline: '',
-    gender: '', marital_status: '', nationality: '', aadhaar_id: '',
+    gender: '', marital_status: '', nationality: 'Indian', aadhaar_id: '',
     blood_group: '', dob: '',
     emergency_contact_name: '', emergency_contact_number: '',
     profile_photo_url: '',
     spouse_name: '', spouse_contact_number: '', children_count: '',
     facebook: '', twitter: '', instagram: '', linkedin: '', whatsapp: '',
-    position: '', location: '', isElectedMember: false
+    position: '', location: '', isElectedMember: false, name_locked: false
   });
 
   const [photoFile, setPhotoFile] = useState(null);
@@ -184,15 +182,6 @@ const Profile = ({ onNavigate, onProfileUpdate }) => {
   }, [isMenuOpen]);
 
   useEffect(() => {
-    // Deep-link: if another page asked to open a specific tab, honour it once
-    const requestedTab = localStorage.getItem('openProfileTab');
-    if (requestedTab && TABS.includes(requestedTab)) {
-      setActiveTab(requestedTab);
-    }
-    localStorage.removeItem('openProfileTab');
-  }, []);
-
-  useEffect(() => {
     const syncTrustId = () => {
       const next = localStorage.getItem('selected_trust_id') || '';
       setSelectedTrustId((prev) => (prev === next ? prev : next));
@@ -229,7 +218,6 @@ const Profile = ({ onNavigate, onProfileUpdate }) => {
       const p = response?.profile;
       const user = JSON.parse(localStorage.getItem('user') || '{}');
       const selectedMembership = getSelectedMembershipFromUser(user);
-      const selectedTrustMember = Boolean(selectedMembership?.trust_id);
       if (response?.success && p) {
         const resolvedName = resolveNameValue(
           p.name,
@@ -240,11 +228,12 @@ const Profile = ({ onNavigate, onProfileUpdate }) => {
           user.full_name,
           user['Full Name']
         );
-        setAllowManualNameEntry(!selectedTrustMember && !String(resolvedName || '').trim());
+        const nameLocked = Boolean(p.name_locked ?? String(p.name || '').trim());
+        setAllowManualNameEntry(!nameLocked);
         setProfileData({
           name: resolvedName,
           role: p.role || selectedMembership?.role || user.type || '',
-          memberId: p.memberId || p.member_id || selectedMembership?.membership_number || user.membershipNumber || user['Membership number'] || '',
+          memberId: p.memberId || p.member_id || p.membership_number || selectedMembership?.membership_number || user.membershipNumber || user['Membership number'] || '',
           members_id: p.members_id || user.members_id || user.member_id || user.id || '',
           mobile: p.mobile || user.mobile || user.Mobile || '', email: p.email || user.email || user.Email || '',
           address_home: p.address_home || '', address_office: p.address_office || '',
@@ -260,7 +249,8 @@ const Profile = ({ onNavigate, onProfileUpdate }) => {
           facebook: p.facebook || '', twitter: p.twitter || '', instagram: p.instagram || '',
           linkedin: p.linkedin || '', whatsapp: p.whatsapp || '',
           position: p.position || '', location: p.location || '',
-          isElectedMember: p.isElectedMember || false
+          isElectedMember: p.isElectedMember || false,
+          name_locked: nameLocked
         });
         if (p.profile_photo_url) setPhotoPreview(p.profile_photo_url);
       } else {
@@ -274,7 +264,6 @@ const Profile = ({ onNavigate, onProfileUpdate }) => {
   const loadFromLS = () => {
     const user = JSON.parse(localStorage.getItem('user') || '{}');
     const selectedMembership = getSelectedMembershipFromUser(user);
-    const selectedTrustMember = Boolean(selectedMembership?.trust_id);
     const key = `userProfile_${user.Mobile || user.mobile || user.id || 'default'}`;
     const saved = localStorage.getItem(key);
     if (saved) {
@@ -288,13 +277,15 @@ const Profile = ({ onNavigate, onProfileUpdate }) => {
         user.full_name,
         user['Full Name']
       );
-      setAllowManualNameEntry(!selectedTrustMember && !String(resolvedName || '').trim());
+      const nameLocked = Boolean(p?.name_locked ?? String(user?.Name || user?.name || '').trim());
+      setAllowManualNameEntry(!nameLocked);
       setProfileData(prev => ({
         ...prev,
         ...p,
         name: resolvedName,
         role: selectedMembership?.role || p?.role || prev.role || '',
-        memberId: selectedMembership?.membership_number || p?.memberId || p?.member_id || prev.memberId || ''
+        memberId: selectedMembership?.membership_number || p?.memberId || p?.member_id || p?.membership_number || prev.memberId || '',
+        name_locked: nameLocked
       }));
       if (p.profile_photo_url) setPhotoPreview(p.profile_photo_url);
     } else {
@@ -304,7 +295,8 @@ const Profile = ({ onNavigate, onProfileUpdate }) => {
         user.full_name,
         user['Full Name']
       );
-      setAllowManualNameEntry(!selectedTrustMember && !String(resolvedName || '').trim());
+      const nameLocked = Boolean(String(user?.Name || user?.name || '').trim());
+      setAllowManualNameEntry(!nameLocked);
       setProfileData(prev => ({
         ...prev,
         name: resolvedName,
@@ -315,6 +307,7 @@ const Profile = ({ onNavigate, onProfileUpdate }) => {
         address_home: user['Address Home'] || '', address_office: user['Address Office'] || '',
         company_name: user['Company Name'] || '',
         resident_landline: user['Resident Landline'] || '', office_landline: user['Office Landline'] || '',
+        name_locked: nameLocked
       }));
     }
   };
@@ -360,7 +353,7 @@ const Profile = ({ onNavigate, onProfileUpdate }) => {
         ...profileData,
         ...(response?.profile || {}),
         name: resolveNameValue(response?.profile?.name, profileData.name),
-        memberId: response?.profile?.memberId || response?.profile?.member_id || profileData.memberId,
+        memberId: response?.profile?.memberId || response?.profile?.member_id || response?.profile?.membership_number || profileData.memberId,
         mobile: response?.profile?.mobile || profileData.mobile,
         email: response?.profile?.email || profileData.email,
       };
@@ -378,9 +371,11 @@ const Profile = ({ onNavigate, onProfileUpdate }) => {
         email: mergedProfile.email || user.email || '',
       };
       localStorage.setItem('user', JSON.stringify(updatedUser));
+      window.dispatchEvent(new Event('user-profile-updated'));
 
       setProfileData(mergedProfile);
-      setAllowManualNameEntry(!shouldTreatAsTrustMember && !String(mergedProfile.name || '').trim());
+      const nameLocked = Boolean(mergedProfile.name_locked ?? String(mergedProfile.name || '').trim());
+      setAllowManualNameEntry(!nameLocked);
       setOriginalData(JSON.parse(JSON.stringify(mergedProfile)));
       setHasUnsavedChanges(false); setPhotoFile(null);
       if (response?.profile?.profile_photo_url) {
@@ -411,24 +406,6 @@ const Profile = ({ onNavigate, onProfileUpdate }) => {
   const handleNavigate = (target) => {
     if (hasUnsavedChanges) { setNavTarget(target); setShowNavWarning(true); }
     else { onNavigate(target); }
-  };
-
-  const updateMember = (idx, field, value) => {
-    const updated = [...profileData.family_members];
-    updated[idx] = { ...updated[idx], [field]: value };
-    setProfileData(prev => ({ ...prev, family_members: updated }));
-  };
-
-  const addMember = () => {
-    const newMember = { id: Date.now(), name: '', relation: '', gender: '', age: '', dob: '', blood_group: '', contact_no: '', email: '', address: '' };
-    const idx = profileData.family_members.length;
-    setProfileData(prev => ({ ...prev, family_members: [...prev.family_members, newMember] }));
-    setExpandedMember(idx);
-  };
-
-  const removeMember = (idx) => {
-    setProfileData(prev => ({ ...prev, family_members: prev.family_members.filter((_, i) => i !== idx) }));
-    if (expandedMember === idx) setExpandedMember(null);
   };
 
   if (loading) {
@@ -834,8 +811,7 @@ const Profile = ({ onNavigate, onProfileUpdate }) => {
             </div>
             <h2 className="text-xl font-bold mb-2" style={{ color: 'var(--heading-color)' }}>Profile Submitted!</h2>
             <div className="rounded-2xl px-4 py-3 mb-5" style={{ background: 'color-mix(in srgb, var(--brand-red-light) 72%, var(--surface-color))', border: '1px solid color-mix(in srgb, var(--brand-red) 16%, transparent)' }}>
-              <p className="text-sm font-semibold" style={{ color: 'var(--brand-red-dark)' }}>⏳ Your profile is under review</p>
-              <p className="text-xs mt-1" style={{ color: 'var(--brand-red)' }}>Our team will verify your details and activate your membership. You'll be notified once approved.</p>
+              <p className="text-sm font-semibold" style={{ color: 'var(--brand-red-dark)' }}>Your Profile has been updated</p>
             </div>
             <button
               onClick={() => setShowUnderReviewPopup(false)}

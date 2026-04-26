@@ -683,7 +683,7 @@ const Appointments = ({ onNavigate, appointmentForm, setAppointmentForm }) => {
             if (userIdentifier) {
               const { data: profile } = await supabase
                 .from('user_profiles')
-                .select('name, email, mobile, address_home, member_id, dob, family_members')
+                .select('name, email, mobile, address_home, member_id, dob')
                 .eq('user_identifier', String(userIdentifier))
                 .maybeSingle();
               if (profile) {
@@ -700,13 +700,6 @@ const Appointments = ({ onNavigate, appointmentForm, setAppointmentForm }) => {
                   const m = today.getMonth() - birth.getMonth();
                   if (m < 0 || (m === 0 && today.getDate() < birth.getDate())) calcAge--;
                   if (calcAge > 0 && calcAge < 120) age = String(calcAge);
-                }
-                // Load family members
-                if (profile.family_members) {
-                  const members = typeof profile.family_members === 'string'
-                    ? JSON.parse(profile.family_members)
-                    : profile.family_members;
-                  setFamilyMembers(Array.isArray(members) ? members.filter(m => m.name) : []);
                 }
               }
             }
@@ -2149,10 +2142,10 @@ const Appointments = ({ onNavigate, appointmentForm, setAppointmentForm }) => {
                           </div>
                           <button
                             type="button"
-                            onClick={() => { localStorage.setItem('openProfileTab', 'Family Members'); localStorage.setItem('returnToAppointments', '1'); onNavigate && onNavigate('profile'); }}
-                            className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white text-sm font-semibold rounded-xl shadow-md hover:bg-indigo-700 active:scale-95 transition-all"
+                            disabled
+                            className="px-4 py-2 bg-gray-300 text-gray-700 text-sm font-semibold rounded-xl cursor-not-allowed"
                           >
-                            <span className="text-base">+</span> Add Member in Profile
+                            Family profiles unavailable
                           </button>
                         </div>
                       ) : (
@@ -2222,10 +2215,10 @@ const Appointments = ({ onNavigate, appointmentForm, setAppointmentForm }) => {
                           {/* Add another member shortcut */}
                           <button
                             type="button"
-                            onClick={() => { localStorage.setItem('openProfileTab', 'Family Members'); localStorage.setItem('returnToAppointments', '1'); onNavigate && onNavigate('profile'); }}
-                            className="flex items-center gap-1.5 text-xs text-indigo-600 font-semibold hover:text-indigo-800 transition-colors ml-1 mt-1"
+                            disabled
+                            className="flex items-center gap-1.5 text-xs text-gray-400 font-semibold ml-1 mt-1 cursor-not-allowed"
                           >
-                            <span>+</span> Add Another Member
+                            <span>+</span> Saved family profiles unavailable
                           </button>
                         </div>
                       )}

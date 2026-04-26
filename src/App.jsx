@@ -835,6 +835,9 @@ const HospitalTrusteeApp = () => {
         color: 'var(--body-text-color)',
         fontFamily: "var(--font-family, 'Inter', sans-serif)",
         marginInline: 'auto',
+        width: 'min(100%, 430px)',
+        maxWidth: '430px',
+        flexShrink: 0,
       }}
     >
       <Routes>
@@ -1187,6 +1190,11 @@ const HospitalTrusteeApp = () => {
         <div
           className="min-h-screen w-full flex justify-center overflow-x-hidden app-root-shell"
           data-theme-scope="trust-app"
+          style={{
+            display: 'flex',
+            justifyContent: 'center',
+            width: '100%',
+          }}
         >
           {appContent}
         </div>
