@@ -205,6 +205,19 @@ async function ensureAllEventsLoaded(trustId, { forceRefresh = false } = {}) {
 const getCachedPage = (trustId, category, page, pageSize = eventsConfig.PAGE_SIZE) => {
   const pageNo = Number(page) > 0 ? Number(page) : 1;
   const safeSize = Number(pageSize) > 0 ? Number(pageSize) : eventsConfig.PAGE_SIZE;
+  const state = readState(trustId, category);
+  const order = readOrder(trustId, category);
+  const normalizedOrder = order
+    .map((id) => normalizeMaybeIdObject(id))
+    .filter(Boolean);
+  const effectiveTotalCount = Math.max(
+    Number(state.totalCount) > 0 ? Number(state.totalCount) : 0,
+    normalizedOrder.length
+  );
+  const expectedCount = Math.min(
+    pageNo * safeSize,
+    effectiveTotalCount
+  );
 
   const pages = readJson(KEY_PAGES(trustId, category), {});
   const entry = pages[String(pageNo)] || null;
@@ -212,8 +225,19 @@ const getCachedPage = (trustId, category, page, pageSize = eventsConfig.PAGE_SIZ
   if (entry && Array.isArray(entry.ids)) {
     const events = resolveEventsForIds(trustId, entry.ids);
     const idsCount = entry.ids.map((id) => normalizeMaybeIdObject(id)).filter(Boolean).length;
-    const state = readState(trustId, category);
-    if (events.length < idsCount || (events.length === 0 && Number(state.totalCount) > 0)) {
+    const shouldFallbackToOrder = expectedCount > 0 && events.length < expectedCount;
+    if (shouldFallbackToOrder || events.length < idsCount || (events.length === 0 && Number(state.totalCount) > 0)) {
+      const orderedEvents = resolveEventsForIds(trustId, normalizedOrder.slice(0, pageNo * safeSize));
+      if (orderedEvents.length >= expectedCount && orderedEvents.length > 0) {
+        return {
+          events: orderedEvents,
+          hasMore: orderedEvents.length < normalizedOrder.length,
+          totalCount: effectiveTotalCount,
+          isFresh: isFresh(entry.ts),
+          pageNo,
+          pageSize: safeSize
+        };
+      }
       const fallback = fallbackCategorySliceFromAll(trustId, category, pageNo, safeSize);
       if (fallback.events.length > 0) {
         return {
@@ -228,20 +252,15 @@ const getCachedPage = (trustId, category, page, pageSize = eventsConfig.PAGE_SIZ
     }
     return {
       events,
-      hasMore: Boolean(state.hasMore),
-      totalCount: Number(state.totalCount) || 0,
+      hasMore: events.length < normalizedOrder.length,
+      totalCount: effectiveTotalCount,
       isFresh: isFresh(entry.ts),
       pageNo,
       pageSize: safeSize
     };
   }
 
-  const order = readOrder(trustId, category);
-  const slicedIds = order
-    .map((id) => normalizeMaybeIdObject(id))
-    .filter(Boolean)
-    .slice(0, pageNo * safeSize);
-  const state = readState(trustId, category);
+  const slicedIds = normalizedOrder.slice(0, pageNo * safeSize);
   const resolvedFromOrder = resolveEventsForIds(trustId, slicedIds);
   if (resolvedFromOrder.length === 0 && (slicedIds.length > 0 || Number(state.totalCount) > 0)) {
     const fallback = fallbackCategorySliceFromAll(trustId, category, pageNo, safeSize);
@@ -256,8 +275,8 @@ const getCachedPage = (trustId, category, page, pageSize = eventsConfig.PAGE_SIZ
   }
   return {
     events: resolvedFromOrder,
-    hasMore: slicedIds.length < order.length,
-    totalCount: Number(state.totalCount) || order.length,
+    hasMore: slicedIds.length < normalizedOrder.length,
+    totalCount: effectiveTotalCount,
     isFresh: false,
     pageNo,
     pageSize: safeSize

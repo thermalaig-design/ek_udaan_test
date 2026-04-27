@@ -507,26 +507,32 @@ const saveProfileDirectToSupabase = async (profileData, parsedUser, trustId = nu
   };
 };
 
+const resolveAuthHeaders = (fallbackMembersId = null) => {
+  const user = localStorage.getItem('user');
+  const parsedUser = user ? JSON.parse(user) : null;
+  const userId = parsedUser ? parsedUser.Mobile || parsedUser.mobile || parsedUser.id : null;
+  const membersId = parsedUser?.members_id || parsedUser?.member_id || parsedUser?.id || fallbackMembersId || null;
+  const trustId = localStorage.getItem('selected_trust_id') || null;
+
+  if (!userId) {
+    throw new Error('No user found in localStorage');
+  }
+
+  return {
+    'user-id': userId,
+    ...(membersId ? { 'members-id': membersId } : {}),
+    ...(trustId ? { 'trust-id': trustId } : {})
+  };
+};
+
 // Preload commonly used data
 // Get user profile
 export const getProfile = async () => {
   try {
-    const user = localStorage.getItem('user');
-    const parsedUser = user ? JSON.parse(user) : null;
-    const userId = parsedUser ? parsedUser.Mobile || parsedUser.mobile || parsedUser.id : null;
-    const membersId = parsedUser?.members_id || parsedUser?.member_id || parsedUser?.id || null;
-    const trustId = localStorage.getItem('selected_trust_id') || null;
-
-    if (!userId) {
-      throw new Error('No user found in localStorage');
-    }
+    const headers = resolveAuthHeaders();
 
     const response = await api.get('/profile', {
-      headers: {
-        'user-id': userId,
-        ...(membersId ? { 'members-id': membersId } : {}),
-        ...(trustId ? { 'trust-id': trustId } : {})
-      }
+      headers
     });
     return response.data;
   } catch (error) {
@@ -546,15 +552,7 @@ export const getProfile = async () => {
 // Save user profile
 export const saveProfile = async (profileData, profilePhotoFile) => {
   try {
-    const user = localStorage.getItem('user');
-    const parsedUser = user ? JSON.parse(user) : null;
-    const userId = parsedUser ? parsedUser.Mobile || parsedUser.mobile || parsedUser.id : null;
-    const membersId = parsedUser?.members_id || parsedUser?.member_id || parsedUser?.id || profileData?.members_id || null;
-    const trustId = localStorage.getItem('selected_trust_id') || null;
-
-    if (!userId) {
-      throw new Error('No user found in localStorage');
-    }
+    const headers = resolveAuthHeaders(profileData?.members_id || null);
 
     const formData = new FormData();
     formData.append('profileData', JSON.stringify(profileData));
@@ -563,11 +561,7 @@ export const saveProfile = async (profileData, profilePhotoFile) => {
     }
 
     const response = await api.post('/profile/save', formData, {
-      headers: {
-        'user-id': userId,
-        ...(membersId ? { 'members-id': membersId } : {}),
-        ...(trustId ? { 'trust-id': trustId } : {})
-      }
+      headers
     });
     return response.data;
   } catch (error) {
@@ -592,6 +586,189 @@ export const saveProfile = async (profileData, profilePhotoFile) => {
   }
 };
 // Get marquee updates Ã¢â‚¬â€ direct Supabase (no backend needed)
+const USE_BACKEND_FAMILY_API = String(import.meta.env.VITE_USE_BACKEND_FAMILY_API || 'false').toLowerCase() === 'true';
+
+const shouldFallbackFamilyApi = (error) => {
+  const status = error?.response?.status;
+  const serverMessage = String(error?.response?.data?.message || error?.response?.data?.error || error?.message || '').toLowerCase();
+  return status === 404 || serverMessage.includes('route not found') || serverMessage.includes('not found');
+};
+
+const resolveCurrentMembersId = async () => {
+  const user = localStorage.getItem('user');
+  const parsedUser = user ? JSON.parse(user) : null;
+  if (!parsedUser) return null;
+  const directMemberId = parsedUser?.members_id || parsedUser?.member_id || parsedUser?.id || null;
+  if (directMemberId && isUuid(directMemberId)) return String(directMemberId);
+  const trustId = localStorage.getItem('selected_trust_id') || null;
+  return resolveMembersIdForProfile(parsedUser, {}, trustId);
+};
+
+const getFamilyMembersDirectFromSupabase = async () => {
+  const membersId = await resolveCurrentMembersId();
+  if (!membersId) return { success: true, members: [] };
+
+  const { data, error } = await supabase
+    .from('family_members')
+    .select('*')
+    .eq('members_id', membersId)
+    .order('created_at', { ascending: false });
+  if (error) throw error;
+  return { success: true, members: data || [] };
+};
+
+const createFamilyMemberDirectFromSupabase = async (memberPayload = {}) => {
+  const membersId = await resolveCurrentMembersId();
+  if (!membersId) throw new Error('Member not found');
+
+  const insertPayload = {
+    ...memberPayload,
+    members_id: membersId,
+    updated_at: new Date().toISOString()
+  };
+
+  const { data, error } = await supabase
+    .from('family_members')
+    .insert(insertPayload)
+    .select('*')
+    .maybeSingle();
+  if (error) throw error;
+  return { success: true, member: data };
+};
+
+const updateFamilyMemberDirectFromSupabase = async (familyMemberId, memberPayload = {}) => {
+  const membersId = await resolveCurrentMembersId();
+  if (!membersId) throw new Error('Member not found');
+
+  const { data, error } = await supabase
+    .from('family_members')
+    .update({ ...memberPayload, updated_at: new Date().toISOString() })
+    .eq('id', familyMemberId)
+    .eq('members_id', membersId)
+    .select('*')
+    .maybeSingle();
+  if (error) throw error;
+  if (!data) throw new Error('Family member not found');
+  return { success: true, member: data };
+};
+
+const deleteFamilyMemberDirectFromSupabase = async (familyMemberId) => {
+  const membersId = await resolveCurrentMembersId();
+  if (!membersId) throw new Error('Member not found');
+
+  const { error } = await supabase
+    .from('family_members')
+    .delete()
+    .eq('id', familyMemberId)
+    .eq('members_id', membersId);
+  if (error) throw error;
+  return { success: true, id: familyMemberId };
+};
+
+export const getFamilyMembers = async () => {
+  if (!USE_BACKEND_FAMILY_API) {
+    return getFamilyMembersDirectFromSupabase();
+  }
+
+  try {
+    const response = await api.get('/family-members', {
+      headers: resolveAuthHeaders()
+    });
+    return response.data;
+  } catch (error) {
+    if (shouldFallbackFamilyApi(error)) {
+      try {
+        return await getFamilyMembersDirectFromSupabase();
+      } catch (fallbackError) {
+        console.error('Family members fallback fetch failed:', fallbackError);
+        const fallbackMessage = fallbackError?.message || 'Failed to fetch family members';
+        throw new Error(fallbackMessage);
+      }
+    }
+    console.error('Error fetching family members:', error);
+    const serverMessage = error?.response?.data?.message || error?.message || 'Failed to fetch family members';
+    throw new Error(serverMessage);
+  }
+};
+
+export const createFamilyMember = async (memberPayload = {}) => {
+  if (!USE_BACKEND_FAMILY_API) {
+    return createFamilyMemberDirectFromSupabase(memberPayload);
+  }
+
+  try {
+    const response = await api.post('/family-members', memberPayload, {
+      headers: resolveAuthHeaders(memberPayload?.members_id || null)
+    });
+    return response.data;
+  } catch (error) {
+    if (shouldFallbackFamilyApi(error)) {
+      try {
+        return await createFamilyMemberDirectFromSupabase(memberPayload);
+      } catch (fallbackError) {
+        console.error('Family members fallback create failed:', fallbackError);
+        const fallbackMessage = fallbackError?.message || 'Failed to create family member';
+        throw new Error(fallbackMessage);
+      }
+    }
+    console.error('Error creating family member:', error);
+    const serverMessage = error?.response?.data?.message || error?.message || 'Failed to create family member';
+    throw new Error(serverMessage);
+  }
+};
+
+export const updateFamilyMember = async (familyMemberId, memberPayload = {}) => {
+  if (!USE_BACKEND_FAMILY_API) {
+    return updateFamilyMemberDirectFromSupabase(familyMemberId, memberPayload);
+  }
+
+  try {
+    const response = await api.put(`/family-members/${familyMemberId}`, memberPayload, {
+      headers: resolveAuthHeaders(memberPayload?.members_id || null)
+    });
+    return response.data;
+  } catch (error) {
+    if (shouldFallbackFamilyApi(error)) {
+      try {
+        return await updateFamilyMemberDirectFromSupabase(familyMemberId, memberPayload);
+      } catch (fallbackError) {
+        console.error('Family members fallback update failed:', fallbackError);
+        const fallbackMessage = fallbackError?.message || 'Failed to update family member';
+        throw new Error(fallbackMessage);
+      }
+    }
+    console.error('Error updating family member:', error);
+    const serverMessage = error?.response?.data?.message || error?.message || 'Failed to update family member';
+    throw new Error(serverMessage);
+  }
+};
+
+export const deleteFamilyMember = async (familyMemberId, membersId = null) => {
+  if (!USE_BACKEND_FAMILY_API) {
+    return deleteFamilyMemberDirectFromSupabase(familyMemberId);
+  }
+
+  try {
+    const response = await api.delete(`/family-members/${familyMemberId}`, {
+      headers: resolveAuthHeaders(membersId)
+    });
+    return response.data;
+  } catch (error) {
+    if (shouldFallbackFamilyApi(error)) {
+      try {
+        return await deleteFamilyMemberDirectFromSupabase(familyMemberId);
+      } catch (fallbackError) {
+        console.error('Family members fallback delete failed:', fallbackError);
+        const fallbackMessage = fallbackError?.message || 'Failed to delete family member';
+        throw new Error(fallbackMessage);
+      }
+    }
+    console.error('Error deleting family member:', error);
+    const serverMessage = error?.response?.data?.message || error?.message || 'Failed to delete family member';
+    throw new Error(serverMessage);
+  }
+};
+
 export const getMarqueeUpdates = async (trustId = null, trustName = null) => {
   try {
     // Resolve trustId from trustName if needed

@@ -21,6 +21,7 @@ import Events from './Events';
 import EventDetail from './EventDetail';
 import Donation from './Donation';
 import DonationForm from './DonationForm';
+import ExecutiveBody from './ExecutiveBody';
 import Notifications from './Notifications';
 import HealthcareTrusteeDirectory from './HealthcareTrusteeDirectory';
 import MemberDetails from './MemberDetails';
@@ -37,6 +38,7 @@ import Gallery from './Gallery';
 import OtherMemberships from './OtherMemberships';
 import AdminUserProfiles from './admin/AdminUserProfiles';
 import ContactUs from './ContactUs';
+import MyFamily from './MyFamily';
 import { getCurrentNotificationContext, matchesNotificationForContext } from './services/notificationAudience';
 import { applyThemeCssVariables, scopeCustomCss } from './utils/themeUtils';
 import { colorToHex } from './utils/colorUtils';
@@ -720,6 +722,10 @@ const HospitalTrusteeApp = () => {
       alert('Only members can book appointments.');
       return;
     }
+    if (screen === 'executive-body') {
+      navigate('/executive-body');
+      return;
+    }
     if (screen === 'member-details' && data) {
       setPreviousScreen(location.pathname);
       setPreviousScreenName(data.previousScreenName || location.pathname);
@@ -751,6 +757,7 @@ const HospitalTrusteeApp = () => {
         'facilities': '/facilities',
         'events': '/events',
         'donation': '/donation',
+        'executive-body': '/executive-body',
         'donation-form': '/donation-form',
         'notifications': '/notifications',
         'committee-members': '/committee-members',
@@ -760,6 +767,7 @@ const HospitalTrusteeApp = () => {
         'gallery': '/gallery',
         'admin-profiles': '/admin-profiles',
         'contact-us': '/contact-us',
+        'my-family': '/my-family',
         'other-memberships': '/other-memberships',
       };
       const route = routeMap[screen] || '/';
@@ -1032,6 +1040,16 @@ const HospitalTrusteeApp = () => {
           }
         />
         <Route
+          path="/executive-body"
+          element={
+            <ProtectedRoute>
+              <FeatureGuard featureKey="feature_executive_body">
+                <ExecutiveBody onNavigate={handleNavigate} />
+              </FeatureGuard>
+            </ProtectedRoute>
+          }
+        />
+        <Route
           path="/notifications"
           element={
             <ProtectedRoute>
@@ -1142,6 +1160,16 @@ const HospitalTrusteeApp = () => {
                 <ContactUs
                   onNavigateBack={() => navigate('/')}
                 />
+              </FeatureGuard>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/my-family"
+          element={
+            <ProtectedRoute>
+              <FeatureGuard featureKey="feature_my_family">
+                <MyFamily onNavigate={handleNavigate} />
               </FeatureGuard>
             </ProtectedRoute>
           }

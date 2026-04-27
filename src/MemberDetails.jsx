@@ -12,6 +12,34 @@ const MemberDetails = ({ member, onNavigateBack, previousScreenName }) => {
     if (!text || text.toLowerCase() === 'n/a') return '';
     return text;
   };
+  const toPhoneText = (value) => {
+    if (value === null || value === undefined) return '';
+    if (Array.isArray(value)) {
+      const joined = value.map((item) => cleanValue(item)).filter(Boolean).join(', ');
+      return cleanValue(joined);
+    }
+    if (typeof value === 'object') {
+      const candidates = [
+        value.mobile,
+        value.phone,
+        value.phone1,
+        value.phone2,
+        value.number,
+        value.value,
+      ];
+      for (const candidate of candidates) {
+        const normalized = cleanValue(candidate);
+        if (normalized) return normalized;
+      }
+      return '';
+    }
+    return cleanValue(value);
+  };
+  const toDialableNumber = (value) => {
+    const text = toPhoneText(value);
+    if (!text) return '';
+    return text.replace(/\s+/g, '').split(',')[0];
+  };
 
   const displayName = cleanValue(member.member_name_english) || cleanValue(member.Name) || 'Member';
   const displayRole = cleanValue(member.member_role) || cleanValue(member.type);
@@ -195,13 +223,13 @@ const MemberDetails = ({ member, onNavigateBack, previousScreenName }) => {
                       </div>
                     )}
                     
-                    {member['Mobile'] && member['Mobile'] !== 'N/A' && (
+                    {toPhoneText(member['Mobile']) && (
                       <div className="flex items-start gap-3 p-4 bg-gray-50 rounded-2xl">
                         <Phone className="h-5 w-5 text-gray-500 mt-0.5 flex-shrink-0" />
                         <div className="flex-1">
                           <p className="text-xs text-gray-500 font-medium uppercase tracking-wider">Mobile</p>
-                          <a href={`tel:${member['Mobile'].replace(/\s+/g, '').split(',')[0]}`} className="font-medium hover:underline" style={{ color: theme.primary }}>
-                            {member['Mobile']}
+                          <a href={`tel:${toDialableNumber(member['Mobile'])}`} className="font-medium hover:underline" style={{ color: theme.primary }}>
+                            {toPhoneText(member['Mobile'])}
                           </a>
                         </div>
                       </div>
@@ -239,25 +267,25 @@ const MemberDetails = ({ member, onNavigateBack, previousScreenName }) => {
                       </div>
                     )}
                     
-                    {member['Resident Landline'] && member['Resident Landline'] !== 'N/A' && (
+                    {toPhoneText(member['Resident Landline']) && (
                       <div className="flex items-start gap-3 p-4 bg-gray-50 rounded-2xl">
                         <Phone className="h-5 w-5 text-gray-500 mt-0.5 flex-shrink-0" />
                         <div className="flex-1">
                           <p className="text-xs text-gray-500 font-medium uppercase tracking-wider">Resident Landline</p>
-                          <a href={`tel:${member['Resident Landline'].replace(/\s+/g, '').split(',')[0]}`} className="font-medium hover:underline" style={{ color: theme.primary }}>
-                            {member['Resident Landline']}
+                          <a href={`tel:${toDialableNumber(member['Resident Landline'])}`} className="font-medium hover:underline" style={{ color: theme.primary }}>
+                            {toPhoneText(member['Resident Landline'])}
                           </a>
                         </div>
                       </div>
                     )}
                     
-                    {member['Office Landline'] && member['Office Landline'] !== 'N/A' && (
+                    {toPhoneText(member['Office Landline']) && (
                       <div className="flex items-start gap-3 p-4 bg-gray-50 rounded-2xl">
                         <Phone className="h-5 w-5 text-gray-500 mt-0.5 flex-shrink-0" />
                         <div className="flex-1">
                           <p className="text-xs text-gray-500 font-medium uppercase tracking-wider">Office Landline</p>
-                          <a href={`tel:${member['Office Landline'].replace(/\s+/g, '').split(',')[0]}`} className="font-medium hover:underline" style={{ color: theme.primary }}>
-                            {member['Office Landline']}
+                          <a href={`tel:${toDialableNumber(member['Office Landline'])}`} className="font-medium hover:underline" style={{ color: theme.primary }}>
+                            {toPhoneText(member['Office Landline'])}
                           </a>
                         </div>
                       </div>
@@ -358,37 +386,37 @@ const MemberDetails = ({ member, onNavigateBack, previousScreenName }) => {
                       </div>
                     )}
                     
-                    {member.phone1 && member.phone1 !== 'N/A' && (
+                    {toPhoneText(member.phone1) && (
                       <div className="flex items-start gap-3 p-4 bg-gray-50 rounded-2xl">
                         <Phone className="h-5 w-5 text-gray-500 mt-0.5 flex-shrink-0" />
                         <div className="flex-1">
                           <p className="text-xs text-gray-500 font-medium uppercase tracking-wider">Phone 1</p>
-                          <a href={`tel:${member.phone1.replace(/\s+/g, '').split(',')[0]}`} className="font-medium hover:underline" style={{ color: theme.primary }}>
-                            {member.phone1}
+                          <a href={`tel:${toDialableNumber(member.phone1)}`} className="font-medium hover:underline" style={{ color: theme.primary }}>
+                            {toPhoneText(member.phone1)}
                           </a>
                         </div>
                       </div>
                     )}
                     
-                    {member.phone2 && member.phone2 !== 'N/A' && (
+                    {toPhoneText(member.phone2) && (
                       <div className="flex items-start gap-3 p-4 bg-gray-50 rounded-2xl">
                         <Phone className="h-5 w-5 text-gray-500 mt-0.5 flex-shrink-0" />
                         <div className="flex-1">
                           <p className="text-xs text-gray-500 font-medium uppercase tracking-wider">Phone 2</p>
-                          <a href={`tel:${member.phone2.replace(/\s+/g, '').split(',')[0]}`} className="font-medium hover:underline" style={{ color: theme.primary }}>
-                            {member.phone2}
+                          <a href={`tel:${toDialableNumber(member.phone2)}`} className="font-medium hover:underline" style={{ color: theme.primary }}>
+                            {toPhoneText(member.phone2)}
                           </a>
                         </div>
                       </div>
                     )}
                     
-                    {(member.Mobile && member.Mobile !== 'N/A') && (
+                    {toPhoneText(member.Mobile) && (
                       <div className="flex items-start gap-3 p-4 bg-gray-50 rounded-2xl">
                         <Phone className="h-5 w-5 text-gray-500 mt-0.5 flex-shrink-0" />
                         <div className="flex-1">
                           <p className="text-xs text-gray-500 font-medium uppercase tracking-wider">Mobile</p>
-                          <a href={`tel:${member.Mobile.replace(/\s+/g, '').split(',')[0]}`} className="font-medium hover:underline" style={{ color: theme.primary }}>
-                            {member.Mobile}
+                          <a href={`tel:${toDialableNumber(member.Mobile)}`} className="font-medium hover:underline" style={{ color: theme.primary }}>
+                            {toPhoneText(member.Mobile)}
                           </a>
                         </div>
                       </div>
@@ -512,37 +540,37 @@ const MemberDetails = ({ member, onNavigateBack, previousScreenName }) => {
                       </div>
                     )}
                     
-                    {member['Mobile'] && member['Mobile'] !== 'N/A' && (
+                    {toPhoneText(member['Mobile']) && (
                       <div className="flex items-start gap-3 p-4 bg-gray-50 rounded-2xl">
                         <Phone className="h-5 w-5 text-gray-500 mt-0.5 flex-shrink-0" />
                         <div className="flex-1">
                           <p className="text-xs text-gray-500 font-medium uppercase tracking-wider">Mobile</p>
-                          <a href={`tel:${member['Mobile'].replace(/\s+/g, '').split(',')[0]}`} className="font-medium hover:underline" style={{ color: theme.primary }}>
-                            {member['Mobile']}
+                          <a href={`tel:${toDialableNumber(member['Mobile'])}`} className="font-medium hover:underline" style={{ color: theme.primary }}>
+                            {toPhoneText(member['Mobile'])}
                           </a>
                         </div>
                       </div>
                     )}
                     
-                    {member['Resident Landline'] && (
+                    {toPhoneText(member['Resident Landline']) && (
                       <div className="flex items-start gap-3 p-4 bg-gray-50 rounded-2xl">
                         <Phone className="h-5 w-5 text-gray-500 mt-0.5 flex-shrink-0" />
                         <div className="flex-1">
                           <p className="text-xs text-gray-500 font-medium uppercase tracking-wider">Resident Landline</p>
-                          <a href={`tel:${member['Resident Landline'].replace(/\s+/g, '').split(',')[0]}`} className="font-medium hover:underline" style={{ color: theme.primary }}>
-                            {member['Resident Landline']}
+                          <a href={`tel:${toDialableNumber(member['Resident Landline'])}`} className="font-medium hover:underline" style={{ color: theme.primary }}>
+                            {toPhoneText(member['Resident Landline'])}
                           </a>
                         </div>
                       </div>
                     )}
                     
-                    {member['Office Landline'] && (
+                    {toPhoneText(member['Office Landline']) && (
                       <div className="flex items-start gap-3 p-4 bg-gray-50 rounded-2xl">
                         <Phone className="h-5 w-5 text-gray-500 mt-0.5 flex-shrink-0" />
                         <div className="flex-1">
                           <p className="text-xs text-gray-500 font-medium uppercase tracking-wider">Office Landline</p>
-                          <a href={`tel:${member['Office Landline'].replace(/\s+/g, '').split(',')[0]}`} className="font-medium hover:underline" style={{ color: theme.primary }}>
-                            {member['Office Landline']}
+                          <a href={`tel:${toDialableNumber(member['Office Landline'])}`} className="font-medium hover:underline" style={{ color: theme.primary }}>
+                            {toPhoneText(member['Office Landline'])}
                           </a>
                         </div>
                       </div>
@@ -637,13 +665,13 @@ const MemberDetails = ({ member, onNavigateBack, previousScreenName }) => {
                     </div>
                   )}
                   
-                  {member['Mobile'] && member['Mobile'] !== 'N/A' && (
+                  {toPhoneText(member['Mobile']) && (
                     <div className="flex items-start gap-3 p-4 bg-gray-50 rounded-2xl">
                       <Phone className="h-5 w-5 text-gray-500 mt-0.5 flex-shrink-0" />
                       <div className="flex-1">
                         <p className="text-xs text-gray-500 font-medium uppercase tracking-wider">Mobile</p>
-                        <a href={`tel:${member['Mobile'].replace(/\s+/g, '').split(',')[0]}`} className="font-medium hover:underline" style={{ color: theme.primary }}>
-                          {member['Mobile']}
+                        <a href={`tel:${toDialableNumber(member['Mobile'])}`} className="font-medium hover:underline" style={{ color: theme.primary }}>
+                          {toPhoneText(member['Mobile'])}
                         </a>
                       </div>
                     </div>

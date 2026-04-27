@@ -1,16 +1,25 @@
 import { supabase } from './supabaseClient';
 
-const CACHE_KEY = 'feature_flags_cache_v2';
+const CACHE_KEY = 'feature_flags_cache_v3';
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
 const FEATURE_KEY_ALIASES = {
   donation: 'feature_donation',
   feature_donation: 'feature_donation',
+  executivebody: 'feature_executive_body',
+  executive_body: 'feature_executive_body',
+  'executive-body': 'feature_executive_body',
+  feature_executive_body: 'feature_executive_body',
+  feature_executivebody: 'feature_executive_body',
   contactus: 'feature_contact_us',
   contact_us: 'feature_contact_us',
   feature_contact_us: 'feature_contact_us',
   'contact-us': 'feature_contact_us',
   ContactUs: 'feature_contact_us',
+  myfamily: 'feature_my_family',
+  my_family: 'feature_my_family',
+  'my-family': 'feature_my_family',
+  feature_my_family: 'feature_my_family',
 };
 
 export const normalizeFeatureKey = (...values) => {

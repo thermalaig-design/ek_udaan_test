@@ -23,12 +23,15 @@ const normalizeSidebarRoute = (route = '', featureKey = '') => {
 
   if (routeValue === 'contact-us' || routeValue === 'contactus') return 'contact-us';
   if (featureValue === 'contactus' || featureValue === 'contact-us' || featureValue === 'feature-contact-us' || featureValue === 'feature_contact_us') return 'contact-us';
+  if (routeValue === 'my-family' || routeValue === 'myfamily') return 'my-family';
+  if (featureValue === 'myfamily' || featureValue === 'my-family' || featureValue === 'feature-my-family' || featureValue === 'feature_my_family') return 'my-family';
   return routeValue;
 };
 
 const resolveSidebarIcon = (featureKey, route) => {
   const normalizedRoute = normalizeSidebarRoute(route, featureKey);
   if (normalizedRoute === 'contact-us') return PhoneCall;
+  if (normalizedRoute === 'my-family') return Users;
   return PhoneCall;
 };
 
@@ -319,7 +322,11 @@ const Sidebar = ({ isOpen, onClose, onNavigate, currentPage, onLogout }) => {
         || normalizedKey === 'contactus'
         || normalizedKey === 'contact-us'
         || normalizedKey === 'feature-contact-us';
-      return Boolean(key) && meta?.is_enabled && isContactUs;
+      const isMyFamily = resolvedRoute === 'my-family'
+        || normalizedKey === 'myfamily'
+        || normalizedKey === 'my-family'
+        || normalizedKey === 'feature-my-family';
+      return Boolean(key) && meta?.is_enabled && (isContactUs || isMyFamily);
     })
     .map(([key, meta]) => ({
       id: normalizeSidebarRoute(meta?.route, key),
@@ -327,8 +334,14 @@ const Sidebar = ({ isOpen, onClose, onNavigate, currentPage, onLogout }) => {
         ? toTitleCase(meta?.display_name || meta?.name || key)
         : (meta?.display_name || meta?.name || key),
       icon: resolveSidebarIcon(key, meta?.route),
+      quickOrder: meta?.quick_order ?? null,
     }))
-    .sort((a, b) => String(a.label).localeCompare(String(b.label)));
+    .sort((a, b) => {
+      const ao = a.quickOrder ?? 9999;
+      const bo = b.quickOrder ?? 9999;
+      if (ao !== bo) return ao - bo;
+      return String(a.label).localeCompare(String(b.label));
+    });
 
   return (
     <>

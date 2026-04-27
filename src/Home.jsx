@@ -1382,11 +1382,22 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
     if (value === 'facility' || value === 'facilities') return 'facilities';
     if (value === 'event' || value === 'events') return 'events';
     if (value === 'donation' || value === 'donations') return 'donation';
+    if (value === 'executive-body' || value === 'executive_body' || value === 'executive body' || value === 'executivebody') return 'executive-body';
     if (value === 'opd' || value === 'appointment' || value === 'appointments') return 'appointment';
     if (value === 'referral' || value === 'reference' || value === 'references') return 'reference';
     if (value === 'report' || value === 'reports') return 'reports';
     if (value === 'directory' || value === 'healthcare-trustee-directory') return 'directory';
     return value || '';
+  };
+
+  const fallbackQuickRouteByFeatureKey = {
+    feature_executive_body: 'executive-body',
+  };
+
+  const resolveQuickRoute = (route, featureKey = '') => {
+    const normalizedRoute = normalizeQuickRoute(route);
+    if (normalizedRoute) return normalizedRoute;
+    return fallbackQuickRouteByFeatureKey[String(featureKey || '').trim().toLowerCase()] || '';
   };
 
   const resolveQuickIcon = (route, explicitIcon) => {
@@ -1398,6 +1409,7 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
       facilities: '/icons/quick-access/facilities.svg',
       events: '/icons/quick-access/events.svg',
       donation: '/icons/quick-access/donation.svg',
+      'executive-body': '/icons/quick-access/directory.svg',
       directory: '/icons/quick-access/directory.svg',
       appointment: '/icons/quick-access/opd.svg',
       reference: '/icons/quick-access/referral.svg',
@@ -1408,10 +1420,10 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
 
   // Build Quick Access tiles from Supabase flag metadata.
   const dbQuickActions = Object.entries(flagsData)
-    .filter(([key, data]) => Boolean(key) && data?.is_enabled && data?.route)
+    .filter(([key, data]) => Boolean(key) && data?.is_enabled && Boolean(resolveQuickRoute(data?.route, key)))
     .map(([key, data]) => ({
       id: key,
-      route: normalizeQuickRoute(data.route),
+      route: resolveQuickRoute(data.route, key),
       displayName: data.display_name || key,
       tagline: data.tagline || '',
       icon_url: resolveQuickIcon(data.route, data.icon_url),

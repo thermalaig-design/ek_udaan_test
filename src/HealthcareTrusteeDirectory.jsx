@@ -2,7 +2,7 @@
 import { User, Users, Stethoscope, Building2, Star, ChevronRight, ChevronLeft, Menu, X, Home as HomeIcon, Clock, FileText, UserPlus, Phone, Mail, MapPin, Search, Filter, ArrowLeft, ArrowRight } from 'lucide-react';
 import Sidebar from './components/Sidebar';
 import { getAllCommitteeMembers, getAllDoctors, getAllElectedMembers, getProfilePhotos } from './services/api';
-import { getTrusteesAndPatrons } from './services/supabaseService';
+import { getExecutiveBodyMembers, getTrusteesAndPatrons } from './services/supabaseService';
 import { registerSidebarState, useAndroidBack } from './hooks';
 import { useAppTheme } from './context/ThemeContext';
 import { fetchFeatureFlags, subscribeFeatureFlags } from './services/featureFlags';
@@ -314,26 +314,40 @@ const HealthcareTrusteeDirectory = ({ onNavigate }) => {
       hospitalsData = [];
       setHospitals([]);
 
-      // Fetch committee members from committee_members table
+      // Fetch executive body members from member_roles + reg_members + Members
       try {
-        const committeeResponse = await getAllCommitteeMembers(trustId, trustName);
-        console.log('Committee members response:', committeeResponse);
-        committeeData = committeeResponse.data || [];
-        setCommitteeMembers(committeeData);
-      } catch (committeeErr) {
-        console.error('Error fetching committee members:', committeeErr);
-        setCommitteeMembers([]);
-      }
+        const executiveResponse = await getExecutiveBodyMembers(trustId, trustName);
+        if (executiveResponse?.success) {
+          committeeData = executiveResponse?.data?.committee || [];
+          electedData = executiveResponse?.data?.elected || [];
+          setCommitteeMembers(committeeData);
+          setElectedMembers(electedData);
+          console.log('Executive body response:', {
+            committeeCount: committeeData.length,
+            electedCount: electedData.length
+          });
+        } else {
+          throw new Error(executiveResponse?.error || 'Executive body fetch failed');
+        }
+      } catch (executiveErr) {
+        console.error('Error fetching executive body from member_roles, falling back to legacy tables:', executiveErr);
+        try {
+          const committeeResponse = await getAllCommitteeMembers(trustId, trustName);
+          committeeData = committeeResponse?.data || [];
+          setCommitteeMembers(committeeData);
+        } catch (committeeErr) {
+          console.error('Error fetching committee members:', committeeErr);
+          setCommitteeMembers([]);
+        }
 
-      // Fetch elected members separately from elected_members table
-      try {
-        const electedResponse = await getAllElectedMembers(trustId, trustName);
-        console.log('Elected members response:', electedResponse);
-        electedData = electedResponse.data || [];
-        setElectedMembers(electedData);
-      } catch (electedErr) {
-        console.error('Error fetching elected members:', electedErr);
-        // Don't set error, just log it - elected members are optional
+        try {
+          const electedResponse = await getAllElectedMembers(trustId, trustName);
+          electedData = electedResponse?.data || [];
+          setElectedMembers(electedData);
+        } catch (electedErr) {
+          console.error('Error fetching elected members:', electedErr);
+          setElectedMembers([]);
+        }
       }
 
       setDataLoaded(true);
@@ -423,14 +437,7 @@ const HealthcareTrusteeDirectory = ({ onNavigate }) => {
   }, []);
 
   const getCommitteeCount = () => {
-    // Count unique committees (not individual members)
-    const uniqueCommittees = new Set();
-    committeeMembers.forEach((cm) => {
-      const rawName = cm?.committee_name_english || cm?.committee_name_hindi || '';
-      const normalized = String(rawName).trim().toLowerCase();
-      if (normalized) uniqueCommittees.add(normalized);
-    });
-    return uniqueCommittees.size;
+    return committeeMembers.length;
   };
 
   const getDoctorsCount = () => opdDoctors.length > 0 ? opdDoctors.length : allMembers.filter(m =>
@@ -546,21 +553,11 @@ const HealthcareTrusteeDirectory = ({ onNavigate }) => {
       }
     } else if (directory === 'committee') {
       if (tabId === 'elected') {
-        // Return elected members from elected_members table
+        // Return elected members from member_roles(role_type='elected')
         return electedMembers;
       } else {
-        // Return unique committee names instead of individual members
-        const uniqueCommittees = [...new Set(committeeMembers.map(cm => cm.committee_name_english || cm.committee_name_hindi))]
-          .filter(name => name && name !== 'N/A')
-          .map((committeeName, index) => ({
-            'S. No.': `COM${index}`,
-            'Name': committeeName,
-            'type': 'Committee',
-            'committee_name_english': committeeMembers.find(cm => (cm.committee_name_english || cm.committee_name_hindi) === committeeName)?.committee_name_english || committeeName,
-            'committee_name_hindi': committeeMembers.find(cm => (cm.committee_name_english || cm.committee_name_hindi) === committeeName)?.committee_name_hindi || committeeName,
-            'is_committee_group': true
-          }));
-        return uniqueCommittees;
+        // Return committee members from member_roles(role_type='committee')
+        return committeeMembers;
       }
     }
     return [];

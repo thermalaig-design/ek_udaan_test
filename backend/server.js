@@ -16,6 +16,7 @@ import adminRoutes from './routes/adminRoutes.js';
 import sponsorRoutes from './routes/sponsorRoutes.js';
 import notificationRoutes from './routes/notificationRoutes.js';
 import galleryRoutes from './routes/galleryRoutes.js';
+import familyRoutes from './routes/familyRoutes.js';
 import { initFirebaseAdmin } from './config/firebaseAdmin.js';
 import { startNotificationPushWorker } from './services/notificationPushWorker.js';
 
@@ -91,6 +92,7 @@ app.get('/', (req, res) => {
       reports: '/api/reports',
       referrals: '/api/referrals',
       profile: '/api/profile',
+      familyMembers: '/api/family-members',
       sponsors: '/api/sponsors',
       admin: '/api/admin'
     }
@@ -109,6 +111,7 @@ app.get('/api', (req, res) => {
       reports: '/api/reports',
       referrals: '/api/referrals',
       profile: '/api/profile',
+      familyMembers: '/api/family-members',
       sponsors: '/api/sponsors',
       admin: '/api/admin'
     }
@@ -124,6 +127,7 @@ app.use('/api/appointments', appointmentRoutes);
 app.use('/api/reports', reportRoutes);
 app.use('/api/referrals', referralRoutes);
 app.use('/api/profile', profileRoutes);
+app.use('/api/family-members', familyRoutes);
 app.use('/api/sponsors', sponsorRoutes); // Sponsor routes
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/gallery', galleryRoutes); // Gallery routes

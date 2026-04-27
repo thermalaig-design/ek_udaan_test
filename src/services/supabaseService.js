@@ -211,6 +211,210 @@ export const getTrusteesAndPatrons = async (trustId = null, trustName = null) =>
 };
 
 
+// Fetch executive body members from member_roles + reg_members + Members
+export const getExecutiveBodyMembers = async (trustId = null, trustName = null) => {
+  try {
+    let resolvedTrustId = trustId;
+    const normalizeMembershipNumber = (value) => String(value || '').trim();
+    const extractMemberMembership = (member = {}) => {
+      const candidates = [
+        member?.['Membership number'],
+        member?.membership_number,
+        member?.membershipNumber,
+        member?.membership_no,
+        member?.MembershipNo,
+      ];
+      for (const candidate of candidates) {
+        const normalized = normalizeMembershipNumber(candidate);
+        if (normalized) return normalized;
+      }
+      return '';
+    };
+
+    if (!resolvedTrustId && trustName) {
+      const { data: trustData } = await supabase
+        .from('Trust')
+        .select('id')
+        .ilike('name', String(trustName).trim())
+        .limit(1);
+      resolvedTrustId = trustData?.[0]?.id || null;
+    }
+
+    let query = supabase
+      .from('member_roles')
+      .select(`
+        id,
+        reg_id,
+        role_type,
+        title,
+        subtitle,
+        created_at,
+        updated_at,
+        reg_members!inner (
+          id,
+          trust_id,
+          members_id,
+          role,
+          "Membership number",
+          is_active,
+          Members:members_id (
+            "S.No.",
+            "Name",
+            "Mobile",
+            "Email",
+            "Address Home",
+            "Company Name",
+            "Address Office",
+            "Resident Landline",
+            "Office Landline",
+            members_id
+          )
+        )
+      `)
+      .in('role_type', ['committee', 'elected']);
+
+    if (resolvedTrustId) {
+      query = query.eq('reg_members.trust_id', resolvedTrustId);
+    }
+
+    const { data: rows, error } = await query.order('created_at', { ascending: false });
+    if (error) throw error;
+
+    const missingMembershipNumbers = [];
+    (rows || []).forEach((row) => {
+      const regMember = row?.reg_members || {};
+      const memberFromJoin = Array.isArray(regMember?.Members) ? regMember.Members[0] : regMember?.Members;
+      const membershipNumber = normalizeMembershipNumber(regMember?.['Membership number']);
+      if (!memberFromJoin?.Name && membershipNumber) {
+        missingMembershipNumbers.push(membershipNumber);
+      }
+    });
+
+    const fallbackMembersByMembership = new Map();
+    const uniqueMissingMemberships = [...new Set(missingMembershipNumbers)];
+
+    if (uniqueMissingMemberships.length > 0) {
+      try {
+        const chunkSize = 100;
+        let matchedRows = [];
+        for (let i = 0; i < uniqueMissingMemberships.length; i += chunkSize) {
+          const chunk = uniqueMissingMemberships.slice(i, i + chunkSize);
+          const { data, error: chunkError } = await supabase
+            .from('Members')
+            .select('*')
+            .in('Membership number', chunk);
+          if (chunkError) throw chunkError;
+          matchedRows = matchedRows.concat(data || []);
+        }
+        matchedRows.forEach((member) => {
+          const key = extractMemberMembership(member).toLowerCase();
+          if (key && !fallbackMembersByMembership.has(key)) {
+            fallbackMembersByMembership.set(key, member);
+          }
+        });
+      } catch (membershipLookupError) {
+        console.warn('Membership-number lookup failed, using in-memory fallback:', membershipLookupError?.message || membershipLookupError);
+        const { data: fallbackMembers, error: fallbackError } = await supabase
+          .from('Members')
+          .select('*');
+        if (fallbackError) throw fallbackError;
+
+        const membershipSet = new Set(uniqueMissingMemberships.map((value) => normalizeMembershipNumber(value).toLowerCase()).filter(Boolean));
+        (fallbackMembers || []).forEach((member) => {
+          const membership = extractMemberMembership(member).toLowerCase();
+          if (membership && membershipSet.has(membership) && !fallbackMembersByMembership.has(membership)) {
+            fallbackMembersByMembership.set(membership, member);
+          }
+        });
+      }
+    }
+
+    const mapped = (rows || [])
+      .filter((row) => row?.reg_members?.is_active !== false)
+      .map((row) => {
+        const regMember = row?.reg_members || {};
+        const joinedMember = Array.isArray(regMember?.Members) ? regMember.Members[0] : regMember?.Members;
+        const membershipNumber = normalizeMembershipNumber(regMember?.['Membership number']);
+        const fallbackMember = membershipNumber
+          ? fallbackMembersByMembership.get(membershipNumber.toLowerCase()) || {}
+          : {};
+        const member = joinedMember?.Name ? joinedMember : fallbackMember;
+        const roleType = String(row?.role_type || '').toLowerCase();
+        const isCommittee = roleType === 'committee';
+        const isElected = roleType === 'elected';
+        const roleLabel = row?.title || regMember?.role || (isCommittee ? 'Committee' : 'Elected');
+        const resolvedMembership =
+          membershipNumber ||
+          extractMemberMembership(member) ||
+          null;
+        const serialNumber = member?.['S.No.'] ?? member?.['S. No.'] ?? `MR-${String(row?.id || '').slice(0, 8)}`;
+
+        return {
+          id: row?.id || null,
+          reg_id: row?.reg_id || regMember?.id || null,
+          trust_id: regMember?.trust_id || null,
+          members_id: regMember?.members_id || member?.members_id || null,
+          role_type: roleType,
+          type: isCommittee ? 'Committee' : 'Elected',
+          role: regMember?.role || null,
+          title: row?.title || null,
+          subtitle: row?.subtitle || null,
+          member_role: roleLabel,
+          member_name_english: member?.Name || null,
+          Name: member?.Name || null,
+          Mobile: member?.Mobile || null,
+          Email: member?.Email || null,
+          'Membership number': resolvedMembership,
+          'Company Name': member?.['Company Name'] || null,
+          'Address Home': member?.['Address Home'] || null,
+          'Address Office': member?.['Address Office'] || null,
+          'Resident Landline': member?.['Resident Landline'] || null,
+          'Office Landline': member?.['Office Landline'] || null,
+          'S. No.': serialNumber,
+          original_id: member?.['S.No.'] ?? member?.['S. No.'] ?? null,
+          committee_name_english: isCommittee ? (row?.title || roleLabel) : null,
+          committee_name_hindi: isCommittee ? (row?.subtitle || null) : null,
+          is_committee_member: isCommittee,
+          is_elected_member: isElected,
+          elected_id: isElected ? row?.id || null : null,
+          position: isElected ? (row?.title || roleLabel) : null,
+          location: isElected ? (row?.subtitle || null) : null,
+          created_at: row?.created_at || null,
+          updated_at: row?.updated_at || null,
+        };
+      });
+
+    const byMembershipThenName = (a, b) => {
+      const aMembership = normalizeMembershipNumber(a?.['Membership number']);
+      const bMembership = normalizeMembershipNumber(b?.['Membership number']);
+      const aNum = Number.parseInt((aMembership.match(/\d+/g) || ['999999999']).join(''), 10);
+      const bNum = Number.parseInt((bMembership.match(/\d+/g) || ['999999999']).join(''), 10);
+      if (aNum !== bNum) return aNum - bNum;
+      return String(a?.Name || '').localeCompare(String(b?.Name || ''));
+    };
+
+    const committee = mapped.filter((item) => item.role_type === 'committee').sort(byMembershipThenName);
+    const elected = mapped.filter((item) => item.role_type === 'elected').sort(byMembershipThenName);
+
+    return {
+      success: true,
+      data: {
+        committee,
+        elected,
+        all: [...committee, ...elected],
+      }
+    };
+  } catch (err) {
+    console.error('Error fetching executive body members from Supabase:', err);
+    return {
+      success: false,
+      data: { committee: [], elected: [], all: [] },
+      error: err?.message || 'Failed to fetch executive body members',
+    };
+  }
+};
+
+
 // Fetch doctors from Members + reg_members + employee_details + opd_schedule (new schema)
 export const getOpdDoctors = async (trustId = null, trustName = null) => {
   try {
