@@ -5,6 +5,8 @@ import Sidebar from './components/Sidebar';
 import { useAppTheme } from './context/ThemeContext';
 import {
   CATEGORIES,
+  clearEventsCache,
+  eventsConfig,
   getEventsCounts,
   getEventsSnapshot,
   loadEventsPage,
@@ -135,16 +137,24 @@ const Events = ({ onNavigate }) => {
       let resolvedHasMore = typeof res?.hasMore === 'boolean'
         ? res.hasMore
         : Boolean(fallbackSnap?.hasMore);
+      let resolvedTotalCount = Number(res?.totalCount);
 
       const latestCounts = getEventsCounts(normalizedTrustId);
-      const expectedCount = Number(latestCounts?.[normalizedCategory]) || 0;
-      if (!forceRefresh && resolvedEvents.length === 0 && expectedCount > 0) {
-        console.warn('[Events][Recovery] count>0 but list empty. Retrying forced reload.', {
+      let expectedCount = Number(latestCounts?.[normalizedCategory]) || 0;
+      const pageSize = Number(eventsConfig?.PAGE_SIZE) > 0 ? Number(eventsConfig.PAGE_SIZE) : 10;
+      const expectedVisible = Math.min(expectedCount, safePage * pageSize);
+      const hasListCountMismatch = expectedVisible > 0 && resolvedEvents.length < expectedVisible;
+
+      if (!forceRefresh && hasListCountMismatch) {
+        console.warn('[Events][Recovery] count/list mismatch. Clearing cache and retrying forced reload.', {
           trustId: normalizedTrustId,
           category: normalizedCategory,
           page: safePage,
-          expectedCount
+          expectedCount,
+          expectedVisible,
+          resolvedLength: resolvedEvents.length
         });
+        clearEventsCache(normalizedTrustId);
         const retry = await loadEventsPage({
           trustId: normalizedTrustId,
           category: normalizedCategory,
@@ -158,6 +168,9 @@ const Events = ({ onNavigate }) => {
         resolvedHasMore = typeof retry?.hasMore === 'boolean'
           ? retry.hasMore
           : Boolean(retrySnap?.hasMore);
+        resolvedTotalCount = Number(retry?.totalCount);
+        const retryCounts = getEventsCounts(normalizedTrustId);
+        expectedCount = Number(retryCounts?.[normalizedCategory]) || 0;
       }
 
       setPageByCategory((prev) => ({ ...prev, [normalizedCategory]: safePage }));
@@ -165,7 +178,14 @@ const Events = ({ onNavigate }) => {
         setEvents(resolvedEvents);
         setHasMore(resolvedHasMore);
       }
-      setCounts(getEventsCounts(normalizedTrustId));
+      setCounts((prev) => {
+        const storeCounts = getEventsCounts(normalizedTrustId);
+        const resolvedTotal = Number(resolvedTotalCount);
+        if (Number.isFinite(resolvedTotal) && resolvedTotal >= 0) {
+          return { ...storeCounts, [normalizedCategory]: resolvedTotal };
+        }
+        return { ...prev, ...storeCounts };
+      });
     } catch (err) {
       setError(err?.message || 'Failed to load events');
     } finally {

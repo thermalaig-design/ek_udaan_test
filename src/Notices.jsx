@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Calendar, Home as HomeIcon, Menu, X, Paperclip, Star, ChevronRight, FileText } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import Sidebar from './components/Sidebar';
@@ -96,6 +96,63 @@ const getAttachmentType = (url) => {
   return 'other';
 };
 
+const getDayStart = (value) => {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  date.setHours(0, 0, 0, 0);
+  return date.getTime();
+};
+
+const getNoticePriority = (notice, todayStartTs) => {
+  const startTs = getDayStart(notice?.start_date);
+  const endTs = getDayStart(notice?.end_date);
+  const effectiveStart = startTs ?? endTs;
+  const effectiveEnd = endTs ?? startTs;
+
+  if (effectiveStart != null && todayStartTs < effectiveStart) return 'upcoming';
+  if (effectiveEnd != null && todayStartTs > effectiveEnd) return 'past';
+  if (effectiveStart != null || effectiveEnd != null) return 'live';
+  return 'unknown';
+};
+
+const sortNoticesByTimeline = (input) => {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const todayStartTs = today.getTime();
+  const priorityWeight = { live: 0, upcoming: 1, past: 2, unknown: 3 };
+  const list = Array.isArray(input) ? [...input] : [];
+
+  return list.sort((a, b) => {
+    const aPriority = getNoticePriority(a, todayStartTs);
+    const bPriority = getNoticePriority(b, todayStartTs);
+    const weightDiff = (priorityWeight[aPriority] ?? 99) - (priorityWeight[bPriority] ?? 99);
+    if (weightDiff !== 0) return weightDiff;
+
+    const aStart = getDayStart(a?.start_date);
+    const bStart = getDayStart(b?.start_date);
+    const aEnd = getDayStart(a?.end_date);
+    const bEnd = getDayStart(b?.end_date);
+
+    // For upcoming, nearest start date first so users can see what's coming next.
+    if (aPriority === 'upcoming') {
+      const byStartAsc = (aStart ?? Number.MAX_SAFE_INTEGER) - (bStart ?? Number.MAX_SAFE_INTEGER);
+      if (byStartAsc !== 0) return byStartAsc;
+    }
+
+    // For live and past, latest notice first.
+    const byStartDesc = (bStart ?? Number.MIN_SAFE_INTEGER) - (aStart ?? Number.MIN_SAFE_INTEGER);
+    if (byStartDesc !== 0) return byStartDesc;
+    const byEndDesc = (bEnd ?? Number.MIN_SAFE_INTEGER) - (aEnd ?? Number.MIN_SAFE_INTEGER);
+    if (byEndDesc !== 0) return byEndDesc;
+
+    const byUpdatedDesc = new Date(b?.updated_at || b?.created_at || 0).getTime() - new Date(a?.updated_at || a?.created_at || 0).getTime();
+    if (byUpdatedDesc !== 0) return byUpdatedDesc;
+
+    return String(a?.id || '').localeCompare(String(b?.id || ''));
+  });
+};
+
 const Notices = ({ onNavigate }) => {
   const navigate = useNavigate();
   const theme = useAppTheme();
@@ -107,6 +164,7 @@ const Notices = ({ onNavigate }) => {
   const [selectedTrustId, setSelectedTrustId] = useState(() => localStorage.getItem('selected_trust_id') || '');
   const [hasMoreNotices, setHasMoreNotices] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
+  const sortedNotices = useMemo(() => sortNoticesByTimeline(notices), [notices]);
 
   const syncFromStore = (trustId) => {
     const snapshot = getNoticeboardSnapshot(trustId);
@@ -302,10 +360,10 @@ const Notices = ({ onNavigate }) => {
         currentPage="notices"
       />
 
-      {!loading && !error && notices.length > 0 && (
+      {!loading && !error && sortedNotices.length > 0 && (
         <div className="px-6 pb-2">
           <p className="text-[11px] font-semibold text-gray-500">
-            {notices.length} active notice{notices.length === 1 ? '' : 's'}
+            {sortedNotices.length} notice{sortedNotices.length === 1 ? '' : 's'}
           </p>
         </div>
       )}
@@ -340,7 +398,7 @@ const Notices = ({ onNavigate }) => {
 
       {!loading && !error && (
         <div className="px-6 py-4 space-y-4">
-          {notices.map((notice) => {
+          {sortedNotices.map((notice) => {
             const dateLabel = formatDateRange(notice.start_date, notice.end_date);
             const isVip = String(notice?.type || '').toLowerCase() === 'vip';
             const rawAttachments = Array.isArray(notice.attachments) ? notice.attachments : [];
@@ -463,7 +521,7 @@ const Notices = ({ onNavigate }) => {
             );
           })}
 
-          {notices.length === 0 && (
+          {sortedNotices.length === 0 && (
             <div className="text-center py-20">
               <div className="bg-white h-20 w-20 rounded-full flex items-center justify-center mx-auto mb-4 border border-slate-200 shadow-sm">
                 <FileText className="h-8 w-8 text-slate-300" />
@@ -483,7 +541,7 @@ const Notices = ({ onNavigate }) => {
             </div>
           )}
 
-          {notices.length > 0 && hasMoreNotices && (
+          {sortedNotices.length > 0 && hasMoreNotices && (
             <div className="pt-2">
               <button
                 onClick={handleLoadMore}

@@ -1903,52 +1903,41 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
                   )}
 
                   <div className="min-w-0">
-                    {showSelectedTrustMemberBanner ? (
-                      <div className="flex items-center gap-2 mb-1 flex-wrap">
-                        <span
-                          className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-extrabold uppercase tracking-[0.18em]"
-                          style={{
-                            background: 'linear-gradient(135deg, #5a3f00 0%, #d4a017 100%)',
-                            color: '#fff8db',
-                            border: '1px solid rgba(255, 227, 133, 0.5)',
-                          }}
-                        >
-                          <Crown className="h-3.5 w-3.5" />
-                          {selectedTrustMemberBadge}
-                        </span>
-                      </div>
-                    ) : null}
-
                     {userProfile?.name ? (
-                      <p className="text-[12px] font-semibold truncate" style={{ color: showSelectedTrustMemberBanner ? '#f8f0c5' : headingColor }}>
-                        Welcome, <span className="font-extrabold">{userProfile.name}</span>
-                      </p>
-                    ) : null}
-
-                    {showSelectedTrustMemberBanner ? (
-                      <p className="text-[11px] font-semibold truncate" style={{ color: '#d4a017' }}>
-                        {selectedTrustMemberLabel}
-                        {selectedTrustMembership?.membership_number ? ` | ${selectedTrustMembership.membership_number}` : ''}
-                      </p>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <p className="text-[12px] font-semibold truncate" style={{ color: showSelectedTrustMemberBanner ? '#f8f0c5' : headingColor }}>
+                          <span className="font-extrabold">{userProfile.name}</span>
+                        </p>
+                        {showSelectedTrustMemberBanner && selectedTrustMembership?.membership_number ? (
+                          <span
+                            className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-extrabold uppercase tracking-[0.18em]"
+                            style={{
+                              background: 'linear-gradient(135deg, #5a3f00 0%, #d4a017 100%)',
+                              color: '#fff8db',
+                              border: '1px solid rgba(255, 227, 133, 0.5)',
+                            }}
+                          >
+                            <Crown className="h-3.5 w-3.5" />
+                            {selectedTrustMembership.membership_number}
+                          </span>
+                        ) : null}
+                      </div>
                     ) : null}
                   </div>
                 </div>
 
                 {showSelectedTrustMemberBanner ? (
-                  <div
-                    className="flex-shrink-0 rounded-2xl px-3 py-2 text-right"
+                  <span
+                    className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-extrabold uppercase tracking-[0.18em] flex-shrink-0"
                     style={{
-                      background: 'linear-gradient(135deg, rgba(74, 53, 0, 0.55) 0%, rgba(212, 160, 23, 0.28) 100%)',
-                      border: '1px solid rgba(212, 160, 23, 0.45)',
+                      background: 'linear-gradient(135deg, #5a3f00 0%, #d4a017 100%)',
+                      color: '#fff8db',
+                      border: '1px solid rgba(255, 227, 133, 0.5)',
                     }}
                   >
-                    <p className="text-[9px] font-bold uppercase tracking-[0.2em]" style={{ color: '#f1cf75' }}>
-                      Premium
-                    </p>
-                    <p className="text-[11px] font-extrabold" style={{ color: '#fff4cf' }}>
-                      Trust Member
-                    </p>
-                  </div>
+                    <Crown className="h-3.5 w-3.5" />
+                    {selectedTrustMemberBadge}
+                  </span>
                 ) : null}
               </div>
             </div>
