@@ -158,10 +158,26 @@ const Sidebar = ({ isOpen, onClose, onNavigate, currentPage, onLogout }) => {
         const response = await getProfile();
         if (response.success && response.profile) {
           const resolvedName = sanitizeMemberName(response.profile.name || parsedUser?.Name || parsedUser?.name || '');
+          const profilePhotoUrl = response.profile.profile_photo_url || '';
           setProfile({
             name: resolvedName,
-            profilePhotoUrl: response.profile.profile_photo_url || '',
+            profilePhotoUrl,
           });
+          if (parsedUser) {
+            const key = `userProfile_${parsedUser.Mobile || parsedUser.mobile || parsedUser.id || 'default'}`;
+            const nextSnapshot = {
+              ...(cachedProfile || {}),
+              ...(response.profile || {}),
+              name: resolvedName,
+              profile_photo_url: profilePhotoUrl,
+              profilePhotoUrl
+            };
+            try {
+              localStorage.setItem(key, JSON.stringify(nextSnapshot));
+            } catch {
+              // ignore cache write failures
+            }
+          }
         } else if (parsedUser) {
           const key = `userProfile_${parsedUser.Mobile || parsedUser.mobile || parsedUser.id || 'default'}`;
           const saved = localStorage.getItem(key);
@@ -347,7 +363,7 @@ const Sidebar = ({ isOpen, onClose, onNavigate, currentPage, onLogout }) => {
     <>
       {/* Overlay — absolute within parent container */}
       <div
-        className="absolute inset-0 backdrop-blur-sm z-40"
+        className="absolute max-md:fixed inset-0 backdrop-blur-sm z-40"
         data-sidebar-overlay="true"
         onTouchStart={onClose}
         onClick={onClose}
@@ -360,10 +376,12 @@ const Sidebar = ({ isOpen, onClose, onNavigate, currentPage, onLogout }) => {
       {/* Sidebar panel — absolute, left-anchored, full height */}
       <div
         ref={sidebarRef}
-        className="theme-sidebar absolute left-0 top-0 bottom-0 w-72 shadow-2xl z-50 flex flex-col"
+        className="theme-sidebar absolute max-md:fixed left-0 top-0 bottom-0 w-72 shadow-2xl z-50 flex flex-col"
         data-sidebar="true"
         style={{
           maxWidth: '85vw',
+          height: '100dvh',
+          maxHeight: '100dvh',
           touchAction: 'pan-y',
           background: 'var(--sidebar-bg)',
           backdropFilter: 'blur(var(--sidebar-blur, 12px))',
@@ -457,14 +475,15 @@ const Sidebar = ({ isOpen, onClose, onNavigate, currentPage, onLogout }) => {
 
         {/* ── Scrollable area: nav + extras ── */}
         <div 
-          className="flex-1 overflow-y-auto overflow-x-hidden pb-20"
+          className="flex-1 overflow-y-auto overflow-x-hidden"
           style={{ 
             touchAction: 'pan-y', 
             WebkitOverflowScrolling: 'touch', 
             minHeight: 0,
             scrollBehavior: 'smooth',
             flex: '1 1 auto',
-            overscrollBehavior: 'contain'
+            overscrollBehavior: 'contain',
+            paddingBottom: 'calc(5.5rem + env(safe-area-inset-bottom, 0px))'
           }}
         >
           {/* Nav items + More Options */}
@@ -639,12 +658,13 @@ const Sidebar = ({ isOpen, onClose, onNavigate, currentPage, onLogout }) => {
 
       {/* ── Fixed Logout Button at Bottom ── */}
       <div
-        className="absolute left-0 right-0 bottom-0 px-3 py-3 z-50"
+        className="absolute left-0 right-0 bottom-0 px-3 pt-3 z-50"
         style={{
           background: 'var(--sidebar-bg)',
           borderTop: `1px solid ${applyOpacity(primary, 0.08)}`,
           backdropFilter: 'blur(var(--sidebar-blur, 12px))',
           WebkitBackdropFilter: 'blur(var(--sidebar-blur, 12px))',
+          paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom, 0px))'
         }}
       >
         <button

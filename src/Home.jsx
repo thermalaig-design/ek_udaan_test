@@ -542,15 +542,26 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
         try {
           const parsedUser = JSON.parse(user);
           const userKey = `userProfile_${parsedUser.Mobile || parsedUser.mobile || parsedUser.id || 'default'}`;
+          const fallbackName = normalizeMemberName(
+            parsedUser?.Name || parsedUser?.name || parsedUser?.full_name || parsedUser?.['Full Name'] || ''
+          );
+          let cachedSnapshot = null;
+
           // First, apply cached profile photo if available
           const savedProfile = localStorage.getItem(userKey);
           if (savedProfile) {
             const parsed = JSON.parse(savedProfile);
             const normalizedName = normalizeMemberName(parsed?.name || '');
+            cachedSnapshot = parsed;
             setUserProfile((prev) => ({
               ...prev,
               ...parsed,
-              name: normalizedName || prev?.name || ''
+              name: normalizedName || prev?.name || fallbackName || ''
+            }));
+          } else if (fallbackName) {
+            setUserProfile((prev) => ({
+              ...prev,
+              name: prev?.name || fallbackName
             }));
           }
           const userId = parsedUser['Membership number'] || parsedUser.mobile || parsedUser.id;
@@ -558,13 +569,52 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
             try {
               const response = await getProfile();
               if (response.success && response.profile) {
-                const normalizedName = normalizeMemberName(response.profile.name || '');
-                setUserProfile({ name: normalizedName, profilePhotoUrl: response.profile.profile_photo_url || '' });
+                const normalizedName = normalizeMemberName(
+                  response.profile.name || response.profile.full_name || cachedSnapshot?.name || fallbackName || ''
+                );
+                const profilePhotoUrl =
+                  response.profile.profile_photo_url ||
+                  response.profile.profilePhotoUrl ||
+                  cachedSnapshot?.profile_photo_url ||
+                  cachedSnapshot?.profilePhotoUrl ||
+                  '';
+                const nextSnapshot = {
+                  ...(cachedSnapshot || {}),
+                  ...(response.profile || {}),
+                  name: normalizedName,
+                  profile_photo_url: profilePhotoUrl,
+                  profilePhotoUrl
+                };
+
+                setUserProfile((prev) => ({
+                  ...prev,
+                  name: normalizedName || prev?.name || fallbackName || '',
+                  profilePhotoUrl
+                }));
+                try {
+                  localStorage.setItem(userKey, JSON.stringify(nextSnapshot));
+                } catch {
+                  // ignore cache write failures
+                }
                 return;
               }
             } catch (error) {
               console.error('Error loading from Supabase:', error);
             }
+          }
+
+          const fallbackSnapshot = getCachedUserProfileSnapshot();
+          if (fallbackSnapshot) {
+            setUserProfile((prev) => ({
+              ...prev,
+              ...fallbackSnapshot,
+              name: fallbackSnapshot.name || prev?.name || fallbackName || ''
+            }));
+          } else if (fallbackName) {
+            setUserProfile((prev) => ({
+              ...prev,
+              name: prev?.name || fallbackName
+            }));
           }
         } catch (error) {
           console.error('Error loading user profile:', error);
@@ -580,8 +630,20 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
       if (snapshot) setUserProfile(snapshot);
     };
 
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') syncProfileFromCache();
+    };
+
     window.addEventListener('user-profile-updated', syncProfileFromCache);
-    return () => window.removeEventListener('user-profile-updated', syncProfileFromCache);
+    window.addEventListener('focus', syncProfileFromCache);
+    window.addEventListener('storage', syncProfileFromCache);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      window.removeEventListener('user-profile-updated', syncProfileFromCache);
+      window.removeEventListener('focus', syncProfileFromCache);
+      window.removeEventListener('storage', syncProfileFromCache);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
   }, []);
 
   // Load trusts from user localStorage
@@ -1908,36 +1970,38 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
                         <p className="text-[12px] font-semibold truncate" style={{ color: showSelectedTrustMemberBanner ? '#f8f0c5' : headingColor }}>
                           <span className="font-extrabold">{userProfile.name}</span>
                         </p>
-                        {showSelectedTrustMemberBanner && selectedTrustMembership?.membership_number ? (
-                          <span
-                            className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-extrabold uppercase tracking-[0.18em]"
-                            style={{
-                              background: 'linear-gradient(135deg, #5a3f00 0%, #d4a017 100%)',
-                              color: '#fff8db',
-                              border: '1px solid rgba(255, 227, 133, 0.5)',
-                            }}
-                          >
-                            <Crown className="h-3.5 w-3.5" />
-                            {selectedTrustMembership.membership_number}
-                          </span>
-                        ) : null}
                       </div>
                     ) : null}
                   </div>
                 </div>
 
                 {showSelectedTrustMemberBanner ? (
-                  <span
-                    className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-extrabold uppercase tracking-[0.18em] flex-shrink-0"
-                    style={{
-                      background: 'linear-gradient(135deg, #5a3f00 0%, #d4a017 100%)',
-                      color: '#fff8db',
-                      border: '1px solid rgba(255, 227, 133, 0.5)',
-                    }}
-                  >
-                    <Crown className="h-3.5 w-3.5" />
-                    {selectedTrustMemberBadge}
-                  </span>
+                  <div className="inline-flex items-center gap-2 flex-shrink-0">
+                    {selectedTrustMembership?.membership_number ? (
+                      <span
+                        className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-extrabold uppercase tracking-[0.18em]"
+                        style={{
+                          background: 'linear-gradient(135deg, #5a3f00 0%, #d4a017 100%)',
+                          color: '#fff8db',
+                          border: '1px solid rgba(255, 227, 133, 0.5)',
+                        }}
+                      >
+                        <Crown className="h-3.5 w-3.5" />
+                        {selectedTrustMembership.membership_number}
+                      </span>
+                    ) : null}
+                    <span
+                      className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-extrabold uppercase tracking-[0.18em]"
+                      style={{
+                        background: 'linear-gradient(135deg, #5a3f00 0%, #d4a017 100%)',
+                        color: '#fff8db',
+                        border: '1px solid rgba(255, 227, 133, 0.5)',
+                      }}
+                    >
+                      <Crown className="h-3.5 w-3.5" />
+                      {selectedTrustMemberBadge}
+                    </span>
+                  </div>
                 ) : null}
               </div>
             </div>
