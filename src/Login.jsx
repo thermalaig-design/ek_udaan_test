@@ -141,7 +141,11 @@ function Login() {
         }
         sessionStorage.setItem(OTP_FLOW_KEY, 'special');
         navigate('/special-otp-verification', {
-          state: { user: checkResult.data.user, phoneNumber }
+          state: {
+            user: checkResult.data.user,
+            accounts: checkResult.data.accounts || [checkResult.data.user],
+            phoneNumber
+          }
         });
         return;
       }
@@ -156,7 +160,11 @@ function Login() {
 
       sessionStorage.setItem(OTP_FLOW_KEY, 'normal');
       navigate('/otp-verification', {
-        state: { user: checkResult.data.user, phoneNumber }
+        state: {
+          user: checkResult.data.user,
+          accounts: checkResult.data.accounts || [checkResult.data.user],
+          phoneNumber
+        }
       });
     } catch (err) {
       console.error('[Login] Error checking phone:', err);

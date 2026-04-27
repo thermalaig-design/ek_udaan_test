@@ -75,6 +75,73 @@ const scoreMemberCandidate = (member, membershipStats = null) => {
   return score;
 };
 
+const buildTrustPayload = (membership = null) => {
+  if (!membership?.trust_id) return null;
+  return {
+    id: membership.trust_id,
+    name: membership.trust_name,
+    icon_url: membership.trust_icon_url,
+    remark: membership.trust_remark
+  };
+};
+
+const buildMemberAccount = ({
+  member,
+  cleanedPhone,
+  allMemberships = [],
+  preferredTrustId = '',
+  memberIds = [],
+  isRegisteredMember = false,
+  reg_member_id = null,
+  vip_status = null
+}) => {
+  const memberId = member?.members_id ? String(member.members_id) : '';
+  const linkedMemberships = memberId
+    ? allMemberships.filter((m) => String(m?.members_id || '') === memberId)
+    : [];
+  const primaryTrust = pickPrimaryMembership(linkedMemberships, preferredTrustId);
+  const trust = buildTrustPayload(primaryTrust);
+  const primaryMembership = primaryTrust || linkedMemberships[0] || null;
+  const sanitizedName = normalizeMemberName(member?.['Name']);
+  const membershipNumber = primaryMembership?.membership_number || '';
+
+  const account = {
+    id: member?.members_id || member?.['S.No.'] || member?.['Mobile'] || cleanedPhone,
+    members_id: member?.members_id || member?.['S.No.'] || null,
+    member_ids: memberIds,
+    'S. No.': member?.['S.No.'] || null,
+    Name: sanitizedName,
+    name: sanitizedName,
+    Mobile: member?.['Mobile'] || cleanedPhone,
+    mobile: member?.['Mobile'] || cleanedPhone,
+    Email: member?.['Email'] || '',
+    email: member?.['Email'] || '',
+    'Membership number': membershipNumber,
+    membership_number: membershipNumber,
+    membershipNumber,
+    type: primaryMembership?.role || 'Trustee',
+    trust,
+    hospital_memberships: linkedMemberships,
+    isRegisteredMember: Boolean(isRegisteredMember),
+    vip_status: vip_status || null,
+    reg_member_id: reg_member_id || null
+  };
+
+  if (trust) {
+    account.primary_trust = {
+      id: trust.id,
+      name: trust.name,
+      icon_url: trust.icon_url,
+      remark: trust.remark || null,
+      is_active: primaryTrust?.is_active !== false
+    };
+  } else {
+    account.primary_trust = null;
+  }
+
+  return account;
+};
+
 /**
  * Check phone number and send OTP
  * Membership source: reg_members
@@ -82,10 +149,14 @@ const scoreMemberCandidate = (member, membershipStats = null) => {
 export const checkPhoneNumber = async (phoneNumber) => {
   try {
     if (USE_MOCK_AUTH) {
+      const mockUser = buildMockUser(phoneNumber);
       return {
         success: true,
         message: 'Mocked: phone verified',
-        data: { user: buildMockUser(phoneNumber) }
+        data: {
+          user: mockUser,
+          accounts: [mockUser]
+        }
       };
     }
 
@@ -139,7 +210,10 @@ export const checkPhoneNumber = async (phoneNumber) => {
       return {
         success: true,
         message: 'Mobile verified',
-        data: { user: fallbackUser }
+        data: {
+          user: fallbackUser,
+          accounts: [fallbackUser]
+        }
       };
     }
 
@@ -147,9 +221,8 @@ export const checkPhoneNumber = async (phoneNumber) => {
 
     // 2) Membership lookup from reg_members
     let hospitalMemberships = [];
-    let isRegisteredMember = false;
-    let reg_member_id = null;
-    let vip_status = null;
+    let regMemberships = [];
+    let vipRows = [];
 
     if (membersIds.length > 0) {
       const regResult = await supabase
@@ -162,7 +235,7 @@ export const checkPhoneNumber = async (phoneNumber) => {
         return { success: false, message: 'Unable to verify membership. Please try again.' };
       }
 
-      const regMemberships = (Array.isArray(regResult.data) ? regResult.data : []).filter(
+      regMemberships = (Array.isArray(regResult.data) ? regResult.data : []).filter(
         (m) => m?.trust_id && membersIds.includes(String(m.members_id))
       );
 
@@ -183,11 +256,9 @@ export const checkPhoneNumber = async (phoneNumber) => {
         }
       }
 
-      const membershipByTrust = {};
-
-      regMemberships.forEach((m) => {
+      hospitalMemberships = regMemberships.map((m) => {
         const t = trustsById[m.trust_id] || null;
-        membershipByTrust[m.trust_id] = {
+        return {
           id: m.id || null,
           trust_id: m.trust_id || null,
           trust_name: t?.name || null,
@@ -201,55 +272,40 @@ export const checkPhoneNumber = async (phoneNumber) => {
         };
       });
 
-      hospitalMemberships = Object.values(membershipByTrust).sort((a, b) => {
+      hospitalMemberships.sort((a, b) => {
         const activeScore = Number(Boolean(b?.is_active)) - Number(Boolean(a?.is_active));
         if (activeScore !== 0) return activeScore;
         return String(a?.trust_name || '').localeCompare(String(b?.trust_name || ''));
       });
 
-      // Check registered member status using reg_members roles
-      const governanceRoles = [
-        'trustee', 'patron',
-        'founder', 'president', 'maha mantri', 'chairman', 'vice-chairman',
-        'secretary', 'treasurer', 'chief patron', 'patron-in-chief',
-        'advisor', 'board member', 'governing body member'
-      ];
+      const regIds = regMemberships.map((m) => m.id).filter(Boolean);
+      if (regIds.length > 0) {
+        const { data: vipData, error: vipError } = await supabase
+          .from('vip_entry')
+          .select('id, trust_id, reg_id, type, is_active')
+          .in('reg_id', regIds)
+          .eq('is_active', true)
+          .limit(50);
 
-      const isGovernanceRole = (role) => {
-        if (!role) return false;
-        const normalized = String(role).trim().toLowerCase();
-        return governanceRoles.includes(normalized);
-      };
-
-      const qualifiedMembership = regMemberships.find(
-        (m) => m.trust_id && m.members_id && isGovernanceRole(m.role)
-      );
-
-      if (qualifiedMembership) {
-        isRegisteredMember = true;
-        reg_member_id = qualifiedMembership.id;
-
-        const regIds = regMemberships.map((m) => m.id).filter(Boolean);
-        if (regIds.length > 0) {
-          const { data: vipRows, error: vipError } = await supabase
-            .from('vip_entry')
-            .select('id, trust_id, reg_id, type, is_active')
-            .in('reg_id', regIds)
-            .eq('is_active', true)
-            .limit(5);
-
-          if (!vipError && Array.isArray(vipRows) && vipRows.length > 0) {
-            const vvip = vipRows.find((v) => String(v.type || '').toUpperCase() === 'VVIP');
-            vip_status = vvip ? 'VVIP' : vipRows[0].type;
-            console.log('VIP status found:', vip_status);
-          }
+        if (!vipError && Array.isArray(vipData)) {
+          vipRows = vipData;
         }
       }
     }
 
-    const primaryTrust = pickPrimaryMembership(hospitalMemberships, BASE_TRUST_ID);
-
     const preferredTrustId = String(BASE_TRUST_ID || '').trim();
+    const governanceRoles = [
+      'trustee', 'patron',
+      'founder', 'president', 'maha mantri', 'chairman', 'vice-chairman',
+      'secretary', 'treasurer', 'chief patron', 'patron-in-chief',
+      'advisor', 'board member', 'governing body member'
+    ];
+    const isGovernanceRole = (role) => {
+      if (!role) return false;
+      const normalized = String(role).trim().toLowerCase();
+      return governanceRoles.includes(normalized);
+    };
+
     const membershipStatsByMemberId = (Array.isArray(membersIds) ? membersIds : []).reduce((acc, memberId) => {
       const linkedMemberships = hospitalMemberships.filter((hm) => String(hm?.members_id || '') === String(memberId));
       const hasAnyMembership = linkedMemberships.length > 0;
@@ -269,54 +325,63 @@ export const checkPhoneNumber = async (phoneNumber) => {
       return acc;
     }, {});
 
-    const member = [...members].sort((a, b) => {
-      const aStats = membershipStatsByMemberId[String(a?.members_id)] || null;
-      const bStats = membershipStatsByMemberId[String(b?.members_id)] || null;
-      return scoreMemberCandidate(b, bStats) - scoreMemberCandidate(a, aStats);
-    })[0] || members[0];
-    const trust = primaryTrust?.trust_id
-      ? {
-        id: primaryTrust.trust_id,
-        name: primaryTrust.trust_name,
-        icon_url: primaryTrust.trust_icon_url,
-        remark: primaryTrust.trust_remark
+    const vipStatusByRegId = new Map();
+    vipRows.forEach((row) => {
+      if (!row?.reg_id) return;
+      const regId = String(row.reg_id);
+      const current = vipStatusByRegId.get(regId);
+      const next = String(row.type || '').toUpperCase() === 'VVIP' ? 'VVIP' : (row.type || null);
+      if (!current || String(next || '').toUpperCase() === 'VVIP') {
+        vipStatusByRegId.set(regId, next);
       }
-      : null;
+    });
 
-    const primaryMembership = primaryTrust || hospitalMemberships[0] || null;
-    const user = {
-      id: member.members_id || member['S.No.'],
-      members_id: member.members_id || member['S.No.'],
-      member_ids: membersIds,
-      name: normalizeMemberName(member['Name']),
-      mobile: member['Mobile'] || cleanedPhone,
-      email: member['Email'] || '',
-      type: primaryMembership?.role || 'Trustee',
-      membershipNumber: primaryMembership?.membership_number || '',
-      trust,
-      isRegisteredMember,
-      vip_status,
-      reg_member_id
-    };
+    const accounts = [...members]
+      .map((memberRow) => {
+        const memberId = memberRow?.members_id ? String(memberRow.members_id) : '';
+        const memberMemberships = memberId
+          ? regMemberships.filter((m) => String(m?.members_id || '') === memberId)
+          : [];
+        const governanceMembership = memberMemberships.find((m) => isGovernanceRole(m?.role));
+        const vipStatuses = memberMemberships
+          .map((membership) => vipStatusByRegId.get(String(membership?.id || '')))
+          .filter(Boolean);
+        const vvip = vipStatuses.find((type) => String(type || '').toUpperCase() === 'VVIP');
+        const vipStatus = vvip || vipStatuses[0] || null;
 
-    if (trust) {
-      user.primary_trust = {
-        id: trust.id,
-        name: trust.name,
-        icon_url: trust.icon_url,
-        remark: trust.remark || null,
-        is_active: primaryTrust?.is_active !== false
-      };
+        return buildMemberAccount({
+          member: memberRow,
+          cleanedPhone,
+          allMemberships: hospitalMemberships,
+          preferredTrustId,
+          memberIds: membersIds,
+          isRegisteredMember: Boolean(governanceMembership),
+          reg_member_id: governanceMembership?.id || null,
+          vip_status: vipStatus
+        });
+      })
+      .sort((a, b) => {
+        const aStats = membershipStatsByMemberId[String(a?.members_id)] || null;
+        const bStats = membershipStatsByMemberId[String(b?.members_id)] || null;
+        return scoreMemberCandidate(b, bStats) - scoreMemberCandidate(a, aStats);
+      });
+
+    const user = accounts[0] || null;
+    if (!user) {
+      return { success: false, message: 'Unable to resolve account details. Please try again.' };
     }
 
-    user.hospital_memberships = hospitalMemberships;
-
-    console.log(`User check complete: trusts=${hospitalMemberships.length}, isRegisteredMember=${isRegisteredMember}, vip_status=${vip_status}`);
+    console.log(
+      `User check complete: accounts=${accounts.length}, trusts=${hospitalMemberships.length}, selectedMember=${user?.members_id || user?.id}`
+    );
 
     return {
       success: true,
       message: 'Mobile verified',
-      data: { user }
+      data: {
+        user,
+        accounts
+      }
     };
   } catch (error) {
     console.error('Error checking phone:', error);

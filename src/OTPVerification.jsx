@@ -86,6 +86,13 @@ function OTPVerification() {
   const [trustInfo, setTrustInfo] = useState(() => getCachedBaseTrust(authDefaultTrust.id) || null);
 
   const user = location.state?.user || null;
+  const accountCandidates = Array.isArray(location.state?.accounts) && location.state.accounts.length > 0
+    ? location.state.accounts
+    : (user ? [user] : []);
+  const [otpVerified, setOtpVerified] = useState(false);
+  const [selectedAccountId, setSelectedAccountId] = useState(
+    accountCandidates[0]?.members_id || accountCandidates[0]?.id || ''
+  );
   const phoneNumber = location.state?.phoneNumber || '';
   const isOtpFlowAllowed = sessionStorage.getItem(OTP_FLOW_KEY) === 'normal';
   const canRenderOtpPage = Boolean(user && phoneNumber && isOtpFlowAllowed);
@@ -126,6 +133,39 @@ function OTPVerification() {
     return () => { active = false; };
   }, [authDefaultTrust.id]);
 
+  const resolveSelectedAccount = () => {
+    if (!accountCandidates.length) return null;
+    const selectedId = String(selectedAccountId || '');
+    if (!selectedId) return accountCandidates[0];
+    return accountCandidates.find((account) => {
+      const accountId = String(account?.members_id || account?.id || '');
+      return accountId === selectedId;
+    }) || accountCandidates[0];
+  };
+
+  const completeLogin = (selectedUser) => {
+    const persisted = persistUserSession(selectedUser);
+    if (!persisted.success) {
+      setError(persisted.message || 'Unable to save session on this device. Please try again.');
+      return false;
+    }
+
+    const selectedTrustId = authDefaultTrust.id || TRUST_ID;
+    const selectedTrustName = trustInfo?.name || localStorage.getItem('selected_trust_name') || '';
+    localStorage.setItem('selected_trust_id', String(selectedTrustId));
+    if (selectedTrustName) localStorage.setItem('selected_trust_name', String(selectedTrustName));
+
+    fetchDirectoryData(selectedTrustId, selectedTrustName).catch(err =>
+      console.warn('[OTP] Directory pre-fetch failed:', err)
+    );
+
+    try { sessionStorage.removeItem('trust_selected_in_session'); } catch { /* ignore */ }
+    try { sessionStorage.removeItem(OTP_FLOW_KEY); } catch { /* ignore */ }
+
+    navigate('/', { replace: true });
+    return true;
+  };
+
   // ─── OTP Submit ─────────────────────────────────────────────────────────────
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -133,6 +173,18 @@ function OTPVerification() {
     setError('');
 
     try {
+      if (otpVerified) {
+        const selectedUser = resolveSelectedAccount();
+        if (!selectedUser) {
+          setError('Please select an account to continue.');
+          setLoading(false);
+          return;
+        }
+        completeLogin(selectedUser);
+        setLoading(false);
+        return;
+      }
+
       const result = await verifyOTP(phoneNumber, otp);
       if (!result.success) {
         setError(result.message || 'Invalid OTP. Please try again.');
@@ -146,29 +198,15 @@ function OTPVerification() {
         return;
       }
 
-      // Persist session safely (with compaction + quota recovery)
-      const persisted = persistUserSession(user);
-      if (!persisted.success) {
-        setError(persisted.message || 'Unable to save session on this device. Please try again.');
+      if (accountCandidates.length > 1) {
+        setOtpVerified(true);
+        const nextId = accountCandidates[0]?.members_id || accountCandidates[0]?.id || '';
+        setSelectedAccountId(nextId);
         setLoading(false);
         return;
       }
 
-      // Keep app context pinned to base trust on login.
-      const selectedTrustId = authDefaultTrust.id || TRUST_ID;
-      const selectedTrustName = trustInfo?.name || localStorage.getItem('selected_trust_name') || '';
-      localStorage.setItem('selected_trust_id', String(selectedTrustId));
-      if (selectedTrustName) localStorage.setItem('selected_trust_name', String(selectedTrustName));
-
-      // Pre-warm directory cache in background (non-blocking)
-      fetchDirectoryData(selectedTrustId, selectedTrustName).catch(err =>
-        console.warn('[OTP] Directory pre-fetch failed:', err)
-      );
-
-      try { sessionStorage.removeItem('trust_selected_in_session'); } catch { /* ignore */ }
-      try { sessionStorage.removeItem(OTP_FLOW_KEY); } catch { /* ignore */ }
-
-      navigate('/', { replace: true });
+      completeLogin(accountCandidates[0] || user);
     } catch (err) {
       console.error('[OTP] Verify error:', err);
       setError('Failed to verify OTP. Please try again.');
@@ -178,6 +216,11 @@ function OTPVerification() {
   };
 
   const handleBack = () => {
+    if (otpVerified) {
+      setOtpVerified(false);
+      setError('');
+      return;
+    }
     try { sessionStorage.removeItem(OTP_FLOW_KEY); } catch { /* ignore */ }
     navigate('/login', { replace: true });
   };
@@ -226,21 +269,23 @@ function OTPVerification() {
 
           {/* Header */}
           <div style={styles.headerWrap}>
-            <h1 style={styles.heading}>Verify OTP</h1>
+            <h1 style={styles.heading}>{otpVerified ? 'Select Account' : 'Verify OTP'}</h1>
             <div style={styles.divider}>
               <span style={styles.divLine} />
               <span style={styles.divDot} />
               <span style={styles.divLine} />
             </div>
-            <p style={styles.subtext}>Enter the 6-digit OTP sent to</p>
-            {phoneNumber && (
+            <p style={styles.subtext}>
+              {otpVerified ? 'Choose the account you want to continue with' : 'Enter the 6-digit OTP sent to'}
+            </p>
+            {!otpVerified && phoneNumber && (
               <p style={styles.phone}>+91 {phoneNumber}</p>
             )}
           </div>
 
           {/* Form */}
           <form onSubmit={handleSubmit} style={styles.form}>
-            <div>
+            <div style={{ display: otpVerified ? 'none' : 'block' }}>
               <label style={styles.label}>OTP Code</label>
               <input
                 type="text"
@@ -248,7 +293,7 @@ function OTPVerification() {
                 value={otp}
                 onChange={e => setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
                 maxLength={6}
-                required
+                required={!otpVerified}
                 onFocus={() => setFocused(true)}
                 onBlur={() => setFocused(false)}
                 autoComplete="one-time-code"
@@ -259,6 +304,33 @@ function OTPVerification() {
                 }}
               />
             </div>
+
+            {otpVerified && (
+              <div style={styles.accountList}>
+                {accountCandidates.map((account, index) => {
+                  const accountId = String(account?.members_id || account?.id || `account-${index}`);
+                  const name = account?.Name || account?.name || `Account ${index + 1}`;
+                  const membershipNumber = account?.membership_number || account?.['Membership number'] || 'N/A';
+                  const mobile = account?.mobile || account?.Mobile || phoneNumber;
+                  return (
+                    <label key={accountId} style={styles.accountItem}>
+                      <input
+                        type="radio"
+                        name="selected-account"
+                        value={accountId}
+                        checked={String(selectedAccountId) === accountId}
+                        onChange={(e) => setSelectedAccountId(e.target.value)}
+                      />
+                      <div style={styles.accountMeta}>
+                        <span style={styles.accountName}>{name}</span>
+                        <span style={styles.accountSub}>Membership: {membershipNumber}</span>
+                        <span style={styles.accountSub}>Mobile: {mobile}</span>
+                      </div>
+                    </label>
+                  );
+                })}
+              </div>
+            )}
 
             {error && (
               <div style={styles.errorBox}>
@@ -277,10 +349,10 @@ function OTPVerification() {
               </button>
               <button
                 type="submit"
-                disabled={loading || otp.length !== 6}
+                disabled={loading || (!otpVerified && otp.length !== 6)}
                 style={{
                   ...styles.verifyBtn,
-                  ...(loading || otp.length !== 6 ? styles.verifyBtnDisabled : {}),
+                  ...(loading || (!otpVerified && otp.length !== 6) ? styles.verifyBtnDisabled : {}),
                 }}
               >
                 {loading ? (
@@ -289,21 +361,23 @@ function OTPVerification() {
                     Verifying…
                   </span>
                 ) : (
-                  <span style={styles.btnInner}>Verify OTP ✓</span>
+                  <span style={styles.btnInner}>{otpVerified ? 'Continue' : 'Verify OTP ✓'}</span>
                 )}
               </button>
             </div>
           </form>
 
           {/* Resend */}
-          <div style={styles.resendWrap}>
-            <p style={styles.resendText}>
-              Didn't receive the OTP?{' '}
-              <button onClick={handleBack} style={styles.resendBtn}>
-                Try again
-              </button>
-            </p>
-          </div>
+          {!otpVerified && (
+            <div style={styles.resendWrap}>
+              <p style={styles.resendText}>
+                Didn't receive the OTP?{' '}
+                <button onClick={handleBack} style={styles.resendBtn}>
+                  Try again
+                </button>
+              </p>
+            </div>
+          )}
 
         </div>
       </div>
@@ -430,6 +504,36 @@ const styles = {
   otpInputFocus: {
     borderColor: RED, background: 'color-mix(in srgb, var(--surface-color) 85%, var(--brand-red-light))',
     boxShadow: '0 0 0 4px color-mix(in srgb, var(--brand-red) 11%, transparent)',
+  },
+  accountList: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '10px',
+  },
+  accountItem: {
+    display: 'flex',
+    alignItems: 'flex-start',
+    gap: '10px',
+    border: `1px solid ${BORDER}`,
+    borderRadius: '12px',
+    padding: '10px 12px',
+    background: 'color-mix(in srgb, var(--app-accent-bg) 72%, var(--surface-color))',
+    cursor: 'pointer',
+  },
+  accountMeta: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '2px',
+  },
+  accountName: {
+    fontSize: '14px',
+    fontWeight: 700,
+    color: NAVY,
+  },
+  accountSub: {
+    fontSize: '12px',
+    color: GRAY,
+    fontWeight: 500,
   },
 
   errorBox: {
