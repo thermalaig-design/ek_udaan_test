@@ -384,6 +384,34 @@ export function mergeByIdAndAppendOrder(trustId, sponsorList) {
   return { byId, order: finalOrder, newIds };
 }
 
+function replaceSponsorSnapshot(trustId, sponsorList) {
+  pruneStaleTrustStorage(trustId);
+  const nextById = {};
+  const nextOrder = [];
+  const seen = new Set();
+
+  for (const item of Array.isArray(sponsorList) ? sponsorList : []) {
+    const normalized = normalizeSponsor(item);
+    if (!normalized) continue;
+    if (!isSponsorActive(normalized)) continue;
+    const id = normalized.id;
+    if (seen.has(id)) continue;
+    seen.add(id);
+    nextById[id] = normalized;
+    nextOrder.push(id);
+  }
+
+  const finalOrder = reorderSponsorsForLoggedInUser(trustId, nextOrder, nextById)
+    .filter((id) => Boolean(nextById[id]) && isSponsorActive(nextById[id]));
+
+  writeJson(KEY_BY_ID(trustId), nextById);
+  writeJson(KEY_ORDER(trustId), finalOrder);
+  memorySponsorsById[trustId] = nextById;
+  memorySponsorOrder[trustId] = finalOrder;
+
+  return { byId: nextById, order: finalOrder };
+}
+
 function warmImageCache(sponsors) {
   if (typeof window === 'undefined' || typeof Image === 'undefined') return;
   for (const sponsor of Array.isArray(sponsors) ? sponsors : []) {
@@ -653,11 +681,11 @@ export async function ensureAllSponsorsLoaded(trustId, options = {}) {
     });
     sponsorDebugByTrust[normalizedTrustId] = res?.debug || null;
     const sponsors = Array.isArray(res?.data) ? res.data : [];
-    mergeByIdAndAppendOrder(normalizedTrustId, sponsors);
-    hydrateAllSponsorPages(normalizedTrustId, sponsors);
+    const replaced = replaceSponsorSnapshot(normalizedTrustId, sponsors);
+    hydrateAllSponsorPages(normalizedTrustId, replaced.order.map((id) => replaced.byId[id]).filter(Boolean));
     writeLastSponsorRefreshAt(normalizedTrustId);
-    warmImageCache(sponsors);
-    return sponsors;
+    warmImageCache(replaced.order.map((id) => replaced.byId[id]).filter(Boolean));
+    return replaced.order.map((id) => replaced.byId[id]).filter(Boolean);
   })().finally(() => {
     inFlightTrustHydration.delete(normalizedTrustId);
   });
