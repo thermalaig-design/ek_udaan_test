@@ -6,8 +6,7 @@ import {
   ensureAllSponsorsLoaded,
   mergeByIdAndAppendOrder,
   setPinnedSponsor,
-  setSelectedSponsorId,
-  shouldRevalidateSponsors
+  setSelectedSponsorId
 } from './services/sponsorStore';
 import { useAppTheme } from './context/ThemeContext';
 import { applyOpacity } from './utils/colorUtils';
@@ -38,9 +37,8 @@ const SponsorsList = ({ onNavigate, onBack }) => {
     const cached = buildOrderedSponsors(selectedTrustId);
     if (cached.length > 0) {
       setItems(cached);
-      if (!shouldRevalidateSponsors(selectedTrustId)) return;
       setIsRefreshing(true);
-      ensureAllSponsorsLoaded(selectedTrustId).then((fresh) => {
+      ensureAllSponsorsLoaded(selectedTrustId, { force: true }).then((fresh) => {
         if (!activeRef.current) return;
         const data = Array.isArray(fresh) ? fresh : [];
         if (data.length > 0) {
@@ -52,7 +50,7 @@ const SponsorsList = ({ onNavigate, onBack }) => {
     }
 
     setIsRefreshing(true);
-    ensureAllSponsorsLoaded(selectedTrustId).then((fresh) => {
+    ensureAllSponsorsLoaded(selectedTrustId, { force: true }).then((fresh) => {
       if (!activeRef.current) return;
       const data = Array.isArray(fresh) ? fresh : [];
       mergeByIdAndAppendOrder(selectedTrustId, data);

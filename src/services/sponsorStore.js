@@ -617,9 +617,10 @@ const hydrateAllSponsorPages = (trustId, sponsorList) => {
   });
 };
 
-export async function ensureAllSponsorsLoaded(trustId) {
+export async function ensureAllSponsorsLoaded(trustId, options = {}) {
   const normalizedTrustId = normalizeId(trustId);
   if (!normalizedTrustId) return [];
+  const forceRefresh = Boolean(options?.force);
 
   const existingOrder = readSponsorOrderIds(normalizedTrustId);
   const existingById = readSponsorsByIdMap(normalizedTrustId);
@@ -634,7 +635,7 @@ export async function ensureAllSponsorsLoaded(trustId) {
       hydrateAllSponsorPages(normalizedTrustId, existingSponsors);
     }
     const lastRefreshAt = readLastSponsorRefreshAt(normalizedTrustId);
-    if (isFresh(lastRefreshAt, SPONSOR_REVALIDATE_MS)) {
+    if (!forceRefresh && isFresh(lastRefreshAt, SPONSOR_REVALIDATE_MS)) {
       return existingSponsors;
     }
   }

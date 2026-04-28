@@ -12,6 +12,7 @@ import { getCurrentNotificationContext, matchesNotificationForContext } from './
 import { fetchFeatureFlags, subscribeFeatureFlags, isFeatureEnabled } from './services/featureFlags';
 import { fetchMemberTrusts, fetchTrustById, fetchDefaultTrust } from './services/trustService';
 import {
+  ensureAllSponsorsLoaded,
   getCachedCarouselBatch,
   getSponsorDebugInfo,
   preloadCarouselBatchImages,
@@ -1033,6 +1034,13 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
       syncSponsorStoreSnapshot(trustId);
       setIsSponsorsLoading(false);
       setSponsorFetchSettledTrustId(trustId);
+      ensureAllSponsorsLoaded(trustId, { force: true })
+        .then(() => {
+          if (!isActive) return;
+          syncSponsorStoreSnapshot(trustId);
+          setSponsorFetchSettledTrustId(trustId);
+        })
+        .catch(() => {});
     } else {
       setIsSponsorsLoading(true);
       setIsCarouselReady(false);
