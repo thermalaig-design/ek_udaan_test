@@ -1447,7 +1447,12 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
 
   const ff = (key) => isFeatureEnabled(featureFlags, key);
   const normalizeQuickRoute = (route) => {
-    const value = String(route || '').trim().toLowerCase();
+    const raw = String(route || '').trim().toLowerCase();
+    const value = raw
+      .replace(/^https?:\/\/[^/]+/i, '')
+      .replace(/[?#].*$/, '')
+      .replace(/^\/+/, '')
+      .replace(/\/+$/, '');
     if (value === 'noticeboard' || value === 'notices') return 'notices';
     if (value === 'facility' || value === 'facilities') return 'facilities';
     if (value === 'event' || value === 'events') return 'events';

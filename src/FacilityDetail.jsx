@@ -1,8 +1,9 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, Calendar, ExternalLink, FileText, Home as HomeIcon, Paperclip, Star } from 'lucide-react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { ArrowLeft, Calendar, FileText, Home as HomeIcon, Star } from 'lucide-react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useAppTheme } from './context/ThemeContext';
 import { getFacilitiesSnapshot, loadFacilityDetail } from './services/facilitiesStore';
+import ImageSlider from './components/ImageSlider';
 
 const formatTimestamp = (createdAt, updatedAt) => {
   const value = updatedAt || createdAt;
@@ -87,7 +88,16 @@ const FacilityDetail = ({ onNavigate }) => {
   const [facility, setFacility] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [carouselFacilities, setCarouselFacilities] = useState([]);
+  const [activeIndex, setActiveIndex] = useState(0);
+  const [currentFacilityId, setCurrentFacilityId] = useState(() => String(facilityId || '').trim());
+  const touchStartXRef = useRef(0);
+  const touchEndXRef = useRef(0);
   const selectedTrustId = useMemo(() => localStorage.getItem('selected_trust_id') || '', []);
+
+  useEffect(() => {
+    setCurrentFacilityId(String(facilityId || '').trim());
+  }, [facilityId]);
 
   useEffect(() => {
     const loadDetail = async () => {
@@ -95,7 +105,7 @@ const FacilityDetail = ({ onNavigate }) => {
       setLoading(true);
       const trustId = localStorage.getItem('selected_trust_id') || selectedTrustId || '';
       const trustName = localStorage.getItem('selected_trust_name') || null;
-      if (!trustId || !facilityId) {
+      if (!trustId || !currentFacilityId) {
         setFacility(null);
         setLoading(false);
         setError('Facility not found');
@@ -103,13 +113,18 @@ const FacilityDetail = ({ onNavigate }) => {
       }
 
       const snapshot = getFacilitiesSnapshot(trustId);
-      const fromList = snapshot?.facilitiesById?.[String(facilityId)] || null;
+      const snapshotList = Array.isArray(snapshot?.facilities) ? snapshot.facilities : [];
+      setCarouselFacilities(snapshotList);
+      const idxFromSnapshot = snapshotList.findIndex((item) => String(item?.id || '') === String(currentFacilityId));
+      if (idxFromSnapshot >= 0) setActiveIndex(idxFromSnapshot);
+
+      const fromList = snapshot?.facilitiesById?.[String(currentFacilityId)] || null;
       if (fromList) setFacility(fromList);
 
       const detailRes = await loadFacilityDetail({
         trustId,
         trustName,
-        facilityId: String(facilityId),
+        facilityId: String(currentFacilityId),
         forceRefresh: false
       });
 
@@ -125,7 +140,23 @@ const FacilityDetail = ({ onNavigate }) => {
     };
 
     loadDetail();
-  }, [facilityId, selectedTrustId]);
+  }, [currentFacilityId, selectedTrustId]);
+
+  useEffect(() => {
+    if (carouselFacilities.length <= 1) return undefined;
+    const timer = setInterval(() => {
+      setActiveIndex((prev) => (prev + 1) % carouselFacilities.length);
+    }, 4000);
+    return () => clearInterval(timer);
+  }, [carouselFacilities]);
+
+  useEffect(() => {
+    if (!Array.isArray(carouselFacilities) || carouselFacilities.length === 0) return;
+    const next = carouselFacilities[activeIndex];
+    const nextId = String(next?.id || '').trim();
+    if (!nextId || nextId === currentFacilityId) return;
+    setCurrentFacilityId(nextId);
+  }, [activeIndex, carouselFacilities, currentFacilityId]);
 
   const handleBack = () => {
     if (window.history.length > 1) navigate(-1);
@@ -147,6 +178,27 @@ const FacilityDetail = ({ onNavigate }) => {
       };
     })
     .filter(Boolean);
+
+  const handleTouchStart = (event) => {
+    touchStartXRef.current = Number(event?.touches?.[0]?.clientX || 0);
+  };
+
+  const handleTouchMove = (event) => {
+    touchEndXRef.current = Number(event?.touches?.[0]?.clientX || 0);
+  };
+
+  const handleTouchEnd = () => {
+    if (carouselFacilities.length <= 1) return;
+    const delta = touchStartXRef.current - touchEndXRef.current;
+    if (Math.abs(delta) < 45) return;
+    if (delta > 0) {
+      setActiveIndex((prev) => (prev + 1) % carouselFacilities.length);
+    } else {
+      setActiveIndex((prev) => (prev - 1 + carouselFacilities.length) % carouselFacilities.length);
+    }
+    touchStartXRef.current = 0;
+    touchEndXRef.current = 0;
+  };
 
   return (
     <div className="min-h-screen pb-8" style={{ background: 'var(--page-bg, var(--app-page-bg))' }}>
@@ -196,6 +248,9 @@ const FacilityDetail = ({ onNavigate }) => {
 
         {!loading && !error && facility && (
           <div
+            onTouchStart={handleTouchStart}
+            onTouchMove={handleTouchMove}
+            onTouchEnd={handleTouchEnd}
             className="rounded-2xl border bg-white p-5 shadow-sm border-l-4"
             style={{
               borderLeftColor: isVip ? 'color-mix(in srgb, var(--brand-red) 45%, #d4af37)' : theme.primary,
@@ -226,6 +281,28 @@ const FacilityDetail = ({ onNavigate }) => {
             <h2 className="text-xl font-bold leading-tight" style={{ color: 'var(--heading-color)' }}>
               {facility.name}
             </h2>
+            {carouselFacilities.length > 1 && (
+              <div className="mt-2">
+                <p className="text-[11px] font-semibold" style={{ color: 'color-mix(in srgb, var(--body-text-color) 60%, var(--surface-color))' }}>
+                  Swipe to explore other facilities
+                </p>
+                <div className="mt-2 flex items-center gap-1.5">
+                  {carouselFacilities.map((item, idx) => (
+                    <button
+                      key={String(item?.id || idx)}
+                      type="button"
+                      onClick={() => setActiveIndex(idx)}
+                      className="h-1.5 rounded-full transition-all"
+                      style={{
+                        width: idx === activeIndex ? 18 : 8,
+                        background: idx === activeIndex ? theme.primary : 'color-mix(in srgb, var(--body-text-color) 25%, transparent)'
+                      }}
+                      aria-label={`View facility ${idx + 1}`}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
 
             <p className="mt-4 text-sm leading-relaxed whitespace-pre-line" style={{ color: 'var(--body-text-color)' }}>
               {facility.description || 'No description provided.'}
@@ -233,23 +310,22 @@ const FacilityDetail = ({ onNavigate }) => {
 
             {normalizedAttachments.length > 0 && (
               <div className="mt-6 border-t border-slate-100 pt-5">
-                <h3 className="text-sm font-semibold text-slate-800 mb-3">Attachments ({normalizedAttachments.length})</h3>
                 <div className="space-y-3">
-                  {normalizedAttachments.map((attachment) => (
+                  {/* Image Carousel */}
+                  {normalizedAttachments.filter(a => a.type === 'image').length > 0 && (
+                    <ImageSlider 
+                      images={normalizedAttachments.filter(a => a.type === 'image')}
+                      autoPlayInterval={3000}
+                    />
+                  )}
+
+                  {/* PDF and other attachments */}
+                  {normalizedAttachments.filter(a => a.type !== 'image').map((attachment) => (
                     <div
                       key={attachment.id}
                       className="rounded-xl border overflow-hidden"
                       style={{ borderColor: 'color-mix(in srgb, var(--brand-navy) 12%, transparent)' }}
                     >
-                      {attachment.type === 'image' && (
-                        <img
-                          src={attachment.url}
-                          alt={attachment.label}
-                          loading="lazy"
-                          className="w-full h-44 object-cover bg-slate-100"
-                        />
-                      )}
-
                       {attachment.type === 'pdf' && (
                         <div className="w-full h-56 bg-slate-50">
                           <iframe
@@ -266,19 +342,6 @@ const FacilityDetail = ({ onNavigate }) => {
                           <span className="truncate flex-1">{attachment.label}</span>
                         </div>
                       )}
-
-                      <div className="px-3 py-2 text-xs font-medium flex items-center justify-between gap-2" style={{ color: 'var(--body-text-color)' }}>
-                        <span className="truncate">{attachment.label}</span>
-                        <a
-                          href={attachment.url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center gap-1 font-semibold"
-                          style={{ color: theme.primary }}
-                        >
-                          Open <ExternalLink className="h-3.5 w-3.5" />
-                        </a>
-                      </div>
                     </div>
                   ))}
                 </div>

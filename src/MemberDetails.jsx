@@ -169,319 +169,142 @@ const MemberDetails = ({ member, onNavigateBack, previousScreenName }) => {
               
               // Show elected member fields (merged with Members Table) - Show ALL fields from both tables
               if (isElectedMember) {
+                const electedName =
+                  member['Name'] ||
+                  member.member_name_english ||
+                  member.member_name_hindi ||
+                  'N/A';
+                const electedRole =
+                  member.member_role ||
+                  member.position ||
+                  member.title ||
+                  member.role ||
+                  'N/A';
+                const electedPhone =
+                  toPhoneText(member['Mobile']) ||
+                  toPhoneText(member.phone1) ||
+                  toPhoneText(member.phone2) ||
+                  '';
+                const electedAddress =
+                  member['Address Home'] ||
+                  member.address ||
+                  member['Address Office'] ||
+                  '';
+
                 return (
                   <>
-                    {/* Members Table fields */}
-                    {member['Membership number'] && member['Membership number'] !== 'N/A' && (
-                      <div className="flex items-start gap-3 p-4 bg-gray-50 rounded-2xl">
-                        <Award className="h-5 w-5 text-gray-500 mt-0.5 flex-shrink-0" />
-                        <div>
-                          <p className="text-xs text-gray-500 font-medium uppercase tracking-wider">Membership Number</p>
-                          <p className="font-medium text-gray-800">{member['Membership number'] || member.membership_number}</p>
-                        </div>
-                      </div>
-                    )}
-                    
-                    {member['Name'] && member['Name'] !== 'N/A' && (
+                    {electedName && electedName !== 'N/A' && (
                       <div className="flex items-start gap-3 p-4 bg-gray-50 rounded-2xl">
                         <User className="h-5 w-5 text-gray-500 mt-0.5 flex-shrink-0" />
                         <div>
                           <p className="text-xs text-gray-500 font-medium uppercase tracking-wider">Name</p>
-                          <p className="font-medium text-gray-800">{member['Name']}</p>
+                          <p className="font-medium text-gray-800">{electedName}</p>
                         </div>
                       </div>
                     )}
-                    
-                    {/* Elected-specific fields */}
-                    {member.position && member.position !== 'N/A' && (
+
+                    {electedRole && electedRole !== 'N/A' && (
                       <div className="flex items-start gap-3 p-4 bg-gray-50 rounded-2xl">
                         <Award className="h-5 w-5 text-gray-500 mt-0.5 flex-shrink-0" />
                         <div>
-                          <p className="text-xs text-gray-500 font-medium uppercase tracking-wider">Position (Elected)</p>
-                          <p className="font-medium text-gray-800">{member.position}</p>
+                          <p className="text-xs text-gray-500 font-medium uppercase tracking-wider">Role</p>
+                          <p className="font-medium text-gray-800">{electedRole}</p>
                         </div>
                       </div>
                     )}
-                    
-                    {member.location && member.location !== 'N/A' && (
-                      <div className="flex items-start gap-3 p-4 bg-gray-50 rounded-2xl">
-                        <MapPin className="h-5 w-5 text-gray-500 mt-0.5 flex-shrink-0" />
-                        <div>
-                          <p className="text-xs text-gray-500 font-medium uppercase tracking-wider">Location (Elected)</p>
-                          <p className="font-medium text-gray-800">{member.location}</p>
-                        </div>
-                      </div>
-                    )}
-                    
-                      {member['Company Name'] && member['Company Name'] !== 'N/A' && (
-                      <div className="flex items-start gap-3 p-4 bg-gray-50 rounded-2xl">
-                        <Building2 className="h-5 w-5 text-gray-500 mt-0.5 flex-shrink-0" />
-                        <div>
-                          <p className="text-xs text-gray-500 font-medium uppercase tracking-wider">Company Name</p>
-                          <p className="font-medium text-gray-800">{member['Company Name']}</p>
-                        </div>
-                      </div>
-                    )}
-                    
-                    {toPhoneText(member['Mobile']) && (
+
+                    {electedPhone && electedPhone !== 'N/A' && (
                       <div className="flex items-start gap-3 p-4 bg-gray-50 rounded-2xl">
                         <Phone className="h-5 w-5 text-gray-500 mt-0.5 flex-shrink-0" />
                         <div className="flex-1">
                           <p className="text-xs text-gray-500 font-medium uppercase tracking-wider">Mobile</p>
-                          <a href={`tel:${toDialableNumber(member['Mobile'])}`} className="font-medium hover:underline" style={{ color: theme.primary }}>
-                            {toPhoneText(member['Mobile'])}
+                          <a href={`tel:${toDialableNumber(electedPhone)}`} className="font-medium hover:underline" style={{ color: theme.primary }}>
+                            {electedPhone}
                           </a>
                         </div>
                       </div>
                     )}
-                    
-                    {member['Email'] && member['Email'] !== 'N/A' && (
-                      <div className="flex items-start gap-3 p-4 bg-gray-50 rounded-2xl">
-                        <Mail className="h-5 w-5 text-gray-500 mt-0.5 flex-shrink-0" />
-                        <div className="flex-1">
-                          <p className="text-xs text-gray-500 font-medium uppercase tracking-wider">Email</p>
-                          <a href={`mailto:${member['Email']}`} className="font-medium hover:underline" style={{ color: theme.primary }}>
-                            {member['Email']}
-                          </a>
-                        </div>
-                      </div>
-                    )}
-                    
-                    {member['Address Home'] && member['Address Home'] !== 'N/A' && (
+
+                    {electedAddress && electedAddress !== 'N/A' && (
                       <div className="flex items-start gap-3 p-4 bg-gray-50 rounded-2xl">
                         <MapPin className="h-5 w-5 text-gray-500 mt-0.5 flex-shrink-0" />
                         <div className="flex-1">
-                          <p className="text-xs text-gray-500 font-medium uppercase tracking-wider">Address Home</p>
-                          <p className="font-medium text-gray-800">{member['Address Home']}</p>
+                          <p className="text-xs text-gray-500 font-medium uppercase tracking-wider">Address</p>
+                          <p className="font-medium text-gray-800">{electedAddress}</p>
                         </div>
                       </div>
                     )}
-                    
-                    {member['Address Office'] && member['Address Office'] !== 'N/A' && (
-                      <div className="flex items-start gap-3 p-4 bg-gray-50 rounded-2xl">
-                        <MapPin className="h-5 w-5 text-gray-500 mt-0.5 flex-shrink-0" />
-                        <div className="flex-1">
-                          <p className="text-xs text-gray-500 font-medium uppercase tracking-wider">Address Office</p>
-                          <p className="font-medium text-gray-800">{member['Address Office']}</p>
-                        </div>
-                      </div>
-                    )}
-                    
-                    {toPhoneText(member['Resident Landline']) && (
-                      <div className="flex items-start gap-3 p-4 bg-gray-50 rounded-2xl">
-                        <Phone className="h-5 w-5 text-gray-500 mt-0.5 flex-shrink-0" />
-                        <div className="flex-1">
-                          <p className="text-xs text-gray-500 font-medium uppercase tracking-wider">Resident Landline</p>
-                          <a href={`tel:${toDialableNumber(member['Resident Landline'])}`} className="font-medium hover:underline" style={{ color: theme.primary }}>
-                            {toPhoneText(member['Resident Landline'])}
-                          </a>
-                        </div>
-                      </div>
-                    )}
-                    
-                    {toPhoneText(member['Office Landline']) && (
-                      <div className="flex items-start gap-3 p-4 bg-gray-50 rounded-2xl">
-                        <Phone className="h-5 w-5 text-gray-500 mt-0.5 flex-shrink-0" />
-                        <div className="flex-1">
-                          <p className="text-xs text-gray-500 font-medium uppercase tracking-wider">Office Landline</p>
-                          <a href={`tel:${toDialableNumber(member['Office Landline'])}`} className="font-medium hover:underline" style={{ color: theme.primary }}>
-                            {toPhoneText(member['Office Landline'])}
-                          </a>
-                        </div>
-                      </div>
-                    )}
-                    
-                    {/* Display any other elected-specific fields */}
-                      {Object.keys(member).filter(key => 
-                        !['S. No.', 'Name', 'Mobile', 'Email', 'type', 'Membership number', 'isElectedMember', 
-                          'previousScreenName', 'isHealthcareMember', 'isHospitalMember', 'isCommitteeMember',
-                          'Company Name', 'Address Home', 'Address Office', 'Resident Landline', 'Office Landline',
-                          'position', 'location', 'id', 'original_id', 'elected_id', 'membership_number_elected',
-                          'is_merged_with_member', 'created_at', 'updated_at', 'company_name', 'is_committee_member'].includes(key) &&
-                        member[key] !== null && member[key] !== undefined && member[key] !== '' && member[key] !== 'N/A'
-                      ).map(key => (
-                      <div key={key} className="flex items-start gap-3 p-4 bg-gray-50 rounded-2xl">
-                        <FileText className="h-5 w-5 text-gray-500 mt-0.5 flex-shrink-0" />
-                        <div>
-                          <p className="text-xs text-gray-500 font-medium uppercase tracking-wider">{key.replace(/_/g, ' ')}</p>
-                          <p className="font-medium text-gray-800">{String(member[key])}</p>
-                        </div>
-                      </div>
-                    ))}
                   </>
                 );
               }
               
               // Show committee-specific fields if it's a committee member - Show ALL Supabase fields
               if (isCommitteeMember) {
+                const committeeName =
+                  member.member_name_english ||
+                  member['Name'] ||
+                  member.member_name_hindi ||
+                  'N/A';
+                const committeeRole =
+                  member.member_role ||
+                  member.committee_name_english ||
+                  member.title ||
+                  member.role ||
+                  'N/A';
+                const committeePhone =
+                  toPhoneText(member.Mobile) ||
+                  toPhoneText(member.phone1) ||
+                  toPhoneText(member.phone2) ||
+                  '';
+                const committeeAddress =
+                  member['Address Home'] ||
+                  member.address ||
+                  member['Address Office'] ||
+                  '';
+
                 return (
                   <>
-                    {member.member_name_english && member.member_name_english !== 'N/A' && (
+                    {committeeName && committeeName !== 'N/A' && (
                       <div className="flex items-start gap-3 p-4 bg-gray-50 rounded-2xl">
                         <User className="h-5 w-5 text-gray-500 mt-0.5 flex-shrink-0" />
                         <div>
-                          <p className="text-xs text-gray-500 font-medium uppercase tracking-wider">Member Name (English)</p>
-                          <p className="font-medium text-gray-800">{member.member_name_english}</p>
+                          <p className="text-xs text-gray-500 font-medium uppercase tracking-wider">Name</p>
+                          <p className="font-medium text-gray-800">{committeeName}</p>
                         </div>
                       </div>
                     )}
-                    
-                    {member.member_name_hindi && member.member_name_hindi !== 'N/A' && (
-                      <div className="flex items-start gap-3 p-4 bg-gray-50 rounded-2xl">
-                        <User className="h-5 w-5 text-gray-500 mt-0.5 flex-shrink-0" />
-                        <div>
-                          <p className="text-xs text-gray-500 font-medium uppercase tracking-wider">Member Name (Hindi)</p>
-                          <p className="font-medium text-gray-800">{member.member_name_hindi}</p>
-                        </div>
-                      </div>
-                    )}
-                    
-                    {member.committee_name_english && member.committee_name_english !== 'N/A' && (
-                      <div className="flex items-start gap-3 p-4 bg-gray-50 rounded-2xl">
-                        <Building2 className="h-5 w-5 text-gray-500 mt-0.5 flex-shrink-0" />
-                        <div>
-                          <p className="text-xs text-gray-500 font-medium uppercase tracking-wider">Committee Name (English)</p>
-                          <p className="font-medium text-gray-800">{member.committee_name_english}</p>
-                        </div>
-                      </div>
-                    )}
-                    
-                    {member.committee_name_hindi && member.committee_name_hindi !== 'N/A' && (
-                      <div className="flex items-start gap-3 p-4 bg-gray-50 rounded-2xl">
-                        <Building2 className="h-5 w-5 text-gray-500 mt-0.5 flex-shrink-0" />
-                        <div>
-                          <p className="text-xs text-gray-500 font-medium uppercase tracking-wider">Committee Name (Hindi)</p>
-                          <p className="font-medium text-gray-800">{member.committee_name_hindi}</p>
-                        </div>
-                      </div>
-                    )}
-                    
-                    {member.member_role && member.member_role !== 'N/A' && (
+
+                    {committeeRole && committeeRole !== 'N/A' && (
                       <div className="flex items-start gap-3 p-4 bg-gray-50 rounded-2xl">
                         <Award className="h-5 w-5 text-gray-500 mt-0.5 flex-shrink-0" />
                         <div>
                           <p className="text-xs text-gray-500 font-medium uppercase tracking-wider">Role</p>
-                          <p className="font-medium text-gray-800">{member.member_role}</p>
+                          <p className="font-medium text-gray-800">{committeeRole}</p>
                         </div>
                       </div>
                     )}
-                    
-                    {member.membership_number && member.membership_number !== 'N/A' && (
-                      <div className="flex items-start gap-3 p-4 bg-gray-50 rounded-2xl">
-                        <Award className="h-5 w-5 text-gray-500 mt-0.5 flex-shrink-0" />
-                        <div>
-                          <p className="text-xs text-gray-500 font-medium uppercase tracking-wider">Membership Number</p>
-                          <p className="font-medium text-gray-800">{member.membership_number}</p>
-                        </div>
-                      </div>
-                    )}
-                    
-                    {member.member_id && member.member_id !== 'N/A' && (
-                      <div className="flex items-start gap-3 p-4 bg-gray-50 rounded-2xl">
-                        <User className="h-5 w-5 text-gray-500 mt-0.5 flex-shrink-0" />
-                        <div>
-                          <p className="text-xs text-gray-500 font-medium uppercase tracking-wider">Member ID</p>
-                          <p className="font-medium text-gray-800">{member.member_id}</p>
-                        </div>
-                      </div>
-                    )}
-                    
-                    {toPhoneText(member.phone1) && (
-                      <div className="flex items-start gap-3 p-4 bg-gray-50 rounded-2xl">
-                        <Phone className="h-5 w-5 text-gray-500 mt-0.5 flex-shrink-0" />
-                        <div className="flex-1">
-                          <p className="text-xs text-gray-500 font-medium uppercase tracking-wider">Phone 1</p>
-                          <a href={`tel:${toDialableNumber(member.phone1)}`} className="font-medium hover:underline" style={{ color: theme.primary }}>
-                            {toPhoneText(member.phone1)}
-                          </a>
-                        </div>
-                      </div>
-                    )}
-                    
-                    {toPhoneText(member.phone2) && (
-                      <div className="flex items-start gap-3 p-4 bg-gray-50 rounded-2xl">
-                        <Phone className="h-5 w-5 text-gray-500 mt-0.5 flex-shrink-0" />
-                        <div className="flex-1">
-                          <p className="text-xs text-gray-500 font-medium uppercase tracking-wider">Phone 2</p>
-                          <a href={`tel:${toDialableNumber(member.phone2)}`} className="font-medium hover:underline" style={{ color: theme.primary }}>
-                            {toPhoneText(member.phone2)}
-                          </a>
-                        </div>
-                      </div>
-                    )}
-                    
-                    {toPhoneText(member.Mobile) && (
+
+                    {committeePhone && committeePhone !== 'N/A' && (
                       <div className="flex items-start gap-3 p-4 bg-gray-50 rounded-2xl">
                         <Phone className="h-5 w-5 text-gray-500 mt-0.5 flex-shrink-0" />
                         <div className="flex-1">
                           <p className="text-xs text-gray-500 font-medium uppercase tracking-wider">Mobile</p>
-                          <a href={`tel:${toDialableNumber(member.Mobile)}`} className="font-medium hover:underline" style={{ color: theme.primary }}>
-                            {toPhoneText(member.Mobile)}
+                          <a href={`tel:${toDialableNumber(committeePhone)}`} className="font-medium hover:underline" style={{ color: theme.primary }}>
+                            {committeePhone}
                           </a>
                         </div>
                       </div>
                     )}
-                    
-                    {member.Email && member.Email !== 'N/A' && (
-                      <div className="flex items-start gap-3 p-4 bg-gray-50 rounded-2xl">
-                        <Mail className="h-5 w-5 text-gray-500 mt-0.5 flex-shrink-0" />
-                        <div className="flex-1">
-                          <p className="text-xs text-gray-500 font-medium uppercase tracking-wider">Email</p>
-                          <a href={`mailto:${member.Email}`} className="font-medium hover:underline" style={{ color: theme.primary }}>
-                            {member.Email}
-                          </a>
-                        </div>
-                      </div>
-                    )}
-                    
-                    {member.address && member.address !== 'N/A' && (
+
+                    {committeeAddress && committeeAddress !== 'N/A' && (
                       <div className="flex items-start gap-3 p-4 bg-gray-50 rounded-2xl">
                         <MapPin className="h-5 w-5 text-gray-500 mt-0.5 flex-shrink-0" />
                         <div className="flex-1">
                           <p className="text-xs text-gray-500 font-medium uppercase tracking-wider">Address</p>
-                          <p className="font-medium text-gray-800">{member.address}</p>
+                          <p className="font-medium text-gray-800">{committeeAddress}</p>
                         </div>
                       </div>
                     )}
-                    
-                    {member['Address Home'] && member['Address Home'] !== 'N/A' && (
-                      <div className="flex items-start gap-3 p-4 bg-gray-50 rounded-2xl">
-                        <MapPin className="h-5 w-5 text-gray-500 mt-0.5 flex-shrink-0" />
-                        <div className="flex-1">
-                          <p className="text-xs text-gray-500 font-medium uppercase tracking-wider">Address Home</p>
-                          <p className="font-medium text-gray-800">{member['Address Home']}</p>
-                        </div>
-                      </div>
-                    )}
-                    
-                    {member['Address Office'] && member['Address Office'] !== 'N/A' && (
-                      <div className="flex items-start gap-3 p-4 bg-gray-50 rounded-2xl">
-                        <MapPin className="h-5 w-5 text-gray-500 mt-0.5 flex-shrink-0" />
-                        <div className="flex-1">
-                          <p className="text-xs text-gray-500 font-medium uppercase tracking-wider">Address Office</p>
-                          <p className="font-medium text-gray-800">{member['Address Office']}</p>
-                        </div>
-                      </div>
-                    )}
-                    
-                      {/* Display any other fields that might exist in Supabase */}
-                      {Object.keys(member).filter(key => 
-                        !['S. No.', 'Name', 'Mobile', 'Email', 'type', 'Membership number', 'isCommitteeMember', 
-                          'previousScreenName', 'member_name_english', 'member_name_hindi', 'member_role', 
-                          'committee_name_english', 'committee_name_hindi', 'phone1', 'phone2', 'address', 
-                          'Address Home', 'Address Office', 'id', 'original_id', 'company_name', 'Company Name', 
-                          'created_at', 'Created At', 'updated_at', 'Updated At', 'is_committee_member', 
-                          'Is Committee Member', 'is_committee_group', 'committee_members'].includes(key) &&
-                        member[key] !== null && member[key] !== undefined && member[key] !== '' && member[key] !== 'N/A'
-                      ).map(key => (
-                      <div key={key} className="flex items-start gap-3 p-4 bg-gray-50 rounded-2xl">
-                        <FileText className="h-5 w-5 text-gray-500 mt-0.5 flex-shrink-0" />
-                        <div>
-                          <p className="text-xs text-gray-500 font-medium uppercase tracking-wider">{key.replace(/_/g, ' ')}</p>
-                          <p className="font-medium text-gray-800">{String(member[key])}</p>
-                        </div>
-                      </div>
-                    ))}
                   </>
                 );
               }

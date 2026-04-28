@@ -140,34 +140,6 @@ const Donation = ({ onNavigate }) => {
       </div>
 
       <div className="px-5 pt-5 space-y-5">
-        <section
-          className="rounded-[28px] p-5"
-          style={{
-            background: `linear-gradient(135deg, ${applyOpacity(theme.primary, 0.12)}, ${applyOpacity(theme.accentBg, 0.96)})`,
-            border: `1px solid ${applyOpacity(theme.primary, 0.12)}`,
-            boxShadow: `0 16px 36px ${applyOpacity(theme.secondary, 0.1)}`,
-          }}
-        >
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <div className="w-12 h-12 rounded-2xl flex items-center justify-center mb-4" style={{ background: applyOpacity(theme.primary, 0.12) }}>
-                <HandHeart className="h-6 w-6" style={{ color: theme.primary }} />
-              </div>
-              <h2 className="text-xl font-extrabold mb-2" style={{ color: 'var(--heading-color)' }}>
-                Donate to {prefill.trustName}
-              </h2>
-           
-            </div>
-            <div className="rounded-2xl px-3 py-2 text-right" style={{ background: applyOpacity(theme.primary, 0.08) }}>
-              <p className="text-[11px] font-bold uppercase tracking-[0.18em]" style={{ color: theme.primary }}>
-                Member
-              </p>
-              <p className="text-sm font-extrabold" style={{ color: 'var(--heading-color)' }}>
-                {prefill.donorName || 'Supporter'}
-              </p>
-            </div>
-          </div>
-        </section>
 
         <section className="space-y-3">
           <div className="flex items-center justify-between gap-3">
@@ -270,75 +242,6 @@ const Donation = ({ onNavigate }) => {
                         Select
                       </button>
                     </div>
-                  </div>
-                </div>
-              );
-            })
-          )}
-        </section>
-
-        <section className="space-y-3">
-          <div>
-            <p className="text-[11px] font-bold uppercase tracking-[0.18em]" style={{ color: theme.primary }}>
-              Our Donators
-            </p>
-            <h2 className="text-lg font-extrabold" style={{ color: 'var(--heading-color)' }}>
-              Supporter List
-            </h2>
-          </div>
-
-          {donations.length === 0 ? (
-            <div className="rounded-[24px] p-5 text-sm font-semibold" style={{ background: 'color-mix(in srgb, var(--surface-color) 90%, var(--app-page-bg))' }}>
-              No supporter entries are available yet.
-            </div>
-          ) : (
-            donations.map((row) => {
-              const isVip = String(row?.type || '').trim().toLowerCase() === 'vip';
-              return (
-                <div
-                  key={`${row.id}-supporter`}
-                  className="rounded-[24px] p-4"
-                  style={{
-                    background: 'color-mix(in srgb, var(--surface-color) 90%, var(--app-page-bg))',
-                    border: `1px solid ${isVip ? '#E0A11B' : applyOpacity(theme.primary, 0.08)}`,
-                  }}
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex items-start gap-3 min-w-0">
-                      <div
-                        className="w-11 h-11 rounded-2xl flex items-center justify-center flex-shrink-0"
-                        style={{ background: isVip ? 'linear-gradient(135deg, #FFE7A3 0%, #F5B700 100%)' : applyOpacity(theme.primary, 0.1) }}
-                      >
-                        {isVip ? <Crown className="h-5 w-5" style={{ color: '#8A5A00' }} /> : <ShieldCheck className="h-5 w-5" style={{ color: theme.primary }} />}
-                      </div>
-                      <div className="min-w-0">
-                        <h3 className="text-sm font-extrabold truncate" style={{ color: 'var(--heading-color)' }}>
-                          {row.name}
-                        </h3>
-                        <p className="text-xs mt-1 leading-5" style={{ color: 'var(--body-text-color)' }}>
-                          {row.description || 'Donation supporter entry'}
-                        </p>
-                        <div className="flex flex-wrap gap-2 mt-2">
-                          <span className="px-2.5 py-1 rounded-full text-[10px] font-bold" style={{ background: applyOpacity(theme.primary, 0.08), color: theme.primary }}>
-                            {donationSummary(row)}
-                          </span>
-                          <span className="px-2.5 py-1 rounded-full text-[10px] font-bold" style={{ background: applyOpacity(theme.secondary, 0.08), color: theme.secondary }}>
-                            {formatDate(row.created_at)}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-
-                    <span
-                      className="px-2.5 py-1 rounded-full text-[10px] font-extrabold uppercase tracking-[0.12em] flex-shrink-0"
-                      style={{
-                        color: isVip ? '#8A5A00' : theme.primary,
-                        background: isVip ? 'linear-gradient(135deg, #FFE7A3 0%, #FFD36A 52%, #F5B700 100%)' : applyOpacity(theme.primary, 0.1),
-                        border: `1px solid ${isVip ? '#E0A11B' : applyOpacity(theme.primary, 0.15)}`,
-                      }}
-                    >
-                      {isVip ? 'VIP' : 'General'}
-                    </span>
                   </div>
                 </div>
               );

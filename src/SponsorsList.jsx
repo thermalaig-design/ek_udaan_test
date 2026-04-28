@@ -103,9 +103,9 @@ const SponsorsList = ({ onNavigate, onBack }) => {
                   border: `1px solid ${applyOpacity(theme.primary, 0.12)}`,
                 }}
               >
-                <div className="w-12 h-12 rounded-xl overflow-hidden flex items-center justify-center bg-slate-50 border border-slate-100 shadow-sm flex-shrink-0">
+                <div className="w-12 h-12 rounded-xl overflow-hidden flex items-center justify-center bg-white border border-slate-100 shadow-sm flex-shrink-0">
                   {(sponsor.photo_thumb_url || sponsor.photo_url) ? (
-                    <img src={sponsor.photo_thumb_url || sponsor.photo_url} alt={sponsor.name} className="w-full h-full object-cover" loading="lazy" />
+                    <img src={sponsor.photo_thumb_url || sponsor.photo_url} alt={sponsor.name} className="w-full h-full object-contain bg-white" loading="lazy" />
                   ) : (
                     <Star className="h-4 w-4" style={{ color: theme.primary }} />
                   )}

@@ -194,9 +194,7 @@ const EventDetail = () => {
                     style={{ borderColor: 'color-mix(in srgb, var(--brand-navy) 12%, transparent)' }}
                   >
                     {attachment.type === 'image' && (
-                      <a href={attachment.url} target="_blank" rel="noopener noreferrer" className="block">
-                        <img src={attachment.url} alt={attachment.label} loading="lazy" className="w-full h-44 object-cover bg-slate-100" />
-                      </a>
+                      <img src={attachment.url} alt={attachment.label} loading="lazy" className="w-full h-44 object-cover bg-slate-100" />
                     )}
 
                     {attachment.type === 'pdf' && (
@@ -215,19 +213,6 @@ const EventDetail = () => {
                         <span className="truncate flex-1">{attachment.label}</span>
                       </div>
                     )}
-
-                    <div className="px-3 py-2 text-xs font-medium flex items-center justify-between gap-2" style={{ color: 'var(--body-text-color)' }}>
-                      <span className="truncate">{attachment.label}</span>
-                      <a
-                        href={attachment.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1 font-semibold"
-                        style={{ color: theme.primary }}
-                      >
-                        Open <ExternalLink className="h-3.5 w-3.5" />
-                      </a>
-                    </div>
                   </div>
                 ))}
               </div>
