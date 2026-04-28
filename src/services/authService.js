@@ -20,6 +20,13 @@ const buildMockUser = (phoneNumber) => ({
 
 const normalizePhone = (value) => String(value || '').replace(/\D/g, '');
 
+// Always return last 10 digits — strips country code prefix (91, 0, +91, etc.)
+const normalizeTo10Digits = (value) => {
+  const digits = normalizePhone(value);
+  if (digits.length >= 10) return digits.slice(-10);
+  return digits;
+};
+
 const normalizeMemberName = (value) => {
   const raw = String(value || '').trim();
   if (!raw) return '';
@@ -165,11 +172,22 @@ export const checkPhoneNumber = async (phoneNumber) => {
       return { success: false, message: 'Please enter a valid 10-digit mobile number.' };
     }
 
-    // 1) Find member by mobile in "Members" table
+    // Always work with last 10 digits — avoids format mismatch (91xxxxxxxxxx vs xxxxxxxxxx)
+    const last10 = normalizeTo10Digits(cleanedPhone);
+
+    // 1) Find member by mobile in "Members" table — check all common storage formats
+    //    to avoid false "not found" that causes duplicate inserts on every login
+    const mobileOrFilter = [
+      `Mobile.eq.${last10}`,
+      `Mobile.eq.91${last10}`,
+      `Mobile.eq.+91${last10}`,
+      `Mobile.eq.0${last10}`
+    ].join(',');
+
     const { data: members, error: memberError } = await supabase
       .from('Members')
       .select('"S.No.", "Name", "Mobile", "Email", members_id')
-      .eq('Mobile', cleanedPhone)
+      .or(mobileOrFilter)
       .order('"S.No."', { ascending: false });
 
     if (memberError) {
@@ -178,24 +196,42 @@ export const checkPhoneNumber = async (phoneNumber) => {
     }
 
     if (!members || members.length === 0) {
-      // Auto-register new member with just the mobile number.
+      // Member nahi mila — pehle double-check karo (race condition guard)
+      // Phir naya row insert karo — always last 10 digits store karo
       const { data: newMember, error: insertError } = await supabase
         .from('Members')
-        .insert({ Mobile: cleanedPhone })
+        .insert({ Mobile: last10 })
         .select('"S.No.", "Name", "Mobile", "Email", members_id')
         .single();
 
       if (insertError) {
+        // Agar unique constraint violation hai to existing record fetch karo
+        if (insertError.code === '23505') {
+          console.warn('[Auth] Duplicate mobile on insert — fetching existing record');
+          const { data: existingMembers, error: refetchError } = await supabase
+            .from('Members')
+            .select('"S.No.", "Name", "Mobile", "Email", members_id')
+            .or(mobileOrFilter)
+            .order('"S.No."', { ascending: false });
+
+          if (!refetchError && existingMembers && existingMembers.length > 0) {
+            // Existing record mila — aage normal flow continue karo
+            // (fall through to membership lookup below)
+            console.log('[Auth] Found existing member after conflict, continuing...');
+            // Reassign members to existingMembers and continue
+            return checkPhoneNumber(phoneNumber); // retry once
+          }
+        }
         console.error('Supabase member insert error:', insertError);
         return { success: false, message: 'Unable to register number. Please try again.' };
       }
 
       const fallbackUser = {
-        id: newMember?.members_id || newMember?.['S.No.'] || cleanedPhone,
-        members_id: newMember?.members_id || newMember?.['S.No.'] || cleanedPhone,
-        member_ids: [newMember?.members_id || newMember?.['S.No.'] || cleanedPhone],
+        id: newMember?.members_id || newMember?.['S.No.'] || last10,
+        members_id: newMember?.members_id || newMember?.['S.No.'] || last10,
+        member_ids: [newMember?.members_id || newMember?.['S.No.'] || last10],
         name: normalizeMemberName(newMember?.['Name']),
-        mobile: newMember?.['Mobile'] || cleanedPhone,
+        mobile: newMember?.['Mobile'] || last10,
         email: newMember?.['Email'] || '',
         type: 'Guest',
         membershipNumber: '',

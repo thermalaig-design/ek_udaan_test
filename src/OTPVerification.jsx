@@ -3,7 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { useBackNavigation } from './hooks';
 import { verifyOTP } from './services/authService';
 import { fetchDirectoryData } from './services/directoryService';
-import { fetchTrustById } from './services/trustService';
+import { fetchMemberTrustMemberships, fetchTrustById } from './services/trustService';
 import { persistUserSession } from './utils/storageUtils';
 import { useAppTheme } from './context/ThemeContext';
 
@@ -14,6 +14,7 @@ const LOGIN_TRUST_CACHE_KEY = 'cached_base_trust_info';
 const TRUST_CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
 // No static fallback image — show monogram placeholder instead of Mah-Setu logo
 const OTP_FLOW_KEY = 'otp_flow_allowed';
+const normalizeText = (value) => String(value || '').trim();
 
 const resolveAuthDefaultTrust = () => {
   const defaultName = import.meta.env.VITE_DEFAULT_TRUST_NAME || 'Mahila Mandal';
@@ -143,15 +144,74 @@ function OTPVerification() {
     }) || accountCandidates[0];
   };
 
-  const completeLogin = (selectedUser) => {
-    const persisted = persistUserSession(selectedUser);
+  const completeLogin = async (selectedUser) => {
+    const accountMembershipNo = normalizeText(
+      selectedUser?.membership_number ||
+      selectedUser?.['Membership number'] ||
+      selectedUser?.membershipNumber
+    );
+
+    let enrichedUser = { ...selectedUser };
+    try {
+      const refreshedMemberships = await fetchMemberTrustMemberships({
+        membersId: selectedUser?.members_id || selectedUser?.id || null,
+        membershipNumber: accountMembershipNo
+      });
+
+      if (Array.isArray(refreshedMemberships) && refreshedMemberships.length > 0) {
+        enrichedUser = {
+          ...enrichedUser,
+          hospital_memberships: refreshedMemberships
+        };
+
+        const preferredMembership = refreshedMemberships.find((membership) => membership?.is_active !== false) || refreshedMemberships[0];
+        if (preferredMembership?.trust_id) {
+          enrichedUser.trust = {
+            id: preferredMembership.trust_id,
+            name: preferredMembership.trust_name || null,
+            icon_url: preferredMembership.trust_icon_url || null,
+            remark: preferredMembership.trust_remark || null
+          };
+          enrichedUser.primary_trust = {
+            id: preferredMembership.trust_id,
+            name: preferredMembership.trust_name || null,
+            icon_url: preferredMembership.trust_icon_url || null,
+            remark: preferredMembership.trust_remark || null,
+            is_active: preferredMembership?.is_active !== false
+          };
+          if (!accountMembershipNo && preferredMembership?.membership_number) {
+            enrichedUser.membership_number = preferredMembership.membership_number;
+            enrichedUser['Membership number'] = preferredMembership.membership_number;
+            enrichedUser.membershipNumber = preferredMembership.membership_number;
+          }
+        }
+      }
+    } catch (membershipError) {
+      console.warn('[OTP] Failed to refresh selected account memberships:', membershipError?.message || membershipError);
+    }
+
+    const persisted = persistUserSession(enrichedUser);
     if (!persisted.success) {
       setError(persisted.message || 'Unable to save session on this device. Please try again.');
       return false;
     }
 
-    const selectedTrustId = authDefaultTrust.id || TRUST_ID;
-    const selectedTrustName = trustInfo?.name || localStorage.getItem('selected_trust_name') || '';
+    const selectedMemberships = Array.isArray(enrichedUser?.hospital_memberships) ? enrichedUser.hospital_memberships : [];
+    const selectedMembership = selectedMemberships.find((membership) => membership?.is_active !== false) || selectedMemberships[0] || null;
+    const selectedTrustId = normalizeText(
+      selectedMembership?.trust_id ||
+      enrichedUser?.primary_trust?.id ||
+      enrichedUser?.trust?.id ||
+      authDefaultTrust.id ||
+      TRUST_ID
+    );
+    const selectedTrustName = normalizeText(
+      selectedMembership?.trust_name ||
+      enrichedUser?.primary_trust?.name ||
+      enrichedUser?.trust?.name ||
+      trustInfo?.name ||
+      localStorage.getItem('selected_trust_name')
+    );
     localStorage.setItem('selected_trust_id', String(selectedTrustId));
     if (selectedTrustName) localStorage.setItem('selected_trust_name', String(selectedTrustName));
 
@@ -180,7 +240,7 @@ function OTPVerification() {
           setLoading(false);
           return;
         }
-        completeLogin(selectedUser);
+        await completeLogin(selectedUser);
         setLoading(false);
         return;
       }
@@ -206,7 +266,7 @@ function OTPVerification() {
         return;
       }
 
-      completeLogin(accountCandidates[0] || user);
+      await completeLogin(accountCandidates[0] || user);
     } catch (err) {
       console.error('[OTP] Verify error:', err);
       setError('Failed to verify OTP. Please try again.');

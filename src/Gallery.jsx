@@ -124,6 +124,8 @@ export function Gallery({ onNavigate }) {
   const [albumTotalPages, setAlbumTotalPages] = useState(0);
   const listBottomRef = useRef(null);
   const fetchDebounceRef = useRef(null);
+  const touchStartXRef = useRef(null);
+  const touchStartYRef = useRef(null);
   const IMAGES_PER_PAGE = 10;
   const SLIDER_INTERVAL_MS = 2500;
 
@@ -272,6 +274,24 @@ export function Gallery({ onNavigate }) {
   const goToNext = () => {
     const idx = filteredImages.findIndex((img) => img.id === selectedImage.id);
     setSelectedImage(filteredImages[idx === filteredImages.length - 1 ? 0 : idx + 1]);
+  };
+
+  const handleTouchStart = (e) => {
+    touchStartXRef.current = e.touches[0].clientX;
+    touchStartYRef.current = e.touches[0].clientY;
+  };
+
+  const handleTouchEnd = (e) => {
+    if (touchStartXRef.current === null) return;
+    const dx = e.changedTouches[0].clientX - touchStartXRef.current;
+    const dy = e.changedTouches[0].clientY - touchStartYRef.current;
+    // Only swipe if horizontal movement dominates (not a scroll)
+    if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy) * 1.5) {
+      if (dx < 0) goToNext();
+      else goToPrevious();
+    }
+    touchStartXRef.current = null;
+    touchStartYRef.current = null;
   };
 
   useEffect(() => {
@@ -463,7 +483,12 @@ export function Gallery({ onNavigate }) {
       <Sidebar isOpen={isMenuOpen} onClose={() => setIsMenuOpen(false)} onNavigate={onNavigate} currentPage="gallery" />
 
       {selectedImage && (
-        <div style={lb.overlay} onClick={closeLightbox}>
+        <div
+          style={lb.overlay}
+          onClick={closeLightbox}
+          onTouchStart={handleTouchStart}
+          onTouchEnd={handleTouchEnd}
+        >
           <button onClick={closeLightbox} style={lb.closeBtn}><X style={{ width: 22, height: 22 }} /></button>
 
           <button onClick={(e) => { e.stopPropagation(); setIsPlaying((p) => !p); }} style={{ ...lb.closeBtn, left: 16, right: 'auto' }}>

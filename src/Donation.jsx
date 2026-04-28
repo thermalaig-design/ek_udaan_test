@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ChevronLeft, CircleDollarSign, Crown, HandHeart, ShieldCheck } from 'lucide-react';
+import { ChevronLeft, Crown, HandHeart, IndianRupee, ShieldCheck } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAppTheme } from './context/ThemeContext';
 import { applyOpacity } from './utils/colorUtils';
@@ -254,7 +254,7 @@ const Donation = ({ onNavigate }) => {
 
                     <div className="flex items-center justify-between gap-3 mt-4">
                       <div className="flex items-center gap-2 min-w-0">
-                        <CircleDollarSign className="h-4 w-4 flex-shrink-0" style={{ color: theme.primary }} />
+                        <IndianRupee className="h-4 w-4 flex-shrink-0" style={{ color: theme.primary }} />
                         <p className="text-sm font-bold truncate" style={{ color: 'var(--heading-color)' }}>
                           {donationSummary(row)}
                         </p>

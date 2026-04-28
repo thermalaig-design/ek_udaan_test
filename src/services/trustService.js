@@ -51,6 +51,109 @@ export const fetchMemberTrusts = async (membersId) => {
   return mappedTrusts;
 };
 
+const normalizeText = (value) => String(value || '').trim();
+
+const mapMembershipRowsWithTrusts = (regMemberships = [], trustById = {}) =>
+  regMemberships.map((m, index) => {
+    const trustId = m?.trust_id || null;
+    const trust = trustById[trustId] || {};
+    return {
+      id: m?.id || `membership-${index}`,
+      trust_id: trustId,
+      trust_name: trust?.name || null,
+      trust_icon_url: trust?.icon_url || null,
+      trust_remark: trust?.remark || null,
+      is_active: m?.is_active,
+      membership_number: m?.['Membership number'] || null,
+      role: m?.role || null,
+      members_id: m?.members_id || null,
+      source: 'reg_members'
+    };
+  });
+
+export const fetchMemberTrustMemberships = async ({ membersId = null, membershipNumber = '' } = {}) => {
+  const normalizedMembersId = normalizeText(membersId);
+  const normalizedMembershipNo = normalizeText(membershipNumber);
+
+  if (!normalizedMembersId && !normalizedMembershipNo) return [];
+
+  let regMemberships = [];
+
+  if (normalizedMembersId) {
+    const { data, error } = await supabase
+      .from('reg_members')
+      .select('id, trust_id, "Membership number", role, joined_date, is_active, members_id')
+      .eq('members_id', normalizedMembersId);
+
+    if (error) {
+      console.warn('Error fetching member trusts by members_id:', error);
+    } else if (Array.isArray(data)) {
+      regMemberships = [...data];
+    }
+  }
+
+  if (normalizedMembershipNo) {
+    const { data, error } = await supabase
+      .from('reg_members')
+      .select('id, trust_id, "Membership number", role, joined_date, is_active, members_id')
+      .eq('Membership number', normalizedMembershipNo);
+
+    if (error) {
+      console.warn('Error fetching member trusts by membership number:', error);
+    } else if (Array.isArray(data) && data.length > 0) {
+      const seen = new Set(regMemberships.map((row) => String(row?.id || '')));
+      data.forEach((row) => {
+        const key = String(row?.id || '');
+        if (!seen.has(key)) {
+          seen.add(key);
+          regMemberships.push(row);
+        }
+      });
+    }
+  }
+
+  const trustIds = Array.from(new Set(regMemberships.map((m) => m?.trust_id).filter(Boolean)));
+  if (trustIds.length === 0) return [];
+
+  const { data: trusts, error: trustError } = await supabase
+    .from('Trust')
+    .select('id,name,icon_url,remark')
+    .in('id', trustIds);
+
+  if (trustError) {
+    console.warn('Error fetching trust details for memberships:', trustError);
+  }
+
+  const trustById = (Array.isArray(trusts) ? trusts : []).reduce((acc, trust) => {
+    acc[trust.id] = trust;
+    return acc;
+  }, {});
+
+  const mapped = mapMembershipRowsWithTrusts(regMemberships, trustById);
+
+  const deduped = [];
+  const dedupeSet = new Set();
+  mapped.forEach((membership) => {
+    const dedupeKey = [
+      normalizeText(membership?.trust_id).toLowerCase(),
+      normalizeText(membership?.membership_number).toLowerCase(),
+      normalizeText(membership?.members_id).toLowerCase()
+    ].join('|');
+
+    if (dedupeSet.has(dedupeKey)) return;
+    dedupeSet.add(dedupeKey);
+    deduped.push(membership);
+  });
+
+  deduped.sort((a, b) => {
+    const activeDiff = Number(Boolean(b?.is_active)) - Number(Boolean(a?.is_active));
+    if (activeDiff !== 0) return activeDiff;
+    return String(a?.trust_name || '').localeCompare(String(b?.trust_name || ''));
+  });
+
+  return deduped;
+};
+
 export const fetchAllTrusts = async () => {
   const { data, error } = await supabase
     .from('Trust')

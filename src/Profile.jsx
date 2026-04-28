@@ -8,7 +8,6 @@ import Sidebar from './components/Sidebar';
 import { getAllElectedMembers, getProfile, saveProfile } from './services/api';
 import { useAppTheme } from './context/ThemeContext';
 import { getNavbarThemeStyles } from './utils/themeUtils';
-import { hasAnyTrustMembership, resolveSelectedTrustMembership } from './utils/storageUtils';
 
 // Classy input field — label on top, styled bordered input
 const RowField = ({ label, type = 'text', value, onChange, placeholder, disabled = false, icon: Icon }) => (
@@ -97,6 +96,8 @@ const resolveNameValue = (...candidates) => {
   }
   return '';
 };
+
+const normalizeTrustId = (value) => String(value || '').trim().toLowerCase();
 
 const Profile = ({ onNavigate, onProfileUpdate }) => {
   const theme = useAppTheme();
@@ -208,7 +209,10 @@ const Profile = ({ onNavigate, onProfileUpdate }) => {
   }, [selectedTrustId]);
 
   const getSelectedMembershipFromUser = (user) => {
-    return resolveSelectedTrustMembership(user, selectedTrustId);
+    const memberships = Array.isArray(user?.hospital_memberships) ? user.hospital_memberships : [];
+    const currentTrustId = normalizeTrustId(selectedTrustId || localStorage.getItem('selected_trust_id') || '');
+    if (!currentTrustId) return null;
+    return memberships.find((membership) => normalizeTrustId(membership?.trust_id) === currentTrustId) || null;
   };
 
   const loadProfile = async () => {
@@ -229,11 +233,13 @@ const Profile = ({ onNavigate, onProfileUpdate }) => {
           user['Full Name']
         );
         const nameLocked = Boolean(p.name_locked ?? String(p.name || '').trim());
+        const trustRole = selectedMembership?.role || '';
+        const trustMemberId = selectedMembership?.membership_number || '';
         setAllowManualNameEntry(!nameLocked);
         setProfileData({
           name: resolvedName,
-          role: p.role || selectedMembership?.role || user.type || '',
-          memberId: p.memberId || p.member_id || p.membership_number || selectedMembership?.membership_number || user.membershipNumber || user['Membership number'] || '',
+          role: trustRole || '',
+          memberId: trustMemberId || '',
           members_id: p.members_id || user.members_id || user.member_id || user.id || '',
           mobile: p.mobile || user.mobile || user.Mobile || '', email: p.email || user.email || user.Email || '',
           address_home: p.address_home || '', address_office: p.address_office || '',
@@ -278,13 +284,15 @@ const Profile = ({ onNavigate, onProfileUpdate }) => {
         user['Full Name']
       );
       const nameLocked = Boolean(p?.name_locked ?? String(user?.Name || user?.name || '').trim());
+      const trustRole = selectedMembership?.role || '';
+      const trustMemberId = selectedMembership?.membership_number || '';
       setAllowManualNameEntry(!nameLocked);
       setProfileData(prev => ({
         ...prev,
         ...p,
         name: resolvedName,
-        role: selectedMembership?.role || p?.role || prev.role || '',
-        memberId: selectedMembership?.membership_number || p?.memberId || p?.member_id || p?.membership_number || prev.memberId || '',
+        role: trustRole || '',
+        memberId: trustMemberId || '',
         name_locked: nameLocked
       }));
       if (p.profile_photo_url) setPhotoPreview(p.profile_photo_url);
@@ -296,12 +304,14 @@ const Profile = ({ onNavigate, onProfileUpdate }) => {
         user['Full Name']
       );
       const nameLocked = Boolean(String(user?.Name || user?.name || '').trim());
+      const trustRole = selectedMembership?.role || '';
+      const trustMemberId = selectedMembership?.membership_number || '';
       setAllowManualNameEntry(!nameLocked);
       setProfileData(prev => ({
         ...prev,
         name: resolvedName,
-        role: selectedMembership?.role || user.type || '',
-        memberId: selectedMembership?.membership_number || user.membershipNumber || user['Membership number'] || user.membership_number || '',
+        role: trustRole || '',
+        memberId: trustMemberId || '',
         members_id: user.members_id || user.member_id || user.id || '',
         mobile: user.Mobile || user.mobile || '', email: user.Email || user.email || '',
         address_home: user['Address Home'] || '', address_office: user['Address Office'] || '',
@@ -346,14 +356,14 @@ const Profile = ({ onNavigate, onProfileUpdate }) => {
 
       const user = JSON.parse(localStorage.getItem('user') || '{}');
       const selectedMembership = getSelectedMembershipFromUser(user);
-      const shouldTreatAsTrustMember =
-        Boolean(selectedMembership?.trust_id) || Boolean(profileData.memberId) || hasAnyTrustMembership(user);
+      const shouldTreatAsTrustMember = Boolean(selectedMembership?.trust_id);
 
       const mergedProfile = {
         ...profileData,
         ...(response?.profile || {}),
         name: resolveNameValue(response?.profile?.name, profileData.name),
-        memberId: response?.profile?.memberId || response?.profile?.member_id || response?.profile?.membership_number || profileData.memberId,
+        role: selectedMembership?.role || '',
+        memberId: selectedMembership?.membership_number || profileData.memberId || '',
         mobile: response?.profile?.mobile || profileData.mobile,
         email: response?.profile?.email || profileData.email,
       };
