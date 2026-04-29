@@ -225,7 +225,7 @@ const SponsorDetails = ({ onBack }) => {
                       <img
                         src={data.photo}
                         alt={data.name || data.company || 'Sponsor'}
-                        className="w-full h-full object-contain"
+                        className="w-full h-full object-cover object-center"
                       />
                     ) : (
                       <Star className="h-10 w-10" style={{ color: sponsorTheme.badgeTextColor }} />

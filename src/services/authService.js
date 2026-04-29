@@ -97,7 +97,6 @@ const buildMemberAccount = ({
   cleanedPhone,
   allMemberships = [],
   preferredTrustId = '',
-  memberIds = [],
   isRegisteredMember = false,
   reg_member_id = null,
   vip_status = null
@@ -115,7 +114,9 @@ const buildMemberAccount = ({
   const account = {
     id: member?.members_id || member?.['S.No.'] || member?.['Mobile'] || cleanedPhone,
     members_id: member?.members_id || member?.['S.No.'] || null,
-    member_ids: memberIds,
+    // Keep this account scoped to its own member id so trust hydration on Home
+    // only pulls links for the selected member (multi-trust per selected person).
+    member_ids: memberId ? [memberId] : [],
     'S. No.': member?.['S.No.'] || null,
     Name: sanitizedName,
     name: sanitizedName,
@@ -390,7 +391,6 @@ export const checkPhoneNumber = async (phoneNumber) => {
           cleanedPhone,
           allMemberships: hospitalMemberships,
           preferredTrustId,
-          memberIds: membersIds,
           isRegisteredMember: Boolean(governanceMembership),
           reg_member_id: governanceMembership?.id || null,
           vip_status: vipStatus

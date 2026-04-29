@@ -145,13 +145,25 @@ function OTPVerification() {
   };
 
   const completeLogin = async (selectedUser) => {
+    const allAccountMemberIds = Array.from(
+      new Set(
+        (Array.isArray(accountCandidates) ? accountCandidates : [])
+          .map((account) => account?.members_id || account?.id || null)
+          .filter(Boolean)
+          .map((id) => String(id))
+      )
+    );
+
     const accountMembershipNo = normalizeText(
       selectedUser?.membership_number ||
       selectedUser?.['Membership number'] ||
       selectedUser?.membershipNumber
     );
 
-    let enrichedUser = { ...selectedUser };
+    let enrichedUser = {
+      ...selectedUser,
+      member_ids: allAccountMemberIds
+    };
     try {
       const refreshedMemberships = await fetchMemberTrustMemberships({
         membersId: selectedUser?.members_id || selectedUser?.id || null,
@@ -161,6 +173,7 @@ function OTPVerification() {
       if (Array.isArray(refreshedMemberships) && refreshedMemberships.length > 0) {
         enrichedUser = {
           ...enrichedUser,
+          member_ids: allAccountMemberIds,
           hospital_memberships: refreshedMemberships
         };
 

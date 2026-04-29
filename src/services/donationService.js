@@ -1,5 +1,6 @@
 import { supabase } from './supabaseClient.js';
 import { resolveSelectedTrustMembership } from '../utils/storageUtils';
+import { checkVipNoticeEligibility } from './communityService';
 
 const normalizeText = (value) => String(value || '').trim();
 
@@ -36,6 +37,14 @@ export const fetchDonationsByTrust = async (trustId) => {
   const normalizedTrustId = normalizeText(trustId);
   if (!normalizedTrustId) return [];
 
+  let vipEligible = false;
+  try {
+    const eligibility = await checkVipNoticeEligibility({ trustId: normalizedTrustId });
+    vipEligible = Boolean(eligibility?.vipEligible);
+  } catch {
+    vipEligible = false;
+  }
+
   const { data, error } = await supabase
     .from('Donations')
     .select('id, trust_id, name, description, attachments, amount, amount_type, status, type, created_at, updated_at')
@@ -50,6 +59,12 @@ export const fetchDonationsByTrust = async (trustId) => {
 
   return (data || []).filter((row) => {
     const status = normalizeText(row?.status).toLowerCase();
-    return !status || status === 'active';
+    if (status && status !== 'active') return false;
+
+    const normalizedType = normalizeText(row?.type).toLowerCase();
+    const isVipType = normalizedType === 'vip';
+    if (isVipType && !vipEligible) return false;
+
+    return true;
   });
 };

@@ -93,10 +93,19 @@ export const fetchMemberTrustMemberships = async ({ membersId = null, membership
   }
 
   if (normalizedMembershipNo) {
-    const { data, error } = await supabase
+    let membershipNoQuery = supabase
       .from('reg_members')
       .select('id, trust_id, "Membership number", role, joined_date, is_active, members_id')
       .eq('Membership number', normalizedMembershipNo);
+
+    // Critical guard:
+    // If members_id is known for selected account, never pull rows of another person
+    // who happens to share/reuse the same membership number across trusts.
+    if (normalizedMembersId) {
+      membershipNoQuery = membershipNoQuery.eq('members_id', normalizedMembersId);
+    }
+
+    const { data, error } = await membershipNoQuery;
 
     if (error) {
       console.warn('Error fetching member trusts by membership number:', error);

@@ -83,12 +83,20 @@ export const hasAnyTrustMembership = (user = {}) =>
 export const compactUserForStorage = (user = {}) => {
   const memberships = Array.isArray(user?.hospital_memberships) ? user.hospital_memberships : [];
   const compactMemberships = memberships.slice(0, 25).map(compactMembership);
+  const compactMemberIds = Array.from(
+    new Set(
+      (Array.isArray(user?.member_ids) ? user.member_ids : [])
+        .filter(Boolean)
+        .map((id) => String(id))
+    )
+  );
   const sanitizedName = sanitizeMemberName(user?.Name || user?.name || '');
 
   return {
     id: user?.id || user?.members_id || null,
     members_id: user?.members_id || user?.id || null,
     member_id: user?.member_id || user?.members_id || user?.id || null,
+    member_ids: compactMemberIds,
     Name: sanitizedName,
     name: sanitizedName,
     Mobile: user?.Mobile || user?.mobile || user?.phone || '',

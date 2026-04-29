@@ -193,23 +193,13 @@ const resolveMemberContext = async ({ userIdHeader, membersIdHeader, trustIdHead
       }
 
       if (!member?.members_id) {
-        // Last-resort fallback: create/find minimal Members row so profile can be saved.
-        const { data: insertedMember, error: insertErr } = await supabase
+        const { data: existingByMobileSingle } = await supabase
           .from('Members')
-          .insert({ Mobile: normalizedMobile })
           .select('*')
-          .maybeSingle();
-        if (!insertErr && insertedMember?.members_id) {
-          member = insertedMember;
-        } else {
-          const { data: existingByMobileSingle } = await supabase
-            .from('Members')
-            .select('*')
-            .eq('Mobile', normalizedMobile)
-            .limit(1);
-          if (existingByMobileSingle?.[0]?.members_id) {
-            member = existingByMobileSingle[0];
-          }
+          .eq('Mobile', normalizedMobile)
+          .limit(1);
+        if (existingByMobileSingle?.[0]?.members_id) {
+          member = existingByMobileSingle[0];
         }
       }
 
@@ -221,6 +211,29 @@ const resolveMemberContext = async ({ userIdHeader, membersIdHeader, trustIdHead
           .limit(1);
         if (existingByContact?.[0]?.members_id) {
           member = existingByContact[0];
+        }
+      }
+
+      if (!member?.members_id) {
+        const { data: insertedMember } = await supabase
+          .from('Members')
+          .insert({ Mobile: normalizedMobile, contact: normalizedMobile })
+          .select('*')
+          .maybeSingle();
+
+        if (insertedMember?.members_id) {
+          member = insertedMember;
+        } else {
+          // If insert didn't return a row (or a concurrent insert happened), fetch again.
+          const { data: afterInsertLookup } = await supabase
+            .from('Members')
+            .select('*')
+            .or(variants.map((variant) => `Mobile.eq.${variant},contact.eq.${variant}`).join(','))
+            .order('S.No.', { ascending: false })
+            .limit(1);
+          if (afterInsertLookup?.[0]?.members_id) {
+            member = afterInsertLookup[0];
+          }
         }
       }
     }

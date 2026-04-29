@@ -64,7 +64,10 @@ const mergeUniqueTrusts = (...collections) => {
         name: trust.name || null,
         icon_url: trust.icon_url || null,
         remark: trust.remark || null,
-        is_active: Boolean(trust.is_active) !== false
+        is_active: Boolean(trust.is_active) !== false,
+        role: trust.role || null,
+        membership_number: trust.membership_number || trust['Membership number'] || null,
+        members_id: trust.members_id || trust.member_id || null,
       });
     });
 
@@ -132,17 +135,16 @@ const ensureDefaultTrustIncluded = (trustList, defaultTrust) => {
     return defaultTrust ? [defaultTrust] : [];
   }
 
-  // Check if default trust is already in the list by ID
   const defaultId = String(defaultTrust?.id || '').trim();
   if (!defaultId) return trustList;
-  const hasDefault = trustList.some((t) => String(t?.id || '').trim() === defaultId);
+  const list = Array.isArray(trustList) ? trustList : [];
+  const defaultFromList = list.find((t) => String(t?.id || '').trim() === defaultId);
+  const pinnedDefault = defaultFromList || defaultTrust || null;
+  if (!pinnedDefault) return list;
 
-  // If default trust is not here, add it to the beginning
-  if (!hasDefault && defaultTrust) {
-    return [defaultTrust, ...trustList];
-  }
-
-  return trustList;
+  const withoutDefault = list.filter((t) => String(t?.id || '').trim() !== defaultId);
+  // Always keep base/default trust at first position.
+  return [pinnedDefault, ...withoutDefault];
 };
 
 
@@ -538,6 +540,7 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
   // this effect only upgrades it with the full profile from API/cache
   useEffect(() => {
     const loadProfile = async () => {
+      const startedAt = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
       const user = localStorage.getItem('user');
       if (user) {
         try {
@@ -621,6 +624,10 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
           console.error('Error loading user profile:', error);
         }
       }
+      if (import.meta.env.DEV) {
+        const endedAt = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+        console.log(`[Perf][Home] profile bootstrap completed in ${Math.round(endedAt - startedAt)}ms`);
+      }
     };
     loadProfile();
   }, []);
@@ -659,7 +666,10 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
         name: m.trust_name || (m.trust_id ? 'Hospital' : null),
         icon_url: m.trust_icon_url || null,
         remark: m.trust_remark || null,
-        is_active: m.is_active !== false
+        is_active: m.is_active !== false,
+        role: m.role || null,
+        membership_number: m.membership_number || m['Membership number'] || null,
+        members_id: m.members_id || m.member_id || null,
       }));
       const uniqueTrusts = mergeUniqueTrusts(derivedTrusts);
       const primaryTrust = parsedUser.primary_trust || parsedUser.trust || derivedTrusts.find((t) => t.is_active) || derivedTrusts[0] || (parsedUser.trust_name ? { name: parsedUser.trust_name } : null);
@@ -677,7 +687,9 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
       setTrustList(mergedTrusts);
       try { localStorage.setItem('trust_list_cache', JSON.stringify(mergedTrusts)); } catch { /* ignore */ }
 
-      const normalizedSelected = normalizeTrustId(selectedTrustId);
+      const normalizedSelected = normalizeTrustId(
+        localStorage.getItem('selected_trust_id') || selectedTrustId
+      );
       const selectedExistsInMerged = mergedTrusts.some((t) => normalizeTrustId(t.id) === normalizedSelected);
       const defaultInMergedId = normalizeTrustId(defaultTrust?.id);
       const shouldForceDefault =
@@ -706,7 +718,7 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
     } catch (error) {
       console.warn('Could not parse user trust info:', error);
     }
-  }, [selectedTrustId, defaultTrust?.id]);
+  }, [defaultTrust?.id]);
 
   // Hydrate missing trust icon_url from Trust table without changing trust membership logic.
   useEffect(() => {
@@ -808,7 +820,17 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
           .map((id) => String(id))
       )
     );
-    if (membersIds.length === 0) return;
+    if (membersIds.length === 0) {
+      // If member id is not present, still honor trusts carried in user payload
+      // (selected account's hospital_memberships from login flow).
+      if (userDerivedTrusts.length > 0) {
+        let withDefault = ensureDefaultTrustIncluded(mergeUniqueTrusts(userDerivedTrusts), defaultTrust);
+        withDefault = mergeTrustsWithExistingVisuals(withDefault, readCachedTrustList());
+        setTrustList(withDefault);
+        try { localStorage.setItem('trust_list_cache', JSON.stringify(withDefault)); } catch { /* ignore */ }
+      }
+      return;
+    }
     hasLoadedMemberTrusts.current = true;
     const loadMemberTrusts = async () => {
       try {
@@ -824,7 +846,10 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
             name: trust.name || null,
             icon_url: trust.icon_url || null,
             remark: trust.remark || null,
-            is_active: trust.is_active
+            is_active: trust.is_active,
+            role: trust.role || null,
+            membership_number: trust.membership_number || trust['Membership number'] || null,
+            members_id: trust.members_id || trust.member_id || null,
           }));
         
         console.log('📊 Membership trusts found:', membershipTrusts.length, membershipTrusts.map(t => t.name).join(', '));
@@ -1610,7 +1635,7 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
 
     if (!normalizedSelectedTrustId) return null;
 
-    return (
+    const membershipMatch = (
       memberships.find((membership) =>
         normalizeTrustId(membership?.trust_id || membership?.id) === normalizedSelectedTrustId &&
         membership?.is_active !== false
@@ -1620,10 +1645,22 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
       ) ||
       null
     );
-  }, [activeTrust?.id, currentUser?.hospital_memberships, selectedTrustId]);
+    if (membershipMatch) return membershipMatch;
 
-  const selectedTrustMemberLabel = String(selectedTrustMembership?.role || '').trim() || 'Registered Member';
-  const selectedTrustMemberBadge = String(selectedTrustMembership?.role || '').trim() || 'VIP Access';
+    // Fallback: when selected trust came from merged trust list, still show header badges.
+    const trustMatch = (trustList || []).find(
+      (trust) => normalizeTrustId(trust?.id) === normalizedSelectedTrustId
+    );
+    if (!trustMatch) return null;
+    return {
+      trust_id: trustMatch.id || null,
+      role: trustMatch.role || null,
+      membership_number: trustMatch.membership_number || null,
+      members_id: trustMatch.members_id || null,
+      is_active: trustMatch.is_active !== false
+    };
+  }, [activeTrust?.id, currentUser?.hospital_memberships, selectedTrustId, trustList]);
+
   const showSelectedTrustMemberBanner = Boolean(selectedTrustMembership?.trust_id || selectedTrustMembership?.id);
 
   const shouldShowTrustSelector = trustList.length > 0;
@@ -1988,7 +2025,7 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
                   </div>
                 </div>
 
-                {showSelectedTrustMemberBanner ? (
+                {showSelectedTrustMemberBanner && (selectedTrustMembership?.membership_number || selectedTrustMembership?.role) ? (
                   <div className="inline-flex items-center gap-2 flex-shrink-0">
                     {selectedTrustMembership?.membership_number ? (
                       <span
@@ -2003,17 +2040,19 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
                         {selectedTrustMembership.membership_number}
                       </span>
                     ) : null}
-                    <span
-                      className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-extrabold uppercase tracking-[0.18em]"
-                      style={{
-                        background: 'linear-gradient(135deg, #5a3f00 0%, #d4a017 100%)',
-                        color: '#fff8db',
-                        border: '1px solid rgba(255, 227, 133, 0.5)',
-                      }}
-                    >
-                      <Crown className="h-3.5 w-3.5" />
-                      {selectedTrustMemberBadge}
-                    </span>
+                    {selectedTrustMembership?.role ? (
+                      <span
+                        className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-extrabold uppercase tracking-[0.18em]"
+                        style={{
+                          background: 'linear-gradient(135deg, #5a3f00 0%, #d4a017 100%)',
+                          color: '#fff8db',
+                          border: '1px solid rgba(255, 227, 133, 0.5)',
+                        }}
+                      >
+                        <Crown className="h-3.5 w-3.5" />
+                        {selectedTrustMembership.role}
+                      </span>
+                    ) : null}
                   </div>
                 ) : null}
               </div>
@@ -2272,8 +2311,8 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
                                   boxShadow: `0 6px 16px ${sponsorTheme.photoRingColor1}1A`,
                                 }}
                               >
-                                {(sponsor.photo_thumb_url || sponsor.photo_url)
-                                  ? <img src={sponsor.photo_thumb_url || sponsor.photo_url} alt={sponsor.name || sponsor.company_name} className="w-full h-full object-contain" loading="lazy" decoding="async" />
+                                {(sponsor.photo_url || sponsor.photo_thumb_url)
+                                  ? <img src={sponsor.photo_url || sponsor.photo_thumb_url} alt={sponsor.name || sponsor.company_name} className="w-full h-full object-cover object-center" loading="lazy" decoding="async" />
                                   : <Star className="h-6 w-6" style={{ color: sponsorTheme.textColor }} />}
                               </div>
                             </div>
@@ -2450,7 +2489,6 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
           animation: marquee-scroll 30s linear infinite;
           width: max-content;
         }
-        .marquee-track:hover { animation-play-state: paused; }
         @keyframes marquee-scroll {
           0%   { transform: translateX(0); }
           100% { transform: translateX(-50%); }

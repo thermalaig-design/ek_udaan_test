@@ -414,16 +414,22 @@ const OtherMemberships = ({ onNavigate }) => {
     );
   };
 
-  const MembershipCard = ({ m, index }) => {
+  const MembershipCard = ({ m, index, showGoldenMembershipBadge = false }) => {
     const trustName = m.Trust?.name || m.organisation_name || '—';
     const isVip = m.source === 'reg_members' || m.is_vip;
     const showDelete = !isVip;
-    const membershipLabel = m.is_current_trust ? 'This Trust Membership No.' : 'Membership No.';
+    const membershipLabel = 'Membership No.';
+    const membershipNoText = normalizeText(m.membership_no) || '-';
+    const membershipTypeText = normalizeText(m.membership_type || m.role).toUpperCase();
+    const shouldShowMembershipRow = !showGoldenMembershipBadge;
+    const shouldShowOrganisationRow = Boolean(m.organisation_name && m.organisation_name !== trustName);
+    const shouldShowRemarkRow = Boolean(m.remark);
+    const showDetailsPanel = shouldShowMembershipRow || shouldShowOrganisationRow || shouldShowRemarkRow;
 
     return (
-      <div key={m.id} style={{ background: colors.card, borderRadius: '24px', border: `1.5px solid ${colors.border}`, boxShadow: `0 12px 28px ${applyOpacity(colors.secondary, 0.08)}`, overflow: 'hidden' }}>
+      <div key={m.id} style={{ background: colors.card, borderRadius: '24px', border: `1.5px solid ${colors.border}`, boxShadow: `0 14px 34px ${applyOpacity(colors.secondary, 0.1)}`, overflow: 'hidden' }}>
         <div style={{ height: '3px', background: isVip ? colors.vipBg : `linear-gradient(90deg, ${colors.primary}, ${colors.accent})` }} />
-        <div style={{ padding: '16px' }}>
+        <div style={{ padding: '16px 16px 14px' }}>
           {/* Header row */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '14px' }}>
             <TrustAvatar trust={m.Trust || { name: trustName, icon_url: null }} />
@@ -431,28 +437,18 @@ const OtherMemberships = ({ onNavigate }) => {
               <h3 style={{ fontSize: '15px', fontWeight: 800, color: 'var(--heading-color)', margin: '0 0 5px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {trustName}
               </h3>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
-                {m.is_active && (
-                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '10px', fontWeight: 700, color: colors.success, background: colors.successBg, padding: '2px 8px', borderRadius: '20px' }}>
-                    <span style={{ width: 5, height: 5, borderRadius: '50%', background: colors.success, display: 'inline-block' }} /> Active
+              {showGoldenMembershipBadge && (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '7px', marginTop: '2px' }}>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', fontSize: '10px', fontWeight: 800, color: '#FFF8E1', background: 'linear-gradient(135deg, #6E5300 0%, #B8860B 45%, #D4AF37 100%)', border: '1px solid #E2C66C', padding: '3px 10px', borderRadius: '999px', letterSpacing: '0.08em' }}>
+                    {membershipNoText}
                   </span>
-                )}
-                {isVip && (
-                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', fontSize: '10px', fontWeight: 800, color: colors.vipText, background: colors.vipBg, border: `1px solid ${colors.vipBorder}`, padding: '2px 9px', borderRadius: '999px', letterSpacing: '0.04em' }}>
-                    VIP
-                  </span>
-                )}
-                {m.is_current_trust && (
-                  <span style={{ fontSize: '10px', fontWeight: 700, color: colors.secondary, background: applyOpacity(colors.accentBg, 0.92), padding: '2px 8px', borderRadius: '20px' }}>
-                    Current Trust
-                  </span>
-                )}
-                {m.membership_type && (
-                  <span style={{ fontSize: '10px', fontWeight: 700, color: colors.primary, background: applyOpacity(colors.accentBg, 0.9), padding: '2px 8px', borderRadius: '20px' }}>
-                    {m.membership_type}
-                  </span>
-                )}
-              </div>
+                  {membershipTypeText && (
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', fontSize: '10px', fontWeight: 800, color: '#FFF8E1', background: 'linear-gradient(135deg, #6E5300 0%, #B8860B 45%, #D4AF37 100%)', border: '1px solid #E2C66C', padding: '3px 10px', borderRadius: '999px', letterSpacing: '0.08em' }}>
+                      {membershipTypeText}
+                    </span>
+                  )}
+                </div>
+              )}
             </div>
             {/* Delete button */}
             {showDelete && (
@@ -468,24 +464,28 @@ const OtherMemberships = ({ onNavigate }) => {
           </div>
 
           {/* Details grid */}
-          <div style={{ background: colors.cardInner, borderRadius: '16px', padding: '13px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', border: `1px solid ${applyOpacity(colors.secondary, 0.06)}` }}>
-            <div style={{ gridColumn: '1/-1' }}>
-              <Label>{membershipLabel}</Label>
-              <p style={{ fontSize: '15px', fontWeight: 800, color: colors.primary, margin: 0, letterSpacing: '0.05em' }}>{m.membership_no}</p>
-            </div>
-            {m.organisation_name && m.organisation_name !== trustName && (
+          {showDetailsPanel && (
+            <div style={{ background: `linear-gradient(160deg, ${colors.cardInner} 0%, ${applyOpacity(colors.accentBg, 0.24)} 100%)`, borderRadius: '16px', padding: '13px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', border: `1px solid ${applyOpacity(colors.secondary, 0.06)}` }}>
+            {shouldShowMembershipRow && (
+              <div style={{ gridColumn: '1/-1' }}>
+                <Label>{membershipLabel}</Label>
+                <p style={{ fontSize: '15px', fontWeight: 800, color: colors.primary, margin: 0, letterSpacing: '0.05em' }}>{m.membership_no}</p>
+              </div>
+            )}
+            {shouldShowOrganisationRow && (
               <div style={{ gridColumn: '1/-1' }}>
                 <Label>Organisation</Label>
                 <p style={{ fontSize: '13px', fontWeight: 600, color: 'var(--heading-color)', margin: 0 }}>{m.organisation_name}</p>
               </div>
             )}
-            {m.remark && (
+            {shouldShowRemarkRow && (
               <div style={{ gridColumn: '1/-1', background: '#FFFBEB', borderRadius: '10px', padding: '10px 12px', border: '1px solid #FDE68A', marginTop: 2 }}>
                 <Label>Remark</Label>
                 <p style={{ fontSize: '12px', color: '#92400e', margin: 0, lineHeight: 1.5, fontWeight: 500 }}>{m.remark}</p>
               </div>
             )}
           </div>
+          )}
         </div>
       </div>
     );
@@ -694,7 +694,7 @@ const OtherMemberships = ({ onNavigate }) => {
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                   {otherMems.map((m, idx) => (
-                    <MembershipCard key={m.id} m={m} index={idx} />
+                    <MembershipCard key={m.id} m={m} index={idx} showGoldenMembershipBadge={false} />
                   ))}
                 </div>
               </div>
@@ -713,7 +713,7 @@ const OtherMemberships = ({ onNavigate }) => {
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                   {trustLinks.map((link, index) => (
-                    <MembershipCard key={link.id || index} m={link} index={index} />
+                    <MembershipCard key={link.id || index} m={link} index={index} showGoldenMembershipBadge />
                   ))}
                 </div>
               </div>
