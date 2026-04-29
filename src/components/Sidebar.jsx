@@ -542,6 +542,49 @@ const Sidebar = ({ isOpen, onClose, onNavigate, currentPage, onLogout }) => {
                 );
               })}
 
+              {/* Other Membership Details — Navigate to full page */}
+              <button
+                onClick={handleOtherMembershipNavigation}
+              className="w-full flex items-center gap-3 px-4 rounded-xl transition-all text-left active:scale-95 select-none"
+              style={{
+                minHeight: '52px',
+                background: 'transparent',
+                WebkitTapHighlightColor: applyOpacity(primary, 0.06),
+              }}
+            >
+              <Users
+                className="h-5 w-5 flex-shrink-0"
+                style={{
+                  color: 'color-mix(in srgb, var(--sidebar-text) 72%, var(--surface-color))'
+                }}
+              />
+              <div className="flex-1 text-left">
+                <span className="font-semibold" style={{ color: 'var(--sidebar-text)' }}>
+                  Other Membership Details
+                </span>
+                {loadingTrustLinks && (
+                  <span
+                    className="ml-2 text-[10px]"
+                    style={{ color: 'color-mix(in srgb, var(--sidebar-text) 50%, var(--surface-color))' }}
+                  >
+                    Loading...
+                  </span>
+                )}
+                {!loadingTrustLinks && memberTrustLinks.length > 0 && (
+                  <span
+                    className="ml-2 text-[10px] font-bold px-1.5 py-0.5 rounded-full"
+                    style={{ background: applyOpacity(secondary, 0.12), color: secondary }}
+                  >
+                    {memberTrustLinks.length}
+                  </span>
+                )}
+              </div>
+              <ChevronRight
+                className="h-4 w-4 flex-shrink-0"
+                style={{ color: 'color-mix(in srgb, var(--sidebar-text) 45%, var(--surface-color))' }}
+              />
+            </button>
+
               {/* Share Button - controlled by feature_share_app */}
               {ff('feature_share_app') && <button
               onClick={async () => {
@@ -609,49 +652,6 @@ const Sidebar = ({ isOpen, onClose, onNavigate, currentPage, onLogout }) => {
                 </span>
               )}
             </button>}
-
-            {/* Other Membership Details — Navigate to full page */}
-            <button
-              onClick={handleOtherMembershipNavigation}
-              className="w-full flex items-center gap-3 px-4 rounded-xl transition-all text-left active:scale-95 select-none"
-              style={{
-                minHeight: '52px',
-                background: 'transparent',
-                WebkitTapHighlightColor: applyOpacity(primary, 0.06),
-              }}
-            >
-              <Users
-                className="h-5 w-5 flex-shrink-0"
-                style={{
-                  color: 'color-mix(in srgb, var(--sidebar-text) 72%, var(--surface-color))'
-                }}
-              />
-              <div className="flex-1 text-left">
-                <span className="font-semibold" style={{ color: 'var(--sidebar-text)' }}>
-                  Other Membership Details
-                </span>
-                {loadingTrustLinks && (
-                  <span
-                    className="ml-2 text-[10px]"
-                    style={{ color: 'color-mix(in srgb, var(--sidebar-text) 50%, var(--surface-color))' }}
-                  >
-                    Loading...
-                  </span>
-                )}
-                {!loadingTrustLinks && memberTrustLinks.length > 0 && (
-                  <span
-                    className="ml-2 text-[10px] font-bold px-1.5 py-0.5 rounded-full"
-                    style={{ background: applyOpacity(secondary, 0.12), color: secondary }}
-                  >
-                    {memberTrustLinks.length}
-                  </span>
-                )}
-              </div>
-              <ChevronRight
-                className="h-4 w-4 flex-shrink-0"
-                style={{ color: 'color-mix(in srgb, var(--sidebar-text) 45%, var(--surface-color))' }}
-              />
-            </button>
             </div>
           </div>
         </div>

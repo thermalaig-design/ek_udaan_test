@@ -1,12 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react';
 
-const ImageSlider = ({ images, autoPlayInterval = 3000 }) => {
+const ImageSlider = ({ images, autoPlayInterval = 3000, onNavigate }) => {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isDragging, setIsDragging] = useState(false);
   const [startX, setStartX] = useState(0);
   const [translateX, setTranslateX] = useState(0);
   const sliderRef = useRef(null);
   const autoPlayRef = useRef(null);
+  const dragDistanceRef = useRef(0);
 
   // Auto-play functionality
   useEffect(() => {
@@ -30,6 +31,7 @@ const ImageSlider = ({ images, autoPlayInterval = 3000 }) => {
     setIsDragging(true);
     setStartX(clientX);
     setTranslateX(0);
+    dragDistanceRef.current = 0;
     if (autoPlayRef.current) {
       clearInterval(autoPlayRef.current);
     }
@@ -39,6 +41,7 @@ const ImageSlider = ({ images, autoPlayInterval = 3000 }) => {
     if (!isDragging) return;
     const diff = clientX - startX;
     setTranslateX(diff);
+    dragDistanceRef.current = Math.max(dragDistanceRef.current, Math.abs(diff));
   };
 
   const handleEnd = () => {
@@ -80,6 +83,11 @@ const ImageSlider = ({ images, autoPlayInterval = 3000 }) => {
     if (isDragging) handleEnd();
   };
 
+  const handleSliderClick = () => {
+    if (dragDistanceRef.current > 8) return;
+    if (typeof onNavigate === 'function') onNavigate('gallery');
+  };
+
   if (!images || images.length === 0) return null;
 
   return (
@@ -99,6 +107,7 @@ const ImageSlider = ({ images, autoPlayInterval = 3000 }) => {
         onMouseMove={onMouseMove}
         onMouseUp={onMouseUp}
         onMouseLeave={onMouseLeave}
+        onClick={handleSliderClick}
       >
         {images.map((image, index) => (
           <div
@@ -133,30 +142,6 @@ const ImageSlider = ({ images, autoPlayInterval = 3000 }) => {
             />
           ))}
         </div>
-      )}
-
-      {/* Navigation arrows (only show if more than 1 image) */}
-      {images.length > 1 && (
-        <>
-          <button
-            onClick={() => setCurrentIndex((prev) => (prev > 0 ? prev - 1 : images.length - 1))}
-            className="absolute left-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-black/30 hover:bg-black/50 text-white flex items-center justify-center transition-all"
-            aria-label="Previous image"
-          >
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-            </svg>
-          </button>
-          <button
-            onClick={() => setCurrentIndex((prev) => (prev < images.length - 1 ? prev + 1 : 0))}
-            className="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-black/30 hover:bg-black/50 text-white flex items-center justify-center transition-all"
-            aria-label="Next image"
-          >
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-            </svg>
-          </button>
-        </>
       )}
 
       {/* Image counter */}

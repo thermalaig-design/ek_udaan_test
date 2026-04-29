@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft, Calendar, ExternalLink, FileText, Home as HomeIcon, Paperclip, Star } from 'lucide-react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useAppTheme } from './context/ThemeContext';
@@ -92,8 +92,12 @@ const NoticeDetail = ({ onNavigate }) => {
   const navigate = useNavigate();
   const { noticeId } = useParams();
   const [notice, setNotice] = useState(null);
+  const [noticeList, setNoticeList] = useState([]);
+  const [currentNoticeIndex, setCurrentNoticeIndex] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const touchStartXRef = useRef(null);
+  const touchEndXRef = useRef(null);
   const selectedTrustId = useMemo(() => localStorage.getItem('selected_trust_id') || '', []);
 
   useEffect(() => {
@@ -110,6 +114,10 @@ const NoticeDetail = ({ onNavigate }) => {
       }
 
       const snapshot = getNoticeboardSnapshot(trustId);
+      const listFromSnapshot = Array.isArray(snapshot?.notices) ? snapshot.notices : [];
+      setNoticeList(listFromSnapshot);
+      const idxFromSnapshot = listFromSnapshot.findIndex((item) => String(item?.id || '') === String(noticeId));
+      if (idxFromSnapshot >= 0) setCurrentNoticeIndex(idxFromSnapshot);
       const fromList = snapshot?.noticesById?.[String(noticeId)] || null;
       if (fromList) setNotice(fromList);
 
@@ -124,6 +132,15 @@ const NoticeDetail = ({ onNavigate }) => {
         setError(detailRes.error);
       } else if (detailRes?.notice) {
         setNotice(detailRes.notice);
+        setNoticeList((prev) => {
+          if (!Array.isArray(prev) || prev.length === 0) return prev;
+          const targetId = String(detailRes.notice?.id || '');
+          const idx = prev.findIndex((item) => String(item?.id || '') === targetId);
+          if (idx < 0) return prev;
+          const next = prev.slice();
+          next[idx] = { ...next[idx], ...detailRes.notice };
+          return next;
+        });
       } else if (!fromList) {
         setError('Notice not found');
       }
@@ -133,20 +150,54 @@ const NoticeDetail = ({ onNavigate }) => {
     loadDetail();
   }, [noticeId, selectedTrustId]);
 
+  useEffect(() => {
+    if (loading || error || !Array.isArray(noticeList) || noticeList.length <= 1) return undefined;
+    const timer = setInterval(() => {
+      setCurrentNoticeIndex((prev) => (prev + 1) % noticeList.length);
+    }, 5000);
+    return () => clearInterval(timer);
+  }, [loading, error, noticeList]);
+
   const handleBack = () => {
     if (window.history.length > 1) navigate(-1);
     else navigate('/notices', { replace: true });
   };
 
-  const isVip = String(notice?.type || '').toLowerCase() === 'vip';
-  const dateLabel = formatDateRange(notice?.start_date, notice?.end_date);
-  const attachments = Array.isArray(notice?.attachments) ? notice.attachments : [];
+  const onCardTouchStart = (event) => {
+    touchStartXRef.current = event.touches?.[0]?.clientX ?? null;
+    touchEndXRef.current = null;
+  };
+
+  const onCardTouchMove = (event) => {
+    touchEndXRef.current = event.touches?.[0]?.clientX ?? null;
+  };
+
+  const onCardTouchEnd = () => {
+    if (!Array.isArray(noticeList) || noticeList.length <= 1) return;
+    const start = touchStartXRef.current;
+    const end = touchEndXRef.current;
+    if (start == null || end == null) return;
+    const delta = start - end;
+    if (Math.abs(delta) < 50) return;
+    if (delta > 0) setCurrentNoticeIndex((prev) => (prev + 1) % noticeList.length);
+    else setCurrentNoticeIndex((prev) => (prev - 1 + noticeList.length) % noticeList.length);
+  };
+
+  const hasCarousel = Array.isArray(noticeList) && noticeList.length > 0;
+  const boundedNoticeIndex = hasCarousel
+    ? ((currentNoticeIndex % noticeList.length) + noticeList.length) % noticeList.length
+    : 0;
+  const activeNotice = hasCarousel ? (noticeList[boundedNoticeIndex] || notice) : notice;
+
+  const isVip = String(activeNotice?.type || '').toLowerCase() === 'vip';
+  const dateLabel = formatDateRange(activeNotice?.start_date, activeNotice?.end_date);
+  const attachments = Array.isArray(activeNotice?.attachments) ? activeNotice.attachments : [];
   const normalizedAttachments = attachments
     .map((attachment, idx) => {
       const url = getAttachmentUrl(attachment);
       if (!url || (!isLikelyUrl(url) && !isDataUrl(url))) return null;
       return {
-        id: `${notice?.id || 'notice'}_att_${idx}`,
+        id: `${activeNotice?.id || 'notice'}_att_${idx}`,
         url,
         label: getAttachmentLabel(attachment, idx),
         type: getAttachmentType(url),
@@ -200,7 +251,7 @@ const NoticeDetail = ({ onNavigate }) => {
           </div>
         )}
 
-        {!loading && !error && notice && (
+        {!loading && !error && activeNotice && (
           <div
             className="rounded-2xl border bg-white p-5 shadow-sm border-l-4"
             style={{
@@ -208,6 +259,9 @@ const NoticeDetail = ({ onNavigate }) => {
               borderColor: isVip ? 'color-mix(in srgb, var(--brand-red) 22%, #f1e2a4)' : 'color-mix(in srgb, var(--brand-navy) 10%, transparent)',
               background: isVip ? 'linear-gradient(180deg, color-mix(in srgb, var(--brand-red-light) 50%, #fffdf6) 0%, #ffffff 48%)' : '#ffffff'
             }}
+            onTouchStart={onCardTouchStart}
+            onTouchMove={onCardTouchMove}
+            onTouchEnd={onCardTouchEnd}
           >
             <div className="flex items-center justify-between gap-3 mb-4">
               <span
@@ -230,11 +284,11 @@ const NoticeDetail = ({ onNavigate }) => {
             </div>
 
             <h2 className="text-xl font-bold leading-tight" style={{ color: 'var(--heading-color)' }}>
-              {notice.name}
+              {activeNotice.name}
             </h2>
 
             <p className="mt-4 text-sm leading-relaxed whitespace-pre-line" style={{ color: 'var(--body-text-color)' }}>
-              {notice.description || 'No description provided.'}
+              {activeNotice.description || 'No description provided.'}
             </p>
 
             {normalizedAttachments.length > 0 && (
@@ -282,12 +336,11 @@ const NoticeDetail = ({ onNavigate }) => {
                       {attachment.type === 'other' && (
                         <div className="flex items-center gap-2 p-3 bg-slate-50 text-slate-700">
                           <FileText className="h-4 w-4 shrink-0" />
-                          <span className="truncate flex-1">{attachment.label}</span>
+                          <span className="truncate flex-1">File attachment</span>
                         </div>
                       )}
 
-                      <div className="px-3 py-2 text-xs font-medium flex items-center justify-between gap-2" style={{ color: 'var(--body-text-color)' }}>
-                        <span className="truncate">{attachment.label}</span>
+                      <div className="px-3 py-2 text-xs font-medium flex items-center justify-end gap-2" style={{ color: 'var(--body-text-color)' }}>
                         <a
                           href={attachment.url}
                           target="_blank"
@@ -301,6 +354,26 @@ const NoticeDetail = ({ onNavigate }) => {
                     </div>
                   ))}
                 </div>
+              </div>
+            )}
+            {noticeList.length > 1 && (
+              <div className="pt-4 flex items-center justify-center gap-2">
+                {noticeList.map((item, idx) => {
+                  const active = idx === currentNoticeIndex;
+                  return (
+                    <button
+                      key={item?.id || idx}
+                      onClick={() => setCurrentNoticeIndex(idx)}
+                      className="rounded-full transition-all"
+                      style={{
+                        width: active ? 16 : 6,
+                        height: 6,
+                        background: active ? theme.primary : 'color-mix(in srgb, var(--body-text-color) 25%, transparent)',
+                      }}
+                      aria-label={`Go to notice ${idx + 1}`}
+                    />
+                  );
+                })}
               </div>
             )}
           </div>

@@ -312,19 +312,15 @@ const OtherMemberships = ({ onNavigate }) => {
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Scroll unlock on mount
+  // Clear any temporary global scroll-lock styles left by previous screens.
   useEffect(() => {
-    const unlock = () => {
-      document.documentElement.style.overflow = 'auto';
-      document.documentElement.style.position = '';
-      document.body.style.overflow = 'auto';
-      document.body.style.position = '';
-      document.body.style.top = '';
-      document.body.style.touchAction = 'auto';
-    };
-    unlock();
-    const t = setInterval(unlock, 120);
-    return () => { clearInterval(t); unlock(); };
+    document.documentElement.style.overflow = '';
+    document.documentElement.style.position = '';
+    document.body.style.overflow = '';
+    document.body.style.position = '';
+    document.body.style.width = '';
+    document.body.style.top = '';
+    document.body.style.touchAction = '';
   }, []);
 
   useEffect(() => {
@@ -495,18 +491,14 @@ const OtherMemberships = ({ onNavigate }) => {
   return (
     <div
       style={{
-        position: 'fixed',
-        top: 0,
-        left: '50%',
-        transform: 'translateX(-50%)',
-        width: 'min(100vw, 430px)',
-        height: '100vh',
-        overflowY: 'auto',
-        overflowX: 'hidden',
+        width: '100%',
+        maxWidth: '430px',
+        margin: '0 auto',
+        minHeight: '100dvh',
+        overflow: 'visible',
         background: `radial-gradient(circle at top, ${applyOpacity(colors.accentBg, 0.9)} 0%, ${applyOpacity(colors.bg, 0.96)} 28%, ${colors.bg} 100%)`,
         fontFamily: "var(--font-family, 'Inter', sans-serif)",
         boxSizing: 'border-box',
-        zIndex: 1,
       }}
     >
       {/* ── Header ── */}

@@ -494,12 +494,6 @@ const Notices = ({ onNavigate }) => {
                       <span>{firstAttachment.type === 'pdf' ? 'PDF Preview Available' : 'File Attachment'}</span>
                     </div>
                   )}
-                  <div
-                    className="px-3 py-2 text-[11px] font-medium truncate"
-                    style={{ color: 'var(--body-text-color)', background: 'var(--surface-color)' }}
-                  >
-                    {firstAttachment.label}{extraAttachmentCount > 0 ? ` +${extraAttachmentCount} more` : ''}
-                  </div>
                 </div>
               )}
 
