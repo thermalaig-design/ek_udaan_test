@@ -32,6 +32,8 @@ import { fetchDirectoryData } from './services/directoryService';
 import logo from '../new_logo.png';
 
 const DEFAULT_TRUST_NAME = import.meta.env.VITE_DEFAULT_TRUST_NAME || 'Ek Udaan';
+const BASE_TRUST_ID = import.meta.env.VITE_DEFAULT_TRUST_ID || 'b353d2ff-ec3b-4b90-a896-69f40662084e';
+const LAST_SELECTED_TRUST_ID_KEY = 'last_selected_trust_id';
 
 // ── Step definitions ──────────────────────────────────────────────────────────
 // step 'phone'     → enter phone number
@@ -229,8 +231,20 @@ function VIPLogin({ onNavigate, onLogout }) {
       localStorage.setItem('user', JSON.stringify(pendingUser));
       localStorage.setItem('isLoggedIn', 'true');
       try { sessionStorage.removeItem('trust_selected_in_session'); } catch (_) {}
-      const tid = pendingUser?.primary_trust?.id || localStorage.getItem('selected_trust_id');
-      const tname = pendingUser?.primary_trust?.name || localStorage.getItem('selected_trust_name');
+      const memberships = Array.isArray(pendingUser?.hospital_memberships) ? pendingUser.hospital_memberships : [];
+      const baseMembership = memberships.find((m) => String(m?.trust_id || '') === String(BASE_TRUST_ID)) || null;
+      const tid = BASE_TRUST_ID;
+      const tname = baseMembership?.trust_name || import.meta.env.VITE_DEFAULT_TRUST_NAME || localStorage.getItem('selected_trust_name');
+      localStorage.setItem('selected_trust_id', String(tid));
+      localStorage.setItem(LAST_SELECTED_TRUST_ID_KEY, String(tid));
+      if (tname) localStorage.setItem('selected_trust_name', String(tname));
+      window.dispatchEvent(new CustomEvent('trust-changed', {
+        detail: {
+          trustId: String(tid),
+          trustName: tname || null,
+          source: 'vip-login-default-base'
+        }
+      }));
       fetchDirectoryData(tid || null, tname || null).catch(() => {});
       // Routing logic:
       // 1. Governance/VIP role → VIP dashboard

@@ -8,6 +8,7 @@ import { useAppTheme } from './context/ThemeContext';
 
 const OTP_FLOW_KEY = 'otp_flow_allowed';
 const TRUST_ID = import.meta.env.VITE_DEFAULT_TRUST_ID || 'b353d2ff-ec3b-4b90-a896-69f40662084e';
+const LAST_SELECTED_TRUST_ID_KEY = 'last_selected_trust_id';
 
 function SpecialOTPVerification() {
   const navigate = useNavigate();
@@ -54,22 +55,22 @@ function SpecialOTPVerification() {
           return;
         }
         const memberships = Array.isArray(user?.hospital_memberships) ? user.hospital_memberships : [];
-        const baseMembership = memberships.find((m) => String(m?.trust_id || '') === String(TRUST_ID));
-        const fallbackMembership = baseMembership ||
-          memberships.find((m) => m?.is_active && m?.trust_id) ||
-          memberships[0] ||
-          null;
-        const selectedTrustId =
-          fallbackMembership?.trust_id ||
-          user?.primary_trust?.id ||
-          localStorage.getItem('selected_trust_id') ||
-          TRUST_ID;
+        const baseMembership = memberships.find((m) => String(m?.trust_id || '') === String(TRUST_ID)) || null;
+        const selectedTrustId = TRUST_ID;
         const selectedTrustName =
-          fallbackMembership?.trust_name ||
-          user?.primary_trust?.name ||
+          baseMembership?.trust_name ||
+          import.meta.env.VITE_DEFAULT_TRUST_NAME ||
           localStorage.getItem('selected_trust_name');
         if (selectedTrustId) localStorage.setItem('selected_trust_id', String(selectedTrustId));
+        if (selectedTrustId) localStorage.setItem(LAST_SELECTED_TRUST_ID_KEY, String(selectedTrustId));
         if (selectedTrustName) localStorage.setItem('selected_trust_name', String(selectedTrustName));
+        window.dispatchEvent(new CustomEvent('trust-changed', {
+          detail: {
+            trustId: String(selectedTrustId),
+            trustName: selectedTrustName || null,
+            source: 'special-otp-login-default-base'
+          }
+        }));
         fetchDirectoryData(selectedTrustId || null, selectedTrustName || null).catch(err =>
           console.warn('Failed to pre-load directory data:', err)
         );

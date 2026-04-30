@@ -14,6 +14,7 @@ const LOGIN_TRUST_CACHE_KEY = 'cached_base_trust_info';
 const TRUST_CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
 // No static fallback image — show monogram placeholder instead of Mah-Setu logo
 const OTP_FLOW_KEY = 'otp_flow_allowed';
+const LAST_SELECTED_TRUST_ID_KEY = 'last_selected_trust_id';
 const normalizeText = (value) => String(value || '').trim();
 
 const resolveAuthDefaultTrust = () => {
@@ -210,23 +211,25 @@ function OTPVerification() {
     }
 
     const selectedMemberships = Array.isArray(enrichedUser?.hospital_memberships) ? enrichedUser.hospital_memberships : [];
-    const selectedMembership = selectedMemberships.find((membership) => membership?.is_active !== false) || selectedMemberships[0] || null;
-    const selectedTrustId = normalizeText(
-      selectedMembership?.trust_id ||
-      enrichedUser?.primary_trust?.id ||
-      enrichedUser?.trust?.id ||
-      authDefaultTrust.id ||
-      TRUST_ID
-    );
+    const baseTrustId = normalizeText(TRUST_ID || authDefaultTrust.id);
+    const baseMembership = selectedMemberships.find((membership) => normalizeText(membership?.trust_id) === baseTrustId) || null;
+    const selectedTrustId = baseTrustId;
     const selectedTrustName = normalizeText(
-      selectedMembership?.trust_name ||
-      enrichedUser?.primary_trust?.name ||
-      enrichedUser?.trust?.name ||
+      baseMembership?.trust_name ||
       trustInfo?.name ||
+      authDefaultTrust?.name ||
       localStorage.getItem('selected_trust_name')
     );
     localStorage.setItem('selected_trust_id', String(selectedTrustId));
+    localStorage.setItem(LAST_SELECTED_TRUST_ID_KEY, String(selectedTrustId));
     if (selectedTrustName) localStorage.setItem('selected_trust_name', String(selectedTrustName));
+    window.dispatchEvent(new CustomEvent('trust-changed', {
+      detail: {
+        trustId: String(selectedTrustId),
+        trustName: selectedTrustName || null,
+        source: 'otp-login-default-base'
+      }
+    }));
 
     fetchDirectoryData(selectedTrustId, selectedTrustName).catch(err =>
       console.warn('[OTP] Directory pre-fetch failed:', err)

@@ -698,7 +698,15 @@ export const useTheme = (trustId) => {
           })
           : null);
 
-      const resolved = mergeResolvedThemes(baseTheme, selectedTheme);
+      const hasSelectedTemplate = Boolean(effectiveSelectedTemplate);
+      const isNonBaseWithSelectedTemplate = !isBaseTrustSelected && hasSelectedTemplate;
+
+      // Important anti-mix rule:
+      // For non-base trusts with an explicit linked template, do NOT blend base app theme.
+      // Use selected trust theme as primary source so base colors/styles don't leak in.
+      const resolved = isNonBaseWithSelectedTemplate
+        ? mergeResolvedThemes(DEFAULT_THEME, selectedTheme)
+        : mergeResolvedThemes(baseTheme, selectedTheme);
       resolved.customCss = sanitizeCustomCss(resolved.customCss);
       resolved.baseTemplateUpdatedAt = effectiveBaseTemplate?.updated_at || null;
       resolved.selectedTemplateUpdatedAt = effectiveSelectedTemplate?.updated_at || null;
@@ -777,6 +785,24 @@ export const useTheme = (trustId) => {
       try {
         const resolved = await buildThemeForTrust(resolvedTrustId);
         if (!resolved) throw new Error('Unable to resolve theme for current trust');
+
+        // If selected trust could not load its linked template yet, keep trust-scoped cached
+        // theme instead of showing mixed/base fallback.
+        const normalizedResolvedTrustId = String(resolvedTrustId || '').trim();
+        const isFallbackForSelectedTrust = String(resolved?.themeLoadSource || '').startsWith('fallback.')
+          && normalizedResolvedTrustId
+          && normalizedResolvedTrustId !== BASE_TRUST_ID;
+        if (isFallbackForSelectedTrust) {
+          const cachedForSameTrust = readCachedThemeEntry(normalizedResolvedTrustId)?.theme || null;
+          if (cachedForSameTrust && String(cachedForSameTrust?.selectedTrustId || cachedForSameTrust?.trustId || '').trim() === normalizedResolvedTrustId) {
+            setTheme(tagThemeSource(cachedForSameTrust, 'cache'));
+            traceThemeBoot('fallback-blocked-using-cache', {
+              trustId: normalizedResolvedTrustId,
+              reason: resolved?.themeLoadSource || 'fallback',
+            });
+            return;
+          }
+        }
 
         if (import.meta.env.DEV) {
           console.log('[useTheme][TemplateLink] Loaded theme:', {
