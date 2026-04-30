@@ -113,6 +113,46 @@ const readCachedThemeEntry = (trustId) => {
     }
   }
 
+  // Recovery path: if trust index keys are missing but cache entries still exist,
+  // pick the newest cache entry for this trust.
+  const trustSessionPrefix = `theme_cache_v2_${trustId}_`;
+  const trustPersistPrefix = `theme_cache_persist_v2_${trustId}_`;
+  let recovered = null;
+
+  for (let i = 0; i < sessionStorage.length; i += 1) {
+    const key = sessionStorage.key(i);
+    if (!key || !key.startsWith(trustSessionPrefix)) continue;
+    const parsed = safeParse(sessionStorage.getItem(key) || '');
+    if (!parsed?.theme || typeof parsed.theme !== 'object') continue;
+    const ts = Number(parsed.ts) || 0;
+    if (!recovered || ts > recovered.ts) {
+      recovered = {
+        theme: parsed.theme,
+        ts,
+        templateId: parsed.templateId || null,
+        cacheKey: key
+      };
+    }
+  }
+
+  for (let i = 0; i < localStorage.length; i += 1) {
+    const key = localStorage.key(i);
+    if (!key || !key.startsWith(trustPersistPrefix)) continue;
+    const parsed = safeParse(localStorage.getItem(key) || '');
+    if (!parsed?.theme || typeof parsed.theme !== 'object') continue;
+    const ts = Number(parsed.ts) || 0;
+    if (!recovered || ts > recovered.ts) {
+      recovered = {
+        theme: parsed.theme,
+        ts,
+        templateId: parsed.templateId || null,
+        cacheKey: key
+      };
+    }
+  }
+
+  if (recovered) return recovered;
+
   const legacyParsed = safeParse(sessionStorage.getItem(`theme_cache_${trustId}`) || '');
   if (!legacyParsed || typeof legacyParsed !== 'object') return null;
 

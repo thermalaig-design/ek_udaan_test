@@ -100,7 +100,39 @@ const readBootThemeCache = (trustId) => {
 
   const lastTheme = safeParse(localStorage.getItem(LAST_THEME_CACHE_KEY) || '')
     || safeParse(localStorage.getItem(LEGACY_LAST_THEME_CACHE_KEY) || '');
-  if (!lastTheme || typeof lastTheme !== 'object') return null;
+  if (!lastTheme || typeof lastTheme !== 'object') {
+    // Recovery path when index keys are missing but trust cache entries exist.
+    const sessionPrefix = `theme_cache_v2_${normalizedTrustId}_`;
+    const persistPrefix = `theme_cache_persist_v2_${normalizedTrustId}_`;
+    let recoveredTheme = null;
+    let recoveredTs = 0;
+
+    for (let i = 0; i < sessionStorage.length; i += 1) {
+      const key = sessionStorage.key(i);
+      if (!key || !key.startsWith(sessionPrefix)) continue;
+      const parsed = safeParse(sessionStorage.getItem(key) || '');
+      const candidateTheme = parsed?.theme;
+      const candidateTs = Number(parsed?.ts) || 0;
+      if (candidateTheme && typeof candidateTheme === 'object' && candidateTs >= recoveredTs) {
+        recoveredTheme = candidateTheme;
+        recoveredTs = candidateTs;
+      }
+    }
+
+    for (let i = 0; i < localStorage.length; i += 1) {
+      const key = localStorage.key(i);
+      if (!key || !key.startsWith(persistPrefix)) continue;
+      const parsed = safeParse(localStorage.getItem(key) || '');
+      const candidateTheme = parsed?.theme;
+      const candidateTs = Number(parsed?.ts) || 0;
+      if (candidateTheme && typeof candidateTheme === 'object' && candidateTs >= recoveredTs) {
+        recoveredTheme = candidateTheme;
+        recoveredTs = candidateTs;
+      }
+    }
+
+    return recoveredTheme;
+  }
 
   const cachedTrustId = String(lastTheme.selectedTrustId || lastTheme.trustId || '').trim();
   if (cachedTrustId === normalizedTrustId) return lastTheme;
@@ -182,7 +214,7 @@ const HospitalTrusteeApp = () => {
   const resolvedThemeTrustId = shouldUseBaseTheme
     ? defaultThemeTrust.id
     : (activeTrustId || defaultThemeTrust.id);
-  const { theme: appTheme, refreshTheme, isThemeLoading } = useTheme(resolvedThemeTrustId);
+  const { theme: appTheme, refreshTheme } = useTheme(resolvedThemeTrustId);
   const notificationLightColorRef = useRef('');
 
   useLayoutEffect(() => {
@@ -807,34 +839,7 @@ const HospitalTrusteeApp = () => {
     }
   }, [location.pathname]);
 
-  const hasResolvedThemeTrustId = Boolean(String(resolvedThemeTrustId || '').trim());
-  const hasLinkedTheme = Boolean(
-    appTheme?.selectedTrustTemplateId
-    || appTheme?.templateId
-    || appTheme?.baseTrustTemplateId
-  );
-  const shouldShowThemeGate = !hasResolvedThemeTrustId || (isThemeLoading && !hasLinkedTheme);
-
-  const appContent = shouldShowThemeGate ? (
-    <div
-      className="min-h-screen relative shadow-2xl overflow-hidden w-full max-w-[430px] mx-auto flex items-center justify-center px-6"
-      style={{
-        background: 'var(--page-bg, var(--app-page-bg))',
-        color: 'var(--body-text-color)',
-        fontFamily: "var(--font-family, 'Inter', sans-serif)",
-      }}
-    >
-      <div className="text-center">
-        <div
-          className="w-10 h-10 rounded-full border-2 border-t-transparent animate-spin mx-auto"
-          style={{ borderColor: 'var(--brand-red)', borderTopColor: 'transparent' }}
-        />
-        <p className="text-sm font-semibold mt-3" style={{ color: 'var(--brand-navy)' }}>
-          Applying trust theme...
-        </p>
-      </div>
-    </div>
-  ) : (
+  const appContent = (
     <div
       className={`min-h-screen relative shadow-2xl overflow-x-hidden app-route-shell ${(location.pathname === '/login' || location.pathname === '/otp-verification' || location.pathname === '/profile' || location.pathname === '/vip-login') ? 'overflow-hidden' : 'overflow-y-auto'
         } w-full max-w-[430px] mx-auto`}
