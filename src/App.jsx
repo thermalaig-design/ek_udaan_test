@@ -58,6 +58,7 @@ import {
 
 const LAST_THEME_CACHE_KEY = 'last_theme_cache_v2';
 const LEGACY_LAST_THEME_CACHE_KEY = 'last_theme_cache_v1';
+const LAST_SELECTED_TRUST_ID_KEY = 'last_selected_trust_id';
 const getPersistTrustCacheIndexKey = (trustId) => `theme_cache_persist_trust_v2_${trustId}`;
 
 const safeParse = (value) => {
@@ -180,6 +181,8 @@ const HospitalTrusteeApp = () => {
   const [activeTrustId, setActiveTrustId] = useState(() => {
     const selected = localStorage.getItem('selected_trust_id') || '';
     if (selected) return selected;
+    const persistedSelected = String(localStorage.getItem(LAST_SELECTED_TRUST_ID_KEY) || '').trim();
+    if (persistedSelected) return persistedSelected;
     try {
       const cachedDefault = localStorage.getItem('default_trust_cache');
       if (cachedDefault) {
@@ -212,6 +215,11 @@ const HospitalTrusteeApp = () => {
     const selectedName = String(localStorage.getItem('selected_trust_name') || '').trim();
     if (selectedId) {
       return { id: selectedId, name: selectedName || BASE_TRUST_NAME };
+    }
+
+    const persistedSelectedId = String(localStorage.getItem(LAST_SELECTED_TRUST_ID_KEY) || '').trim();
+    if (persistedSelectedId) {
+      return { id: persistedSelectedId, name: selectedName || BASE_TRUST_NAME };
     }
 
     const lastKnownThemeTrust = readLastKnownThemeTrust();
@@ -266,9 +274,11 @@ const HospitalTrusteeApp = () => {
     if (resetTrust.id) {
       localStorage.setItem('selected_trust_id', resetTrust.id);
       localStorage.setItem('selected_trust_name', resetTrust.name || BASE_TRUST_NAME);
+      localStorage.setItem(LAST_SELECTED_TRUST_ID_KEY, resetTrust.id);
     } else {
       localStorage.removeItem('selected_trust_id');
       localStorage.removeItem('selected_trust_name');
+      localStorage.removeItem(LAST_SELECTED_TRUST_ID_KEY);
     }
     sessionStorage.removeItem('selectedMember');
     sessionStorage.removeItem('previousScreen');
@@ -284,6 +294,7 @@ const HospitalTrusteeApp = () => {
   useEffect(() => {
     const syncTrustId = () => {
       let next = localStorage.getItem('selected_trust_id') || '';
+      if (!next) next = String(localStorage.getItem(LAST_SELECTED_TRUST_ID_KEY) || '').trim();
       if (!next) {
         try {
           const cachedDefault = localStorage.getItem('default_trust_cache');

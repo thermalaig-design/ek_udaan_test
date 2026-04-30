@@ -36,6 +36,7 @@ import { applyOpacity } from './utils/colorUtils';
 const DEFAULT_TRUST_NAME = import.meta.env.VITE_DEFAULT_TRUST_NAME || 'Mahila Mandal';
 const DEFAULT_TRUST_LOGO = '/new_logo.png';
 const SPONSOR_CHUNK_SIZE = sponsorConfig.CAROUSEL_BATCH_SIZE;
+const LAST_SELECTED_TRUST_ID_KEY = 'last_selected_trust_id';
 const getInitialSponsorTrustId = () =>
   localStorage.getItem('selected_trust_id') || import.meta.env.VITE_DEFAULT_TRUST_ID || '';
 
@@ -208,6 +209,7 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
   // Trust: prefer user's last selection; fall back to env trust id.
   const [selectedTrustId, setSelectedTrustId] = useState(() => {
     const cachedSelected = normalizeTrustId(localStorage.getItem('selected_trust_id') || '');
+    const persistedSelected = normalizeTrustId(localStorage.getItem(LAST_SELECTED_TRUST_ID_KEY) || '');
     let cachedDefaultId = '';
     try {
       const cachedDefault = localStorage.getItem('default_trust_cache');
@@ -219,8 +221,18 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
       // ignore malformed cache
     }
     const envId = normalizeTrustId(import.meta.env.VITE_DEFAULT_TRUST_ID || '');
-    return cachedSelected || cachedDefaultId || envId || '';
+    return cachedSelected || persistedSelected || cachedDefaultId || envId || '';
   });
+
+  useEffect(() => {
+    const normalizedSelected = normalizeTrustId(selectedTrustId);
+    if (!normalizedSelected) return;
+    try {
+      localStorage.setItem(LAST_SELECTED_TRUST_ID_KEY, normalizedSelected);
+    } catch {
+      // ignore storage write failures
+    }
+  }, [selectedTrustId]);
 
   // Synchronously pre-populate trustInfo from cached default-trust data
   const [trustInfo, setTrustInfo] = useState(() => {
@@ -691,14 +703,9 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
         localStorage.getItem('selected_trust_id') || selectedTrustId
       );
       const selectedExistsInMerged = mergedTrusts.some((t) => normalizeTrustId(t.id) === normalizedSelected);
-      const defaultInMergedId = normalizeTrustId(defaultTrust?.id);
-      const shouldForceDefault =
-        !getSessionSelectionFlag() &&
-        defaultInMergedId &&
-        mergedTrusts.some((t) => normalizeTrustId(t.id) === defaultInMergedId);
       const effectiveTrustId =
-        (shouldForceDefault ? defaultInMergedId : '') ||
         (selectedExistsInMerged ? normalizedSelected : '') ||
+        normalizeTrustId(localStorage.getItem(LAST_SELECTED_TRUST_ID_KEY) || '') ||
         normalizeTrustId(primaryTrust?.id) ||
         normalizeTrustId(defaultTrust?.id) ||
         normalizeTrustId(mergedTrusts[0]?.id) ||
@@ -712,6 +719,7 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
       if (effectiveTrustId && effectiveTrustId !== selectedTrustId) {
         setSelectedTrustId(effectiveTrustId);
         localStorage.setItem('selected_trust_id', effectiveTrustId);
+        localStorage.setItem(LAST_SELECTED_TRUST_ID_KEY, effectiveTrustId);
         window.dispatchEvent(new CustomEvent('trust-changed', {
           detail: { trustId: effectiveTrustId, trustName: effectiveTrustForEvent?.name || null }
         }));
@@ -881,14 +889,9 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
         });
         const normalizedSelected = normalizeTrustId(selectedTrustId);
         const selectedExistsInFinalList = withDefault.some((t) => normalizeTrustId(t.id) === normalizedSelected);
-        const defaultInUniqueId = normalizeTrustId(defaultTrust?.id);
-        const shouldForceDefault =
-          !getSessionSelectionFlag() &&
-          defaultInUniqueId &&
-          withDefault.some((t) => normalizeTrustId(t.id) === defaultInUniqueId);
         const effectiveTrustId =
-          (shouldForceDefault ? defaultInUniqueId : '') ||
           (selectedExistsInFinalList ? normalizedSelected : '') ||
+          normalizeTrustId(localStorage.getItem(LAST_SELECTED_TRUST_ID_KEY) || '') ||
           normalizeTrustId(primaryTrust?.id) ||
           normalizeTrustId(defaultTrust?.id) ||
           normalizeTrustId(withDefault[0]?.id) ||
@@ -901,6 +904,7 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
         if (effectiveTrustId && effectiveTrustId !== selectedTrustId) {
           setSelectedTrustId(effectiveTrustId);
           localStorage.setItem('selected_trust_id', effectiveTrustId);
+          localStorage.setItem(LAST_SELECTED_TRUST_ID_KEY, effectiveTrustId);
           window.dispatchEvent(new CustomEvent('trust-changed', {
             detail: { trustId: effectiveTrustId, trustName: effectiveTrustForEvent?.name || null }
           }));
@@ -967,6 +971,7 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
     // Update selected trust
     setSelectedTrustId(normalizedId);
     localStorage.setItem('selected_trust_id', normalizedId);
+    localStorage.setItem(LAST_SELECTED_TRUST_ID_KEY, normalizedId);
     setSessionSelectionFlag();
     
     const selected = trustList.find((t) => normalizeTrustId(t.id) === normalizedId) || null;
