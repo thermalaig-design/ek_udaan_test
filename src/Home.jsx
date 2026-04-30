@@ -380,14 +380,8 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
   }, [footerTheme, navbarTheme, selectedTrustId, theme]);
 
   useEffect(() => {
-    if (!(isGalleryMetaLoading && carouselImages.length === 0)) {
-      setShowGalleryLoader(false);
-      return undefined;
-    }
-
-    // Prevent short loader flash during quick trust-switch cache/fetch swaps.
-    const timer = setTimeout(() => setShowGalleryLoader(true), 220);
-    return () => clearTimeout(timer);
+    setShowGalleryLoader(false);
+    return undefined;
   }, [isGalleryMetaLoading, carouselImages.length]);
 
   const syncSponsorStoreSnapshot = (trustId) => {

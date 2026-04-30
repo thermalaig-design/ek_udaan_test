@@ -249,7 +249,7 @@ export function GalleryProvider({ children }) {
           activeTrustId,
           1,
           2,
-          { includeCount: true, countMode: 'planned' }
+          { includeCount: true, countMode: 'exact', disableTrustFallback: true }
         );
         return {
           folderId: String(folder.id),
@@ -673,6 +673,29 @@ export function GalleryProvider({ children }) {
   useEffect(() => {
     void ensureAlbumsLoaded({ background: true });
   }, [ensureAlbumsLoaded]);
+
+  useEffect(() => {
+    const syncAndLoad = () => {
+      const selected = normalizeTrustId(getSelectedTrustId());
+      if (!selected) return;
+      const sync = ensureTrustSynced(selected);
+      if (sync.trustId) {
+        void ensureAlbumsLoaded({ background: true });
+      }
+    };
+
+    // First-open race guard: trust can be written shortly after provider mounts.
+    syncAndLoad();
+    const timer = setTimeout(syncAndLoad, 220);
+
+    window.addEventListener('focus', syncAndLoad);
+    document.addEventListener('visibilitychange', syncAndLoad);
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener('focus', syncAndLoad);
+      document.removeEventListener('visibilitychange', syncAndLoad);
+    };
+  }, [ensureAlbumsLoaded, ensureTrustSynced]);
 
   useEffect(() => {
     const handleTrustChangeEvent = (event) => {

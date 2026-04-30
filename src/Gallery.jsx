@@ -1,4 +1,3 @@
-import { useAppTheme } from './context/ThemeContext';
 import { useGalleryContext } from './context/GalleryContext';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -98,7 +97,6 @@ const cs = {
 
 export function Gallery({ onNavigate }) {
   const navigate = useNavigate();
-  const theme = useAppTheme();
   const {
     trustId,
     albumsById,
@@ -122,6 +120,7 @@ export function Gallery({ onNavigate }) {
   const [currentPage, setCurrentPage] = useState(1);
   const [albumPageImages, setAlbumPageImages] = useState([]);
   const [albumTotalPages, setAlbumTotalPages] = useState(0);
+  const [showLoadingFallback, setShowLoadingFallback] = useState(false);
   const listBottomRef = useRef(null);
   const fetchDebounceRef = useRef(null);
   const touchStartXRef = useRef(null);
@@ -132,6 +131,10 @@ export function Gallery({ onNavigate }) {
   const albums = useMemo(
     () => albumOrder.map((id) => albumsById[id]).filter(Boolean),
     [albumOrder, albumsById]
+  );
+  const totalAlbumImageCount = useMemo(
+    () => albums.reduce((sum, album) => sum + Math.max(0, Number(album?.imageCount || 0)), 0),
+    [albums]
   );
 
   const selectedAlbum = selectedAlbumId ? albumsById[String(selectedAlbumId)] : null;
@@ -176,6 +179,15 @@ export function Gallery({ onNavigate }) {
       }
     };
   }, [hasMoreAlbums, isLoading, isLoadingMoreAlbums, loadMoreAlbums, selectedAlbumId]);
+
+  useEffect(() => {
+    if (!isLoading || selectedAlbumId) {
+      setShowLoadingFallback(false);
+      return undefined;
+    }
+    const timer = setTimeout(() => setShowLoadingFallback(true), 2600);
+    return () => clearTimeout(timer);
+  }, [isLoading, selectedAlbumId]);
 
   useEffect(() => {
     if (isMenuOpen) {
@@ -300,11 +312,12 @@ export function Gallery({ onNavigate }) {
     return () => clearInterval(id);
   }, [isPlaying, selectedImage, filteredImages]);
 
-  const gradBg = `linear-gradient(135deg, ${theme.primary} 0%, ${theme.secondary} 100%)`;
+  const navbarBackground = 'var(--navbar-bg, var(--app-navbar-bg))';
+  const actionBg = 'var(--app-button-bg, var(--brand-red))';
 
   return (
     <div style={{ minHeight: '100vh', background: 'var(--page-bg, var(--app-page-bg))', fontFamily: "var(--font-family, 'Inter', sans-serif)" }}>
-      <div style={{ background: gradBg, padding: '16px', paddingTop: 'max(env(safe-area-inset-top,0px),16px)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', position: 'sticky', top: 0, zIndex: 50, boxShadow: '0 2px 16px color-mix(in srgb, var(--brand-navy-dark) 18%, transparent)' }}>
+      <div style={{ background: navbarBackground, padding: '16px', paddingTop: 'max(env(safe-area-inset-top,0px),16px)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', position: 'sticky', top: 0, zIndex: 50, boxShadow: '0 2px 16px color-mix(in srgb, var(--brand-navy-dark) 18%, transparent)', backdropFilter: 'blur(var(--navbar-blur, 12px))', WebkitBackdropFilter: 'blur(var(--navbar-blur, 12px))', borderBottom: '1px solid var(--navbar-border)' }}>
         <button onClick={() => setIsMenuOpen(!isMenuOpen)} style={nb.iconBtn}>
           {isMenuOpen ? <X style={{ width: 24, height: 24, color: 'var(--app-button-text, var(--surface-color))' }} /> : <Menu style={{ width: 24, height: 24, color: 'var(--app-button-text, var(--surface-color))' }} />}
         </button>
@@ -334,7 +347,7 @@ export function Gallery({ onNavigate }) {
       </div>
 
       <div style={{ padding: '16px 14px 40px', maxWidth: 520, margin: '0 auto' }}>
-        {isLoading && (
+        {isLoading && !showLoadingFallback && (
           <div style={gl.folderGrid}>
             {Array.from({ length: 6 }).map((_, i) => (
               <div key={i} style={{ ...gl.folderCard, background: 'color-mix(in srgb, var(--app-accent-bg) 85%, var(--surface-muted))', animation: 'pulse 1.4s ease-in-out infinite' }}>
@@ -354,12 +367,14 @@ export function Gallery({ onNavigate }) {
           </div>
         )}
 
-        {!isLoading && !error && !selectedAlbumId && (
+        {(!isLoading || showLoadingFallback) && !error && !selectedAlbumId && (
           <>
-            {albums.length === 0 ? (
+            {albums.length === 0 || totalAlbumImageCount === 0 ? (
               <div style={{ textAlign: 'center', padding: '60px 24px' }}>
                 <FolderOpen style={{ width: 48, height: 48, color: 'color-mix(in srgb, var(--body-text-color) 35%, var(--surface-color))', margin: '0 auto 16px' }} />
-                <p style={{ color: 'var(--body-text-color)', fontWeight: 600 }}>No albums yet</p>
+                <p style={{ color: 'var(--body-text-color)', fontWeight: 600 }}>
+                  {albums.length === 0 ? 'No albums found' : 'No images available'}
+                </p>
               </div>
             ) : (
               <>
@@ -371,7 +386,7 @@ export function Gallery({ onNavigate }) {
                 <div style={gl.folderGrid}>
                   {albums.map((album) => {
                     const photos = (album.previewImages || []).slice(0, 2);
-                    const count = Number(album.imageCount || 0);
+                    const count = Math.max(0, Number.isFinite(Number(album.imageCount)) ? Number(album.imageCount) : 0);
                     return (
                       <div
                         key={album.id}
@@ -452,7 +467,7 @@ export function Gallery({ onNavigate }) {
                     <button
                       onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
                       disabled={currentPage === 1}
-                      style={{ ...pg.btn, ...(currentPage === 1 ? pg.disabled : { background: gradBg, color: 'var(--app-button-text, var(--surface-color))' }) }}
+                      style={{ ...pg.btn, ...(currentPage === 1 ? pg.disabled : { background: actionBg, color: 'var(--app-button-text, var(--surface-color))' }) }}
                     >
                       <ChevronLeft style={{ width: 18, height: 18 }} />
                     </button>
@@ -460,7 +475,7 @@ export function Gallery({ onNavigate }) {
                       <button
                         key={page}
                         onClick={() => setCurrentPage(page)}
-                        style={{ ...pg.pageBtn, ...(currentPage === page ? { background: gradBg, color: 'var(--app-button-text, var(--surface-color))', boxShadow: '0 4px 12px color-mix(in srgb, var(--brand-red) 25%, transparent)' } : {}) }}
+                        style={{ ...pg.pageBtn, ...(currentPage === page ? { background: actionBg, color: 'var(--app-button-text, var(--surface-color))', boxShadow: '0 4px 12px color-mix(in srgb, var(--brand-red) 25%, transparent)' } : {}) }}
                       >
                         {page}
                       </button>
@@ -468,7 +483,7 @@ export function Gallery({ onNavigate }) {
                     <button
                       onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
                       disabled={currentPage === totalPages}
-                      style={{ ...pg.btn, ...(currentPage === totalPages ? pg.disabled : { background: gradBg, color: 'var(--app-button-text, var(--surface-color))' }) }}
+                      style={{ ...pg.btn, ...(currentPage === totalPages ? pg.disabled : { background: actionBg, color: 'var(--app-button-text, var(--surface-color))' }) }}
                     >
                       <ChevronRight style={{ width: 18, height: 18 }} />
                     </button>
@@ -553,7 +568,7 @@ export function Gallery({ onNavigate }) {
 const nb = {
   iconBtn: {
     width: 40, height: 40, borderRadius: 12,
-    border: 'none', background: 'color-mix(in srgb, var(--surface-color) 16%, transparent)',
+    border: 'none', background: 'color-mix(in srgb, var(--navbar-bg) 72%, var(--surface-color))',
     display: 'flex', alignItems: 'center', justifyContent: 'center',
     cursor: 'pointer', transition: 'background 0.2s',
   },

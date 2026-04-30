@@ -459,6 +459,7 @@ export async function fetchPhotosByFolderPaginated(
 ) {
   const includeCount = opts?.includeCount !== false;
   const countMode = opts?.countMode || 'exact';
+  const disableTrustFallback = opts?.disableTrustFallback === true;
   const from = (page - 1) * perPage;
   const to = from + perPage - 1;
 
@@ -494,7 +495,7 @@ export async function fetchPhotosByFolderPaginated(
 
   // Fallback: some rows can have folder relation mismatch, causing trust join to return 0.
   // Retry without trust join/filter so folder covers and counts still load.
-  if (trustId && folderId && (count || 0) === 0) {
+  if (trustId && folderId && !disableTrustFallback && (count || 0) === 0) {
     console.warn('⚠️ Trust-filtered folder query returned 0, retrying without trust filter for folder:', folderId);
     const fallback = await runQuery(false);
     data = fallback.data;
