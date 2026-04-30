@@ -153,6 +153,47 @@ const sortNoticesByTimeline = (input) => {
   });
 };
 
+const resolveTrustContextForNotices = () => {
+  const selectedTrustId = String(localStorage.getItem('selected_trust_id') || '').trim();
+  const selectedTrustName = String(localStorage.getItem('selected_trust_name') || '').trim();
+  if (selectedTrustId) {
+    return { trustId: selectedTrustId, trustName: selectedTrustName || null };
+  }
+
+  try {
+    const rawUser = localStorage.getItem('user');
+    const parsedUser = rawUser ? JSON.parse(rawUser) : null;
+    const memberships = Array.isArray(parsedUser?.hospital_memberships) ? parsedUser.hospital_memberships : [];
+    const preferredMembership =
+      memberships.find((m) => m?.is_active && m?.trust_id) ||
+      memberships.find((m) => m?.trust_id) ||
+      null;
+
+    const fallbackTrustId = String(
+      preferredMembership?.trust_id ||
+      parsedUser?.primary_trust?.id ||
+      parsedUser?.trust?.id ||
+      ''
+    ).trim();
+    const fallbackTrustName = String(
+      preferredMembership?.trust_name ||
+      parsedUser?.primary_trust?.name ||
+      parsedUser?.trust?.name ||
+      ''
+    ).trim();
+
+    if (fallbackTrustId) {
+      localStorage.setItem('selected_trust_id', fallbackTrustId);
+      if (fallbackTrustName) localStorage.setItem('selected_trust_name', fallbackTrustName);
+      return { trustId: fallbackTrustId, trustName: fallbackTrustName || null };
+    }
+  } catch {
+    // ignore malformed user cache
+  }
+
+  return { trustId: null, trustName: null };
+};
+
 const Notices = ({ onNavigate }) => {
   const navigate = useNavigate();
   const theme = useAppTheme();
@@ -245,8 +286,7 @@ const Notices = ({ onNavigate }) => {
   const loadNotices = async ({ forceRefresh = false } = {}) => {
     try {
       setError('');
-      const trustId = localStorage.getItem('selected_trust_id') || null;
-      const trustName = localStorage.getItem('selected_trust_name') || null;
+      const { trustId, trustName } = resolveTrustContextForNotices();
       setSelectedTrustId(trustId || '');
 
       if (!trustId) {
@@ -301,9 +341,17 @@ const Notices = ({ onNavigate }) => {
       sessionStorage.removeItem(NOTICE_SCROLL_KEY);
       loadNotices({ forceRefresh: false });
     };
+    const handleStorage = (event) => {
+      if (event?.key === 'selected_trust_id') {
+        sessionStorage.removeItem(NOTICE_SCROLL_KEY);
+        loadNotices({ forceRefresh: false });
+      }
+    };
     window.addEventListener('trust-changed', handleTrustChanged);
+    window.addEventListener('storage', handleStorage);
     return () => {
       window.removeEventListener('trust-changed', handleTrustChanged);
+      window.removeEventListener('storage', handleStorage);
     };
   }, []);
 

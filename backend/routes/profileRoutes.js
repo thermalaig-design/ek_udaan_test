@@ -1,9 +1,11 @@
 import express from 'express';
 import multer from 'multer';
+import sharp from 'sharp';
 import { supabase } from '../config/supabase.js';
 
 const router = express.Router();
 const PROFILE_PHOTO_BUCKET = 'profile_photo';
+const MAX_PROFILE_PHOTO_BYTES = 25 * 1024;
 
 // Configure multer for memory storage
 const storage = multer.memoryStorage();
@@ -38,6 +40,64 @@ const sanitizeMemberUpdateValue = (value) => {
   if (value === undefined || value === null) return null;
   const trimmed = String(value).trim();
   return trimmed === '' ? null : trimmed;
+};
+
+const compressProfilePhotoToLimit = async (inputBuffer, inputMimeType = 'image/jpeg') => {
+  const originalBuffer = Buffer.isBuffer(inputBuffer) ? inputBuffer : Buffer.from(inputBuffer || []);
+  if (originalBuffer.length <= MAX_PROFILE_PHOTO_BYTES) {
+    return {
+      buffer: originalBuffer,
+      mimeType: inputMimeType || 'image/jpeg',
+      extension: (inputMimeType || 'image/jpeg').includes('png') ? 'png' : 'jpg'
+    };
+  }
+
+  const baseImage = sharp(originalBuffer, { failOn: 'none' }).rotate();
+  const metadata = await baseImage.metadata();
+  const originalWidth = Number(metadata?.width) || 1080;
+  const baseWidths = [originalWidth, 1280, 1080, 960, 840, 720, 640, 560, 480, 420, 360, 320];
+  const widths = [...new Set(baseWidths.filter((w) => Number.isFinite(w) && w > 0 && w <= originalWidth))]
+    .sort((a, b) => b - a);
+  if (widths.length === 0) widths.push(320);
+
+  const qualities = [85, 75, 65, 55, 45, 35, 25];
+  let best = null;
+
+  for (const width of widths) {
+    for (const quality of qualities) {
+      try {
+        const webpBuffer = await sharp(originalBuffer, { failOn: 'none' })
+          .rotate()
+          .resize({ width, withoutEnlargement: true })
+          .webp({ quality, effort: 6 })
+          .toBuffer();
+
+        if (!best || webpBuffer.length < best.buffer.length) {
+          best = { buffer: webpBuffer, mimeType: 'image/webp', extension: 'webp' };
+        }
+        if (webpBuffer.length <= MAX_PROFILE_PHOTO_BYTES) {
+          return { buffer: webpBuffer, mimeType: 'image/webp', extension: 'webp' };
+        }
+
+        const jpgBuffer = await sharp(originalBuffer, { failOn: 'none' })
+          .rotate()
+          .resize({ width, withoutEnlargement: true })
+          .jpeg({ quality, mozjpeg: true })
+          .toBuffer();
+
+        if (!best || jpgBuffer.length < best.buffer.length) {
+          best = { buffer: jpgBuffer, mimeType: 'image/jpeg', extension: 'jpg' };
+        }
+        if (jpgBuffer.length <= MAX_PROFILE_PHOTO_BYTES) {
+          return { buffer: jpgBuffer, mimeType: 'image/jpeg', extension: 'jpg' };
+        }
+      } catch {
+        // try next compression setting
+      }
+    }
+  }
+
+  return best;
 };
 
 const hasFilledValue = (value) =>
@@ -367,15 +427,37 @@ router.post('/save', upload.single('profilePhoto'), async (req, res) => {
 
     // Upload profile picture if provided
     if (profilePhotoFile) {
+      let uploadBuffer = profilePhotoFile.buffer;
+      let uploadMimeType = profilePhotoFile.mimetype || 'image/jpeg';
+      let uploadExtension = String(profilePhotoFile.originalname || '')
+        .split('.')
+        .pop()
+        .replace(/[^a-zA-Z0-9]/g, '')
+        .toLowerCase() || 'jpg';
+
+      if (uploadBuffer.length > MAX_PROFILE_PHOTO_BYTES) {
+        const compressed = await compressProfilePhotoToLimit(uploadBuffer, uploadMimeType);
+        if (!compressed?.buffer || compressed.buffer.length > MAX_PROFILE_PHOTO_BYTES) {
+          return res.status(400).json({
+            success: false,
+            message: 'Image could not be compressed under 25KB. Please upload a smaller image.'
+          });
+        }
+        uploadBuffer = compressed.buffer;
+        uploadMimeType = compressed.mimeType;
+        uploadExtension = compressed.extension;
+      }
+
       const safeOriginalName = String(profilePhotoFile.originalname || 'profile_photo')
         .replace(/[^a-zA-Z0-9._-]/g, '_');
-      const fileName = `profiles/${membersId}/${Date.now()}_${safeOriginalName}`;
+      const baseNameWithoutExt = safeOriginalName.replace(/\.[^.]+$/, '');
+      const fileName = `profiles/${membersId}/${Date.now()}_${baseNameWithoutExt}.${uploadExtension}`;
       console.log('Attempting to upload profile photo to:', fileName);
       
       const { error: uploadError } = await supabase.storage
         .from(PROFILE_PHOTO_BUCKET)
-        .upload(fileName, profilePhotoFile.buffer, {
-          contentType: profilePhotoFile.mimetype,
+        .upload(fileName, uploadBuffer, {
+          contentType: uploadMimeType,
           upsert: true
         });
 

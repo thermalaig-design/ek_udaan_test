@@ -3,9 +3,9 @@ import { useNavigate } from 'react-router-dom';
 import { flushSync } from 'react-dom';
 import { Users, ChevronRight, LogOut, Share2, PhoneCall } from 'lucide-react';
 import { Capacitor } from '@capacitor/core';
-import { Share } from '@capacitor/share';
 import { getProfile } from '../services/api';
 import { fetchFeatureFlags, isFeatureEnabled } from '../services/featureFlags';
+import { fetchShareAppLinksByTrustId } from '../services/trustService';
 import { useAppTheme } from '../context/ThemeContext';
 import { applyOpacity } from '../utils/colorUtils';
 import { getThemeToken } from '../utils/themeUtils';
@@ -129,6 +129,7 @@ const Sidebar = ({ isOpen, onClose, onNavigate, currentPage, onLogout }) => {
   const [flagsData, setFlagsData] = useState({});
   const [memberTrustLinks, setMemberTrustLinks] = useState([]);
   const [loadingTrustLinks, setLoadingTrustLinks] = useState(false);
+  const [shareAppLinks, setShareAppLinks] = useState(null);
 
   // Load feature flags when sidebar opens
   useEffect(() => {
@@ -218,6 +219,24 @@ const Sidebar = ({ isOpen, onClose, onNavigate, currentPage, onLogout }) => {
     window.addEventListener('user-profile-updated', syncProfileFromCache);
     return () => window.removeEventListener('user-profile-updated', syncProfileFromCache);
   }, []);
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const loadShareLinks = async () => {
+      try {
+        const selectedTrustId = localStorage.getItem('selected_trust_id');
+        const fallbackTrustId = 'b353d2ff-ec3b-4b90-a896-69f40662084e';
+        const trustId = String(selectedTrustId || fallbackTrustId).trim();
+        const links = await fetchShareAppLinksByTrustId(trustId);
+        setShareAppLinks(links || null);
+      } catch {
+        setShareAppLinks(null);
+      }
+    };
+
+    loadShareLinks();
+  }, [isOpen]);
 
   // Load member trusts when sidebar opens (reg_members based payload from login)
   useEffect(() => {
@@ -588,42 +607,31 @@ const Sidebar = ({ isOpen, onClose, onNavigate, currentPage, onLogout }) => {
               {/* Share Button - controlled by feature_share_app */}
               {ff('feature_share_app') && <button
               onClick={async () => {
-                const APP_URL = 'https://play.google.com/store/apps/details?id=com.maharajaagarsen.app';
-                const appName = localStorage.getItem('selected_trust_name') || import.meta.env.VITE_DEFAULT_TRUST_NAME || 'Ek Udaan';
-                const shareText = `${appName} App - official community app. Download karo Google Play Store se:`;
-                const shareData = {
-                  title: appName,
-                  text: shareText,
-                  url: APP_URL,
-                };
                 try {
-                  if (Capacitor.isNativePlatform()) {
-                    await Share.share({
-                      title: shareData.title,
-                      text: `${shareText} ${APP_URL}`,
-                      url: APP_URL,
-                      dialogTitle: `Share ${appName} App`,
-                    });
+                  const platform = Capacitor.getPlatform();
+                  const androidLink = String(shareAppLinks?.play_store_link || '').trim();
+                  const iosLink = String(shareAppLinks?.app_store_link || '').trim();
+
+                  const targetLink = platform === 'ios'
+                    ? (iosLink || androidLink)
+                    : (androidLink || iosLink);
+
+                  if (!targetLink) {
+                    setShareToast(true);
+                    setTimeout(() => setShareToast(false), 2500);
                     return;
                   }
-                  if (navigator.share) { await navigator.share(shareData); return; }
-                  if (navigator.clipboard?.writeText) {
-                      await navigator.clipboard.writeText(`${shareText} ${APP_URL}`);
-                    setShareToast(true);
-                    setTimeout(() => setShareToast(false), 2500);
-                  } else {
-                    setShareToast(true);
-                    setTimeout(() => setShareToast(false), 2500);
+
+                  if (Capacitor.isNativePlatform()) {
+                    window.location.href = targetLink;
+                    return;
                   }
+
+                  window.open(targetLink, '_blank', 'noopener,noreferrer');
                 } catch (err) {
                   if (err?.name === 'AbortError') return;
-                  try {
-                    if (navigator.clipboard?.writeText) {
-                      await navigator.clipboard.writeText(`${shareText} ${APP_URL}`);
-                      setShareToast(true);
-                      setTimeout(() => setShareToast(false), 2500);
-                    }
-                  } catch { /* nothing */ }
+                  setShareToast(true);
+                  setTimeout(() => setShareToast(false), 2500);
                 }
               }}
               className="w-full flex items-center gap-3 px-4 rounded-xl transition-all text-left active:scale-95 select-none relative"
@@ -648,7 +656,7 @@ const Sidebar = ({ isOpen, onClose, onNavigate, currentPage, onLogout }) => {
               {shareToast && (
                 <span className="absolute right-4 text-xs px-2 py-0.5 rounded-full"
                   style={{ color: 'var(--surface-color)', background: secondary }}>
-                  Copied!
+                  Link unavailable
                 </span>
               )}
             </button>}

@@ -168,23 +168,20 @@ const MemberDetails = ({ member, onNavigateBack, previousScreenName }) => {
                                      (member['S. No.'] && member['S. No.'].toString().startsWith('ELECT'));
               
               // Show elected member fields (merged with Members Table) - Show ALL fields from both tables
-              if (isElectedMember) {
-                const electedName =
-                  member['Name'] ||
-                  member.member_name_english ||
-                  member.member_name_hindi ||
-                  'N/A';
-                const electedRole =
-                  member.member_role ||
-                  member.position ||
-                  member.title ||
-                  member.role ||
-                  'N/A';
-                const electedPhone =
-                  toPhoneText(member['Mobile']) ||
-                  toPhoneText(member.phone1) ||
-                  toPhoneText(member.phone2) ||
-                  '';
+	              if (isElectedMember) {
+	                const electedName =
+	                  member['Name'] ||
+	                  member.member_name_english ||
+	                  member.member_name_hindi ||
+	                  'N/A';
+	                const electedRoleType = cleanValue(member.role_type);
+	                const electedCommitteeName = cleanValue(member.title);
+	                const electedPosition = cleanValue(member.subtitle);
+	                const electedPhone =
+	                  toPhoneText(member['Mobile']) ||
+	                  toPhoneText(member.phone1) ||
+	                  toPhoneText(member.phone2) ||
+	                  '';
                 const electedAddress =
                   member['Address Home'] ||
                   member.address ||
@@ -203,15 +200,35 @@ const MemberDetails = ({ member, onNavigateBack, previousScreenName }) => {
                       </div>
                     )}
 
-                    {electedRole && electedRole !== 'N/A' && (
-                      <div className="flex items-start gap-3 p-4 bg-gray-50 rounded-2xl">
-                        <Award className="h-5 w-5 text-gray-500 mt-0.5 flex-shrink-0" />
-                        <div>
-                          <p className="text-xs text-gray-500 font-medium uppercase tracking-wider">Role</p>
-                          <p className="font-medium text-gray-800">{electedRole}</p>
-                        </div>
-                      </div>
-                    )}
+	                    {electedRoleType && (
+	                      <div className="flex items-start gap-3 p-4 bg-gray-50 rounded-2xl">
+	                        <Users className="h-5 w-5 text-gray-500 mt-0.5 flex-shrink-0" />
+	                        <div>
+	                          <p className="text-xs text-gray-500 font-medium uppercase tracking-wider">Role Type</p>
+	                          <p className="font-medium text-gray-800">{String(electedRoleType).toUpperCase()}</p>
+	                        </div>
+	                      </div>
+	                    )}
+
+	                    {electedCommitteeName && (
+	                      <div className="flex items-start gap-3 p-4 bg-gray-50 rounded-2xl">
+	                        <FileText className="h-5 w-5 text-gray-500 mt-0.5 flex-shrink-0" />
+	                        <div>
+	                          <p className="text-xs text-gray-500 font-medium uppercase tracking-wider">Committee Name</p>
+	                          <p className="font-medium text-gray-800">{electedCommitteeName}</p>
+	                        </div>
+	                      </div>
+	                    )}
+
+	                    {electedPosition && (
+	                      <div className="flex items-start gap-3 p-4 bg-gray-50 rounded-2xl">
+	                        <Award className="h-5 w-5 text-gray-500 mt-0.5 flex-shrink-0" />
+	                        <div>
+	                          <p className="text-xs text-gray-500 font-medium uppercase tracking-wider">Position</p>
+	                          <p className="font-medium text-gray-800">{electedPosition}</p>
+	                        </div>
+	                      </div>
+	                    )}
 
                     {electedPhone && electedPhone !== 'N/A' && (
                       <div className="flex items-start gap-3 p-4 bg-gray-50 rounded-2xl">
@@ -239,23 +256,20 @@ const MemberDetails = ({ member, onNavigateBack, previousScreenName }) => {
               }
               
               // Show committee-specific fields if it's a committee member - Show ALL Supabase fields
-              if (isCommitteeMember) {
-                const committeeName =
-                  member.member_name_english ||
-                  member['Name'] ||
-                  member.member_name_hindi ||
-                  'N/A';
-                const committeeRole =
-                  member.member_role ||
-                  member.committee_name_english ||
-                  member.title ||
-                  member.role ||
-                  'N/A';
-                const committeePhone =
-                  toPhoneText(member.Mobile) ||
-                  toPhoneText(member.phone1) ||
-                  toPhoneText(member.phone2) ||
-                  '';
+	              if (isCommitteeMember) {
+	                const committeeName =
+	                  member.member_name_english ||
+	                  member['Name'] ||
+	                  member.member_name_hindi ||
+	                  'N/A';
+	                const committeeRoleType = cleanValue(member.role_type);
+	                const committeeTitle = cleanValue(member.title);
+	                const committeePosition = cleanValue(member.subtitle);
+	                const committeePhone =
+	                  toPhoneText(member.Mobile) ||
+	                  toPhoneText(member.phone1) ||
+	                  toPhoneText(member.phone2) ||
+	                  '';
                 const committeeAddress =
                   member['Address Home'] ||
                   member.address ||
@@ -274,15 +288,35 @@ const MemberDetails = ({ member, onNavigateBack, previousScreenName }) => {
                       </div>
                     )}
 
-                    {committeeRole && committeeRole !== 'N/A' && (
-                      <div className="flex items-start gap-3 p-4 bg-gray-50 rounded-2xl">
-                        <Award className="h-5 w-5 text-gray-500 mt-0.5 flex-shrink-0" />
-                        <div>
-                          <p className="text-xs text-gray-500 font-medium uppercase tracking-wider">Role</p>
-                          <p className="font-medium text-gray-800">{committeeRole}</p>
-                        </div>
-                      </div>
-                    )}
+	                    {committeeRoleType && (
+	                      <div className="flex items-start gap-3 p-4 bg-gray-50 rounded-2xl">
+	                        <Users className="h-5 w-5 text-gray-500 mt-0.5 flex-shrink-0" />
+	                        <div>
+	                          <p className="text-xs text-gray-500 font-medium uppercase tracking-wider">Role Type</p>
+	                          <p className="font-medium text-gray-800">{String(committeeRoleType).toUpperCase()}</p>
+	                        </div>
+	                      </div>
+	                    )}
+
+	                    {committeeTitle && (
+	                      <div className="flex items-start gap-3 p-4 bg-gray-50 rounded-2xl">
+	                        <FileText className="h-5 w-5 text-gray-500 mt-0.5 flex-shrink-0" />
+	                        <div>
+	                          <p className="text-xs text-gray-500 font-medium uppercase tracking-wider">Committee Name</p>
+	                          <p className="font-medium text-gray-800">{committeeTitle}</p>
+	                        </div>
+	                      </div>
+	                    )}
+
+	                    {committeePosition && (
+	                      <div className="flex items-start gap-3 p-4 bg-gray-50 rounded-2xl">
+	                        <Award className="h-5 w-5 text-gray-500 mt-0.5 flex-shrink-0" />
+	                        <div>
+	                          <p className="text-xs text-gray-500 font-medium uppercase tracking-wider">Position</p>
+	                          <p className="font-medium text-gray-800">{committeePosition}</p>
+	                        </div>
+	                      </div>
+	                    )}
 
                     {committeePhone && committeePhone !== 'N/A' && (
                       <div className="flex items-start gap-3 p-4 bg-gray-50 rounded-2xl">

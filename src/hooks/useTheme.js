@@ -21,6 +21,8 @@ const BASE_TRUST_ID = import.meta.env.VITE_DEFAULT_TRUST_ID || 'b353d2ff-ec3b-4b
 const THEME_CACHE_TTL_MS = Number(import.meta.env.VITE_THEME_CACHE_TTL_MS) > 0
   ? Number(import.meta.env.VITE_THEME_CACHE_TTL_MS)
   : (import.meta.env.DEV ? 5 * 60 * 1000 : 20 * 60 * 1000);
+const themeTraceEnabled = Boolean(import.meta.env.DEV)
+  || String(import.meta.env.VITE_THEME_BOOT_TRACE || '').toLowerCase() === 'true';
 
 const safeParse = (value) => {
   try {
@@ -61,12 +63,21 @@ const tagThemeSource = (theme, source) => {
   return { ...theme, themeLoadSource: source };
 };
 
+const traceThemeBoot = (event, payload = {}) => {
+  if (!themeTraceEnabled) return;
+  console.log(`[ThemeBoot] ${event}`, payload);
+};
+
 const resolveStoredTrustId = () => {
   const selected = String(localStorage.getItem('selected_trust_id') || '').trim();
   if (selected) return selected;
   const cachedDefault = safeParse(localStorage.getItem('default_trust_cache') || '');
   const fallback = String(cachedDefault?.id || '').trim();
-  return fallback || '';
+  if (fallback) return fallback;
+  const lastTheme = safeParse(localStorage.getItem(LAST_THEME_CACHE_KEY) || '')
+    || safeParse(localStorage.getItem(LEGACY_LAST_THEME_CACHE_KEY) || '');
+  const lastThemeTrustId = String(lastTheme?.selectedTrustId || lastTheme?.trustId || '').trim();
+  return lastThemeTrustId || '';
 };
 
 const getTrustCacheIndexKey = (trustId) => `theme_cache_trust_v2_${trustId}`;
@@ -437,6 +448,7 @@ export const useTheme = (trustId) => {
   const isCacheValidationInFlightRef = useRef(false);
   const hasQueuedRefreshRef = useRef(false);
   const previousTrustIdRef = useRef(null);
+  const prefetchedTrustIdsRef = useRef(new Set());
   const initialThemeStateRef = useRef(null);
   if (!initialThemeStateRef.current) {
     try {
@@ -539,12 +551,25 @@ export const useTheme = (trustId) => {
     const cachedEntry = readCachedThemeEntry(resolvedTrustId);
     const hasCachedTheme = Boolean(cachedEntry?.theme);
     const shouldRefreshFromDb = !hasCachedTheme || isStale(cachedEntry?.ts);
+    traceThemeBoot('startup-context', {
+      trustId: resolvedTrustId,
+      hasCachedTheme,
+      cacheKey: cachedEntry?.cacheKey || null,
+      cacheTs: cachedEntry?.ts || null,
+      shouldRefreshFromDb
+    });
 
     try {
       if (hasCachedTheme) {
         const cachedTheme = tagThemeSource(cachedEntry.theme, 'cache');
         setTheme(cachedTheme);
         setIsThemeLoading(false);
+        traceThemeBoot('cache-hit', {
+          trustId: resolvedTrustId,
+          selectedTrustTemplateId: cachedTheme?.selectedTrustTemplateId || null,
+          baseTrustTemplateId: cachedTheme?.baseTrustTemplateId || null,
+          source: cachedTheme?.themeLoadSource || 'cache'
+        });
 
         if (import.meta.env.DEV) {
           console.log('[useTheme][TemplateLink] Cache hit:', {
@@ -632,94 +657,140 @@ export const useTheme = (trustId) => {
           selectedTrustId: resolvedTrustId,
           cacheKey: null
         });
+        traceThemeBoot('cache-miss', { trustId: resolvedTrustId });
       }
     } catch {
       // no-op
     }
 
+    const buildThemeForTrust = async (targetTrustId) => {
+      const normalizedTargetTrustId = String(targetTrustId || '').trim();
+      if (!normalizedTargetTrustId) return null;
+
+      const isBaseTrustSelected = normalizedTargetTrustId === BASE_TRUST_ID;
+      const [baseLink, selectedLink] = await Promise.all([
+        fetchTrustThemeLink(BASE_TRUST_ID),
+        isBaseTrustSelected
+          ? Promise.resolve(null)
+          : fetchTrustThemeLink(normalizedTargetTrustId)
+      ]);
+
+      const effectiveBaseTemplate = baseLink?.template || null;
+      const effectiveSelectedTemplate = isBaseTrustSelected
+        ? null
+        : (selectedLink?.template || null);
+
+      const baseTheme = effectiveBaseTemplate
+        ? buildThemeFromTemplate({
+          templateRow: effectiveBaseTemplate,
+          trustOverrides: baseLink.overrides,
+          trustId: BASE_TRUST_ID
+        })
+        : { ...DEFAULT_THEME, trustId: BASE_TRUST_ID };
+
+      const selectedTheme = isBaseTrustSelected
+        ? null
+        : (effectiveSelectedTemplate
+          ? buildThemeFromTemplate({
+            templateRow: effectiveSelectedTemplate,
+            trustOverrides: selectedLink.overrides,
+            trustId: normalizedTargetTrustId
+          })
+          : null);
+
+      const resolved = mergeResolvedThemes(baseTheme, selectedTheme);
+      resolved.customCss = sanitizeCustomCss(resolved.customCss);
+      resolved.baseTemplateUpdatedAt = effectiveBaseTemplate?.updated_at || null;
+      resolved.selectedTemplateUpdatedAt = effectiveSelectedTemplate?.updated_at || null;
+      resolved.baseTrustTemplateId = baseLink?.trust?.template_id || null;
+      resolved.selectedTrustTemplateId = isBaseTrustSelected
+        ? (baseLink?.trust?.template_id || null)
+        : (selectedLink?.trust?.template_id || null);
+      resolved.currentTrustTemplateId = resolved.selectedTrustTemplateId;
+      resolved.selectedTrustId = normalizedTargetTrustId;
+      resolved.baseTrustUpdatedAt = null;
+      resolved.selectedTrustUpdatedAt = null;
+
+      const baseThemeConfigRaw = deepMergeObjects(
+        parseJsonObject(effectiveBaseTemplate?.theme_config, {}),
+        parseJsonObject(baseLink?.overrides, {})
+      );
+      const selectedThemeConfigRaw = deepMergeObjects(
+        parseJsonObject(effectiveSelectedTemplate?.theme_config, {}),
+        parseJsonObject(selectedLink?.overrides, {})
+      );
+      resolved.baseThemeConfigRaw = baseThemeConfigRaw;
+      resolved.selectedThemeConfigRaw = selectedThemeConfigRaw;
+
+      const selectedSource = isBaseTrustSelected
+        ? (baseLink?.template ? (baseLink?.linkSource || 'linked_template') : 'fallback_default')
+        : (selectedLink?.template ? (selectedLink?.linkSource || 'linked_template') : 'fallback_base');
+      resolved.themeLoadSource = selectedSource.startsWith('linked_') ? 'db.linked_template' : `fallback.${selectedSource}`;
+
+      return resolved;
+    };
+
+    const prefetchOtherTrustThemes = async (currentTrustId) => {
+      try {
+        const userRaw = localStorage.getItem('user');
+        const user = userRaw ? safeParse(userRaw) : null;
+        const memberships = Array.isArray(user?.hospital_memberships) ? user.hospital_memberships : [];
+        const trustIds = new Set([
+          BASE_TRUST_ID,
+          String(currentTrustId || '').trim(),
+          ...memberships.map((m) => String(m?.trust_id || '').trim()).filter(Boolean)
+        ]);
+
+        for (const tid of trustIds) {
+          const normalizedTid = String(tid || '').trim();
+          if (!normalizedTid || normalizedTid === String(currentTrustId || '').trim()) continue;
+          if (prefetchedTrustIdsRef.current.has(normalizedTid)) continue;
+
+          const cachedEntry = readCachedThemeEntry(normalizedTid);
+          if (cachedEntry?.theme && !isStale(cachedEntry?.ts)) {
+            prefetchedTrustIdsRef.current.add(normalizedTid);
+            continue;
+          }
+
+          const prefetchedTheme = await buildThemeForTrust(normalizedTid);
+          if (prefetchedTheme) {
+            writeThemeCache(normalizedTid, prefetchedTheme);
+            traceThemeBoot('prefetch-success', {
+              trustId: normalizedTid,
+              selectedTrustTemplateId: prefetchedTheme?.selectedTrustTemplateId || null
+            });
+          } else {
+            traceThemeBoot('prefetch-skipped', { trustId: normalizedTid });
+          }
+          prefetchedTrustIdsRef.current.add(normalizedTid);
+        }
+      } catch (err) {
+        console.warn('[useTheme][TemplateLink] Background prefetch failed:', err);
+        traceThemeBoot('prefetch-error', { message: err?.message || String(err) });
+      }
+    };
+
     const load = async ({ silent = false } = {}) => {
       if (!silent) setIsThemeLoading(true);
       hasQueuedRefreshRef.current = false;
+      traceThemeBoot('db-refresh-start', { trustId: resolvedTrustId, silent });
       try {
-        const isBaseTrustSelected = resolvedTrustId === BASE_TRUST_ID;
-        const [baseLink, selectedLink] = await Promise.all([
-          fetchTrustThemeLink(BASE_TRUST_ID),
-          isBaseTrustSelected
-            ? Promise.resolve(null)
-            : fetchTrustThemeLink(resolvedTrustId)
-        ]);
-
-        const effectiveBaseTemplate = baseLink?.template || null;
-        const effectiveSelectedTemplate = isBaseTrustSelected
-          ? null
-          : (selectedLink?.template || null);
-
-        const baseTheme = effectiveBaseTemplate
-          ? buildThemeFromTemplate({
-            templateRow: effectiveBaseTemplate,
-            trustOverrides: baseLink.overrides,
-            trustId: BASE_TRUST_ID
-          })
-          : { ...DEFAULT_THEME, trustId: BASE_TRUST_ID };
-
-        const selectedTheme = isBaseTrustSelected
-          ? null
-          : (effectiveSelectedTemplate
-            ? buildThemeFromTemplate({
-              templateRow: effectiveSelectedTemplate,
-              trustOverrides: selectedLink.overrides,
-              trustId: resolvedTrustId
-            })
-            : null);
-
-        const resolved = mergeResolvedThemes(baseTheme, selectedTheme);
-        resolved.customCss = sanitizeCustomCss(resolved.customCss);
-        resolved.baseTemplateUpdatedAt = effectiveBaseTemplate?.updated_at || null;
-        resolved.selectedTemplateUpdatedAt = effectiveSelectedTemplate?.updated_at || null;
-        resolved.baseTrustTemplateId = baseLink?.trust?.template_id || null;
-        resolved.selectedTrustTemplateId = isBaseTrustSelected
-          ? (baseLink?.trust?.template_id || null)
-          : (selectedLink?.trust?.template_id || null);
-        resolved.currentTrustTemplateId = resolved.selectedTrustTemplateId;
-        resolved.selectedTrustId = resolvedTrustId;
-        resolved.baseTrustUpdatedAt = null;
-        resolved.selectedTrustUpdatedAt = null;
-
-        const baseThemeConfigRaw = deepMergeObjects(
-          parseJsonObject(effectiveBaseTemplate?.theme_config, {}),
-          parseJsonObject(baseLink?.overrides, {})
-        );
-        const selectedThemeConfigRaw = deepMergeObjects(
-          parseJsonObject(effectiveSelectedTemplate?.theme_config, {}),
-          parseJsonObject(selectedLink?.overrides, {})
-        );
-        resolved.baseThemeConfigRaw = baseThemeConfigRaw;
-        resolved.selectedThemeConfigRaw = selectedThemeConfigRaw;
-
-        const selectedSource = isBaseTrustSelected
-          ? (baseLink?.template ? (baseLink?.linkSource || 'linked_template') : 'fallback_default')
-          : (selectedLink?.template ? (selectedLink?.linkSource || 'linked_template') : 'fallback_base');
-        resolved.themeLoadSource = selectedSource.startsWith('linked_') ? 'db.linked_template' : `fallback.${selectedSource}`;
+        const resolved = await buildThemeForTrust(resolvedTrustId);
+        if (!resolved) throw new Error('Unable to resolve theme for current trust');
 
         if (import.meta.env.DEV) {
           console.log('[useTheme][TemplateLink] Loaded theme:', {
             previousTrustId: previousTrustId || null,
             selectedTrustId: resolvedTrustId,
-            selectedTrustTemplateIdFromTrust: isBaseTrustSelected
-              ? (baseLink?.trust?.template_id || null)
-              : (selectedLink?.trust?.template_id || null),
+            selectedTrustTemplateIdFromTrust: resolved.selectedTrustTemplateId || null,
             selectedTrustTemplateId: resolved.selectedTrustTemplateId,
-            selectedLinkedTemplateId: isBaseTrustSelected
-              ? (effectiveBaseTemplate?.id || null)
-              : (effectiveSelectedTemplate?.id || null),
-            selectedLinkedTemplateName: isBaseTrustSelected
-              ? (effectiveBaseTemplate?.name || null)
-              : (effectiveSelectedTemplate?.name || null),
+            selectedLinkedTemplateId: resolved.templateId || null,
+            selectedLinkedTemplateName: resolved.template?.name || null,
             baseTrustTemplateId: resolved.baseTrustTemplateId,
-            baseLinkedTemplateId: effectiveBaseTemplate?.id || null,
-            baseLinkedTemplateName: effectiveBaseTemplate?.name || null,
-            baseLinkSource: baseLink?.linkSource || null,
-            selectedLinkSource: selectedLink?.linkSource || null,
+            baseLinkedTemplateId: null,
+            baseLinkedTemplateName: null,
+            baseLinkSource: null,
+            selectedLinkSource: null,
             source: resolved.themeLoadSource,
             cacheUsed: false,
             selectedTemplateUpdatedAt: resolved.selectedTemplateUpdatedAt,
@@ -732,8 +803,18 @@ export const useTheme = (trustId) => {
 
         writeThemeCache(resolvedTrustId, resolved);
         setTheme(tagThemeSource(resolved, 'db'));
+        traceThemeBoot('db-refresh-success', {
+          trustId: resolvedTrustId,
+          selectedTrustTemplateId: resolved?.selectedTrustTemplateId || null,
+          baseTrustTemplateId: resolved?.baseTrustTemplateId || null
+        });
+        void prefetchOtherTrustThemes(resolvedTrustId);
       } catch (err) {
         console.warn('[useTheme][TemplateLink] Theme load failed:', err);
+        traceThemeBoot('db-refresh-error', {
+          trustId: resolvedTrustId,
+          message: err?.message || String(err)
+        });
         setTheme((prev) => prev || { ...DEFAULT_THEME, trustId: BASE_TRUST_ID });
       } finally {
         if (!silent) setIsThemeLoading(false);

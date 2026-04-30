@@ -703,9 +703,18 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
         normalizeTrustId(defaultTrust?.id) ||
         normalizeTrustId(mergedTrusts[0]?.id) ||
         '';
+      const effectiveTrustForEvent =
+        mergedTrusts.find((t) => normalizeTrustId(t.id) === effectiveTrustId) ||
+        primaryTrust ||
+        defaultTrust ||
+        mergedTrusts[0] ||
+        null;
       if (effectiveTrustId && effectiveTrustId !== selectedTrustId) {
         setSelectedTrustId(effectiveTrustId);
         localStorage.setItem('selected_trust_id', effectiveTrustId);
+        window.dispatchEvent(new CustomEvent('trust-changed', {
+          detail: { trustId: effectiveTrustId, trustName: effectiveTrustForEvent?.name || null }
+        }));
       }
       const effectiveTrust =
         mergedTrusts.find((t) => normalizeTrustId(t.id) === effectiveTrustId) ||
@@ -884,9 +893,17 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
           normalizeTrustId(defaultTrust?.id) ||
           normalizeTrustId(withDefault[0]?.id) ||
           '';
+        const effectiveTrustForEvent =
+          withDefault.find((t) => normalizeTrustId(t.id) === effectiveTrustId) ||
+          primaryTrust ||
+          withDefault[0] ||
+          null;
         if (effectiveTrustId && effectiveTrustId !== selectedTrustId) {
           setSelectedTrustId(effectiveTrustId);
           localStorage.setItem('selected_trust_id', effectiveTrustId);
+          window.dispatchEvent(new CustomEvent('trust-changed', {
+            detail: { trustId: effectiveTrustId, trustName: effectiveTrustForEvent?.name || null }
+          }));
         }
         const effectiveTrust =
           withDefault.find((t) => normalizeTrustId(t.id) === effectiveTrustId) ||

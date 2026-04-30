@@ -238,6 +238,24 @@ export const fetchTrustById = async (id) => {
   return data || null;
 };
 
+export const fetchShareAppLinksByTrustId = async (trustId) => {
+  const normalizedTrustId = String(trustId || '').trim();
+  if (!normalizedTrustId) return null;
+
+  const { data, error } = await supabase
+    .from('shareApp_links')
+    .select('trust_id, play_store_link, app_store_link')
+    .eq('trust_id', normalizedTrustId)
+    .maybeSingle();
+
+  if (error) {
+    console.warn('Error fetching share app links:', error);
+    return null;
+  }
+
+  return data || null;
+};
+
 export const fetchTemplatesForTrust = async (trustId) => {
   if (!trustId) return [];
 

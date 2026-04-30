@@ -68,6 +68,16 @@ const safeParse = (value) => {
   }
 };
 
+const readLastKnownThemeTrust = () => {
+  const parsedV2 = safeParse(localStorage.getItem('last_theme_cache_v2') || '');
+  const parsedLegacy = safeParse(localStorage.getItem('last_theme_cache_v1') || '');
+  const parsed = parsedV2 || parsedLegacy;
+  if (!parsed || typeof parsed !== 'object') return { id: '', name: '' };
+  const id = String(parsed.selectedTrustId || parsed.trustId || '').trim();
+  const name = String(parsed.selectedTrustName || parsed.trustName || '').trim();
+  return { id, name };
+};
+
 const readBootThemeCache = (trustId) => {
   const normalizedTrustId = String(trustId || '').trim();
   if (!normalizedTrustId) return null;
@@ -179,6 +189,8 @@ const HospitalTrusteeApp = () => {
     } catch {
       // ignore malformed cache
     }
+    const lastKnownThemeTrust = readLastKnownThemeTrust();
+    if (lastKnownThemeTrust.id) return lastKnownThemeTrust.id;
     return '';
   });
   const resolveDefaultThemeTrust = () => {
@@ -200,6 +212,11 @@ const HospitalTrusteeApp = () => {
     const selectedName = String(localStorage.getItem('selected_trust_name') || '').trim();
     if (selectedId) {
       return { id: selectedId, name: selectedName || BASE_TRUST_NAME };
+    }
+
+    const lastKnownThemeTrust = readLastKnownThemeTrust();
+    if (lastKnownThemeTrust.id) {
+      return { id: lastKnownThemeTrust.id, name: lastKnownThemeTrust.name || BASE_TRUST_NAME };
     }
 
     if (BASE_TRUST_ID) {
@@ -758,14 +775,14 @@ const HospitalTrusteeApp = () => {
       navigate('/executive-body');
       return;
     }
-    if (screen === 'member-details' && data) {
+    if ((screen === 'member-details' || screen === 'executive-member-details') && data) {
       setPreviousScreen(location.pathname);
       setPreviousScreenName(data.previousScreenName || location.pathname);
       setSelectedMember(data);
       sessionStorage.setItem('selectedMember', JSON.stringify(data));
       sessionStorage.setItem('previousScreen', location.pathname);
       sessionStorage.setItem('previousScreenName', data.previousScreenName || location.pathname);
-      navigate('/member-details');
+      navigate('/executive_members_details');
     } else if (screen === 'committee-members' && data) {
       setPreviousScreen(location.pathname);
       setPreviousScreenName(data.previousScreenName || location.pathname);
@@ -811,7 +828,7 @@ const HospitalTrusteeApp = () => {
   // Load member data from sessionStorage on mount if on member-details route
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
-    if (location.pathname === '/member-details') {
+    if (location.pathname === '/member-details' || location.pathname === '/executive_members_details') {
       const storedMember = sessionStorage.getItem('selectedMember');
       const storedPreviousScreen = sessionStorage.getItem('previousScreen');
       const storedPreviousScreenName = sessionStorage.getItem('previousScreenName');
@@ -1065,7 +1082,7 @@ const HospitalTrusteeApp = () => {
           }
         />
         <Route
-          path="/member-details"
+          path="/executive_members_details"
           element={
             <ProtectedRoute>
               {selectedMember ? (
@@ -1087,7 +1104,7 @@ const HospitalTrusteeApp = () => {
                   previousScreenName={previousScreenName}
                 />
               ) : (
-                <Navigate to="/directory" replace />
+                <Navigate to="/executive-body" replace />
               )}
             </ProtectedRoute>
           }

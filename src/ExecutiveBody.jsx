@@ -88,6 +88,17 @@ const ExecutiveBody = ({ onNavigate }) => {
     [data]
   );
 
+  const visibleTabs = useMemo(
+    () => TAB_OPTIONS.filter((item) => item.id === 'all' || (totalByTab[item.id] || 0) > 0),
+    [totalByTab]
+  );
+
+  useEffect(() => {
+    if (!visibleTabs.some((item) => item.id === tab)) {
+      setTab('all');
+    }
+  }, [tab, visibleTabs]);
+
   const openMemberDetails = (item) => {
     const memberData = {
       'S. No.': item?.['S. No.'] || item?.original_id || item?.id || 'N/A',
@@ -115,10 +126,10 @@ const ExecutiveBody = ({ onNavigate }) => {
     };
 
     if (typeof onNavigate === 'function') {
-      onNavigate('member-details', memberData);
+      onNavigate('executive-member-details', memberData);
       return;
     }
-    navigate('/member-details', { state: { memberData } });
+    navigate('/executive_members_details', { state: { memberData } });
   };
 
   return (
@@ -154,7 +165,7 @@ const ExecutiveBody = ({ onNavigate }) => {
       </div>
 
       <div className="px-4 mt-4 flex gap-2 overflow-x-auto">
-        {TAB_OPTIONS.map((item) => {
+        {visibleTabs.map((item) => {
           const isActive = tab === item.id;
           return (
             <button
