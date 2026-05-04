@@ -1497,6 +1497,7 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
     if (value === 'noticeboard' || value === 'notices') return 'notices';
     if (value === 'facility' || value === 'facilities') return 'facilities';
     if (value === 'event' || value === 'events') return 'events';
+    if (value === 'achievement' || value === 'achievements') return 'achievements';
     if (value === 'donation' || value === 'donations') return 'donation';
     if (value === 'executive-body' || value === 'executive_body' || value === 'executive body' || value === 'executivebody') return 'executive-body';
     if (value === 'opd' || value === 'appointment' || value === 'appointments') return 'appointment';
@@ -1524,6 +1525,7 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
       notices: '/icons/quick-access/noticeboard.svg',
       facilities: '/icons/quick-access/facilities.svg',
       events: '/icons/quick-access/events.svg',
+      achievements: '/icons/quick-access/directory.svg',
       donation: '/icons/quick-access/donation.svg',
       'executive-body': '/icons/quick-access/directory.svg',
       directory: '/icons/quick-access/directory.svg',
@@ -1603,6 +1605,14 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
       tagline: 'Upcoming activities',
       icon_url: '/icons/quick-access/events.svg',
       quick_order: 90,
+    } : null,
+    ff('feature_achievements') ? {
+      id: 'feature_achievements_fallback',
+      route: 'achievements',
+      displayName: 'Achievements',
+      tagline: 'Your milestones & recognition',
+      icon_url: '/icons/quick-access/directory.svg',
+      quick_order: 92,
     } : null,
     ff('feature_donation') ? {
       id: 'feature_donation_fallback',

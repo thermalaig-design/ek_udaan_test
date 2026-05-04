@@ -33,6 +33,37 @@ const normalizeAttachment = (value) => {
   return /^https?:\/\//i.test(url) ? url : '';
 };
 
+const normalizeAttachments = (attachments) => {
+  if (Array.isArray(attachments)) {
+    return attachments.map(normalizeAttachment).filter(Boolean);
+  }
+  if (typeof attachments === 'string') {
+    const value = attachments.trim();
+    if (!value) return [];
+    try {
+      const parsed = JSON.parse(value);
+      if (Array.isArray(parsed)) {
+        return parsed.map(normalizeAttachment).filter(Boolean);
+      }
+      if (parsed && typeof parsed === 'object') {
+        const candidate = normalizeAttachment(parsed.url || parsed.public_url || parsed.path);
+        return candidate ? [candidate] : [];
+      }
+    } catch {
+      // not JSON, continue fallback
+    }
+    return value
+      .split(',')
+      .map((item) => normalizeAttachment(item))
+      .filter(Boolean);
+  }
+  if (attachments && typeof attachments === 'object') {
+    const candidate = normalizeAttachment(attachments.url || attachments.public_url || attachments.path);
+    return candidate ? [candidate] : [];
+  }
+  return [];
+};
+
 const Donation = ({ onNavigate }) => {
   const theme = useAppTheme();
   const navigate = useNavigate();
@@ -174,9 +205,7 @@ const Donation = ({ onNavigate }) => {
           ) : (
             donations.map((row) => {
               const isVip = String(row?.type || '').trim().toLowerCase() === 'vip';
-              const attachmentPreview = Array.isArray(row?.attachments)
-                ? row.attachments.map(normalizeAttachment).filter(Boolean).slice(0, 1)
-                : [];
+              const attachmentPreview = normalizeAttachments(row?.attachments).slice(0, 1);
 
               return (
                 <div
@@ -221,6 +250,9 @@ const Donation = ({ onNavigate }) => {
                         src={attachmentPreview[0]}
                         alt={row.name}
                         className="w-full h-40 object-cover rounded-[20px] mt-3"
+                        onError={(e) => {
+                          e.currentTarget.style.display = 'none';
+                        }}
                       />
                     ) : null}
 

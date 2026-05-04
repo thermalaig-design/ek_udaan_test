@@ -384,8 +384,19 @@ const Sidebar = ({ isOpen, onClose, onNavigate, currentPage, onLogout }) => {
       <div
         className="absolute max-md:fixed inset-0 backdrop-blur-sm z-40"
         data-sidebar-overlay="true"
-        onTouchStart={onClose}
-        onClick={onClose}
+        onClick={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          onClose();
+        }}
+        onTouchStart={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+        }}
+        onTouchEnd={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+        }}
         style={{
           touchAction: 'none',
           background: 'color-mix(in srgb, var(--app-page-bg) 60%, var(--surface-color))'

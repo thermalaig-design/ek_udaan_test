@@ -31,6 +31,7 @@ export const normalizeFeatureKey = (...values) => {
     if (!normalized) continue;
     if (FEATURE_KEY_ALIASES[normalized]) return FEATURE_KEY_ALIASES[normalized];
     if (normalized.startsWith('feature_')) return normalized;
+    return `feature_${normalized}`;
   }
   return null;
 };

@@ -19,6 +19,7 @@ import Facilities from './Facilities';
 import FacilityDetail from './FacilityDetail';
 import Events from './Events';
 import EventDetail from './EventDetail';
+import Achievements from './Achievements';
 import Donation from './Donation';
 import DonationForm from './DonationForm';
 import ExecutiveBody from './ExecutiveBody';
@@ -816,6 +817,7 @@ const HospitalTrusteeApp = () => {
         'notices': '/notices',
         'facilities': '/facilities',
         'events': '/events',
+        'achievements': '/achievements',
         'donation': '/donation',
         'executive-body': '/executive-body',
         'donation-form': '/donation-form',
@@ -1048,6 +1050,16 @@ const HospitalTrusteeApp = () => {
             <ProtectedRoute>
               <FeatureGuard featureKey="feature_events">
                 <EventDetail onNavigate={handleNavigate} />
+              </FeatureGuard>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/achievements"
+          element={
+            <ProtectedRoute>
+              <FeatureGuard featureKey="feature_achievements">
+                <Achievements onNavigate={handleNavigate} />
               </FeatureGuard>
             </ProtectedRoute>
           }
