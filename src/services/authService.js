@@ -1,9 +1,35 @@
-// authService.js - Frontend auth helpers
+﻿// authService.js - Frontend auth helpers
 import { supabase } from './supabaseClient';
 
 const USE_MOCK_AUTH = import.meta.env.VITE_AUTH_MOCK === 'true';
 const MOCK_OTP = '123456';
 const BASE_TRUST_ID = import.meta.env.VITE_DEFAULT_TRUST_ID || 'b353d2ff-ec3b-4b90-a896-69f40662084e';
+const AUTH_API_URL = import.meta.env.VITE_AUTH_API_URL || '';
+
+const postAuthJson = async (endpoint, payload) => {
+  if (!AUTH_API_URL) {
+    throw new Error('Missing VITE_AUTH_API_URL');
+  }
+
+  const base = AUTH_API_URL.endsWith('/') ? AUTH_API_URL.slice(0, -1) : AUTH_API_URL;
+  const url = `${base}${endpoint}`;
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload || {})
+  });
+
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok || data?.success === false) {
+    throw new Error(data?.message || 'Auth API request failed');
+  }
+  return data;
+};
+
+const triggerOtpSend = async (phoneNumber) => {
+  const cleanedPhone = normalizeTo10Digits(phoneNumber);
+  await postAuthJson('/check-phone', { phoneNumber: cleanedPhone });
+};
 
 const buildMockUser = (phoneNumber) => ({
   id: phoneNumber,
@@ -20,7 +46,7 @@ const buildMockUser = (phoneNumber) => ({
 
 const normalizePhone = (value) => String(value || '').replace(/\D/g, '');
 
-// Always return last 10 digits — strips country code prefix (91, 0, +91, etc.)
+// Always return last 10 digits â€” strips country code prefix (91, 0, +91, etc.)
 const normalizeTo10Digits = (value) => {
   const digits = normalizePhone(value);
   if (digits.length >= 10) return digits.slice(-10);
@@ -173,10 +199,10 @@ export const checkPhoneNumber = async (phoneNumber) => {
       return { success: false, message: 'Please enter a valid 10-digit mobile number.' };
     }
 
-    // Always work with last 10 digits — avoids format mismatch (91xxxxxxxxxx vs xxxxxxxxxx)
+    // Always work with last 10 digits â€” avoids format mismatch (91xxxxxxxxxx vs xxxxxxxxxx)
     const last10 = normalizeTo10Digits(cleanedPhone);
 
-    // 1) Find member by mobile in "Members" table — check all common storage formats
+    // 1) Find member by mobile in "Members" table â€” check all common storage formats
     //    to avoid false "not found" that causes duplicate inserts on every login
     const mobileOrFilter = [
       `Mobile.eq.${last10}`,
@@ -197,8 +223,8 @@ export const checkPhoneNumber = async (phoneNumber) => {
     }
 
     if (!members || members.length === 0) {
-      // Member nahi mila — pehle double-check karo (race condition guard)
-      // Phir naya row insert karo — always last 10 digits store karo
+      // Member nahi mila â€” pehle double-check karo (race condition guard)
+      // Phir naya row insert karo â€” always last 10 digits store karo
       const { data: newMember, error: insertError } = await supabase
         .from('Members')
         .insert({ Mobile: last10 })
@@ -208,7 +234,7 @@ export const checkPhoneNumber = async (phoneNumber) => {
       if (insertError) {
         // Agar unique constraint violation hai to existing record fetch karo
         if (insertError.code === '23505') {
-          console.warn('[Auth] Duplicate mobile on insert — fetching existing record');
+          console.warn('[Auth] Duplicate mobile on insert â€” fetching existing record');
           const { data: existingMembers, error: refetchError } = await supabase
             .from('Members')
             .select('"S.No.", "Name", "Mobile", "Email", members_id')
@@ -216,7 +242,7 @@ export const checkPhoneNumber = async (phoneNumber) => {
             .order('"S.No."', { ascending: false });
 
           if (!refetchError && existingMembers && existingMembers.length > 0) {
-            // Existing record mila — aage normal flow continue karo
+            // Existing record mila â€” aage normal flow continue karo
             // (fall through to membership lookup below)
             console.log('[Auth] Found existing member after conflict, continuing...');
             // Reassign members to existingMembers and continue
@@ -243,6 +269,8 @@ export const checkPhoneNumber = async (phoneNumber) => {
         vip_status: null,
         reg_member_id: null
       };
+
+      await triggerOtpSend(last10);
 
       return {
         success: true,
@@ -411,6 +439,8 @@ export const checkPhoneNumber = async (phoneNumber) => {
       `User check complete: accounts=${accounts.length}, trusts=${hospitalMemberships.length}, selectedMember=${user?.members_id || user?.id}`
     );
 
+    await triggerOtpSend(last10);
+
     return {
       success: true,
       message: 'Mobile verified',
@@ -428,16 +458,28 @@ export const checkPhoneNumber = async (phoneNumber) => {
 /**
  * Verify OTP
  */
-export const verifyOTP = async (phoneNumber, otp) => {
+export const verifyOTP = async (phoneNumber, otp, options = {}) => {
   try {
-    // Static OTP for now (no live OTP)
-    if (otp === MOCK_OTP) {
-      return { success: true, message: 'OTP verified' };
+    if (USE_MOCK_AUTH) {
+      if (otp === MOCK_OTP) return { success: true, message: 'OTP verified' };
+      return { success: false, message: 'Invalid OTP. Use 123456.' };
     }
-    return { success: false, message: 'Invalid OTP. Use 123456.' };
+
+    const payload = {
+      phoneNumber: normalizeTo10Digits(phoneNumber),
+      otp: String(otp || '').trim(),
+      secretCode: String(options?.secretCode || '').trim(),
+      trustId: String(options?.trustId || '').trim()
+    };
+
+    const response = await postAuthJson('/verify-otp', payload);
+    return {
+      success: true,
+      message: response?.message || 'OTP verified'
+    };
   } catch (error) {
-    console.error('Error verifying OTP:', error);
-    throw error;
+    console.error('Error verifying OTP:', error?.message || error);
+    return { success: false, message: error?.message || 'Invalid OTP or secret code' };
   }
 };
 
@@ -456,3 +498,5 @@ export const specialLogin = async (phoneNumber, passcode) => {
     throw error;
   }
 };
+
+

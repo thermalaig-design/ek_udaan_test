@@ -6,7 +6,7 @@ import ImageSlider from './components/ImageSlider';
 import { getProfile, getMarqueeUpdates, getUserNotifications, markNotificationAsRead, markAllNotificationsAsRead, deleteNotification } from './services/api';
 import { useGalleryContext } from './context/GalleryContext';
 import { useAppTheme } from './context/ThemeContext';
-import { registerSidebarState } from './hooks';
+import { registerSidebarState, useTrustDataVersion } from './hooks';
 import { supabase } from './services/supabaseClient';
 import { getCurrentNotificationContext, matchesNotificationForContext } from './services/notificationAudience';
 import { fetchFeatureFlags, subscribeFeatureFlags, isFeatureEnabled } from './services/featureFlags';
@@ -191,6 +191,7 @@ const getCachedUserProfileSnapshot = () => {
 
 /* eslint-disable react-refresh/only-export-components */
 const Home = ({ onNavigate, onLogout, isMember }) => {
+  const { displayTrustVersion } = useTrustDataVersion();
   const normalizeTrustId = (id) => {
     if (id === null || id === undefined) return '';
     const normalized = String(id).trim();
@@ -2015,10 +2016,7 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
                   : 'none',
               }}
             >
-              <div className="flex items-center justify-between gap-3">
-                <div
-                  className="flex items-center gap-2.5 min-w-0"
-                >
+              <div className="flex items-center gap-2 min-w-0">
                   {userProfile?.profilePhotoUrl ? (
                     <img
                       src={userProfile.profilePhotoUrl}
@@ -2040,47 +2038,41 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
                     </div>
                   )}
 
-                  <div className="min-w-0">
+                  <div className="min-w-0 flex-1">
                     {userProfile?.name ? (
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <p className="text-[12px] font-semibold truncate" style={{ color: showSelectedTrustMemberBanner ? '#f8f0c5' : headingColor }}>
+                      <div className="flex items-center min-w-0">
+                        <p className="text-[12px] font-semibold truncate leading-snug" style={{ color: showSelectedTrustMemberBanner ? '#f8f0c5' : headingColor }}>
                           <span className="font-extrabold">{userProfile.name}</span>
                         </p>
                       </div>
                     ) : null}
                   </div>
-                </div>
-
-                {showSelectedTrustMemberBanner && (selectedTrustMembership?.membership_number || selectedTrustMembership?.role) ? (
-                  <div className="inline-flex items-center gap-2 flex-shrink-0">
-                    {selectedTrustMembership?.membership_number ? (
+                  {showSelectedTrustMemberBanner && selectedTrustMembership?.membership_number ? (
                       <span
-                        className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-extrabold uppercase tracking-[0.18em]"
+                        className="inline-flex items-center gap-1.5 rounded-full px-2 py-1 text-[10px] font-extrabold uppercase tracking-[0.12em] max-w-[28%] flex-shrink-0"
                         style={{
                           background: 'linear-gradient(135deg, #5a3f00 0%, #d4a017 100%)',
                           color: '#fff8db',
                           border: '1px solid rgba(255, 227, 133, 0.5)',
                         }}
                       >
-                        <Crown className="h-3.5 w-3.5" />
-                        {selectedTrustMembership.membership_number}
+                        <Crown className="h-3.5 w-3.5 flex-shrink-0" />
+                        <span className="truncate">{selectedTrustMembership.membership_number}</span>
                       </span>
                     ) : null}
-                    {selectedTrustMembership?.role ? (
-                      <span
-                        className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-extrabold uppercase tracking-[0.18em]"
-                        style={{
-                          background: 'linear-gradient(135deg, #5a3f00 0%, #d4a017 100%)',
-                          color: '#fff8db',
-                          border: '1px solid rgba(255, 227, 133, 0.5)',
-                        }}
-                      >
-                        <Crown className="h-3.5 w-3.5" />
-                        {selectedTrustMembership.role}
-                      </span>
-                    ) : null}
-                  </div>
-                ) : null}
+                  {showSelectedTrustMemberBanner && selectedTrustMembership?.role ? (
+                    <span
+                      className="inline-flex items-center gap-1.5 rounded-full px-2 py-1 text-[10px] font-extrabold uppercase tracking-[0.1em] max-w-[34%] flex-shrink-0"
+                      style={{
+                        background: 'linear-gradient(135deg, #5a3f00 0%, #d4a017 100%)',
+                        color: '#fff8db',
+                        border: '1px solid rgba(255, 227, 133, 0.5)',
+                      }}
+                    >
+                      <Crown className="h-3.5 w-3.5 flex-shrink-0" />
+                      <span className="truncate">{selectedTrustMembership.role}</span>
+                    </span>
+                  ) : null}
               </div>
             </div>
           </div>
@@ -2576,6 +2568,7 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
           </button>
           <div className="w-8 h-px" style={{ background: 'linear-gradient(to left, transparent, var(--footer-accent))' }} />
         </div>
+        <p className="text-[11px] font-semibold text-center mt-2 opacity-80">App Version {displayTrustVersion}</p>
       </footer>
       <TermsModal isOpen={showTermsModal} onAccept={handleAcceptTerms} />
     </div>

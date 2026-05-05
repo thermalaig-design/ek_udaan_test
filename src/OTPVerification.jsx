@@ -4,15 +4,13 @@ import { useBackNavigation } from './hooks';
 import { verifyOTP } from './services/authService';
 import { fetchDirectoryData } from './services/directoryService';
 import { fetchMemberTrustMemberships, fetchTrustById } from './services/trustService';
+import { logUserSessionEvent } from './services/sessionAuditService';
 import { persistUserSession } from './utils/storageUtils';
-import { useAppTheme } from './context/ThemeContext';
+import setuLogo from './assets/setu-logo.png'; // 👈 apna logo path yahan set karo
 
-// ─── Constants ────────────────────────────────────────────────────────────────
 const TRUST_ID = import.meta.env.VITE_DEFAULT_TRUST_ID || '';
-// Separate cache key for Login/OTP screens — never polluted by Home page trust switching
 const LOGIN_TRUST_CACHE_KEY = 'cached_base_trust_info';
-const TRUST_CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
-// No static fallback image — show monogram placeholder instead of Mah-Setu logo
+const TRUST_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 const OTP_FLOW_KEY = 'otp_flow_allowed';
 const LAST_SELECTED_TRUST_ID_KEY = 'last_selected_trust_id';
 const normalizeText = (value) => String(value || '').trim();
@@ -28,25 +26,22 @@ const resolveAuthDefaultTrust = () => {
       if (id) return { id, name: name || defaultName };
     }
   } catch {
-    // ignore malformed cache
+    // ignore
   }
 
   const selectedId = String(localStorage.getItem('selected_trust_id') || '').trim();
   const selectedName = String(localStorage.getItem('selected_trust_name') || '').trim();
   if (selectedId) return { id: selectedId, name: selectedName || defaultName };
-
   if (TRUST_ID) return { id: TRUST_ID, name: defaultName };
   return { id: '', name: defaultName };
 };
 
-// ─── Cache helpers ─────────────────────────────────────────────────────────────
 const getCachedBaseTrust = (expectedTrustId) => {
   if (!expectedTrustId) return null;
   try {
     const raw = localStorage.getItem(LOGIN_TRUST_CACHE_KEY);
     if (!raw) return null;
     const { data, ts, trustId } = JSON.parse(raw);
-    // Reject stale or wrong-trust cache
     if (trustId && trustId !== expectedTrustId) {
       localStorage.removeItem(LOGIN_TRUST_CACHE_KEY);
       return null;
@@ -64,27 +59,23 @@ const getCachedBaseTrust = (expectedTrustId) => {
 const setCachedBaseTrust = (trust, trustId) => {
   if (!trustId) return;
   try {
-    localStorage.setItem(
-      LOGIN_TRUST_CACHE_KEY,
-      JSON.stringify({ data: trust, ts: Date.now(), trustId })
-    );
-  } catch { /* ignore */ }
+    localStorage.setItem(LOGIN_TRUST_CACHE_KEY, JSON.stringify({ data: trust, ts: Date.now(), trustId }));
+  } catch {
+    // ignore
+  }
 };
 
-// ─── Component ─────────────────────────────────────────────────────────────────
 function OTPVerification() {
   const navigate = useNavigate();
   const location = useLocation();
   useBackNavigation(() => navigate('/login'));
-  const theme = useAppTheme();
   const authDefaultTrust = resolveAuthDefaultTrust();
 
   const [otp, setOtp] = useState('');
+  const [secretCode, setSecretCode] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [focused, setFocused] = useState(false);
-
-  // Serve from BASE-trust-specific cache instantly — no wrong logo flash
   const [trustInfo, setTrustInfo] = useState(() => getCachedBaseTrust(authDefaultTrust.id) || null);
 
   const user = location.state?.user || null;
@@ -92,9 +83,7 @@ function OTPVerification() {
     ? location.state.accounts
     : (user ? [user] : []);
   const [otpVerified, setOtpVerified] = useState(false);
-  const [selectedAccountId, setSelectedAccountId] = useState(
-    accountCandidates[0]?.members_id || accountCandidates[0]?.id || ''
-  );
+  const [selectedAccountId, setSelectedAccountId] = useState(accountCandidates[0]?.members_id || accountCandidates[0]?.id || '');
   const phoneNumber = location.state?.phoneNumber || '';
   const isOtpFlowAllowed = sessionStorage.getItem(OTP_FLOW_KEY) === 'normal';
   const canRenderOtpPage = Boolean(user && phoneNumber && isOtpFlowAllowed);
@@ -105,20 +94,15 @@ function OTPVerification() {
       navigate('/', { replace: true });
       return;
     }
-    if (!canRenderOtpPage) {
-      navigate('/login', { replace: true });
-    }
+    if (!canRenderOtpPage) navigate('/login', { replace: true });
   }, [canRenderOtpPage, navigate]);
 
-  // Clear old shared cache key that may have another trust's logo data
   useEffect(() => {
     try { localStorage.removeItem('cached_trust_info'); } catch { /* ignore */ }
   }, []);
 
-  // Always refresh from BASE trust ID — not from whatever selected_trust_id says
   useEffect(() => {
     let active = true;
-
     const refresh = async () => {
       try {
         if (!authDefaultTrust.id) return;
@@ -130,7 +114,6 @@ function OTPVerification() {
         console.warn('[OTP] Trust refresh failed:', err?.message || err);
       }
     };
-
     refresh();
     return () => { active = false; };
   }, [authDefaultTrust.id]);
@@ -139,21 +122,16 @@ function OTPVerification() {
     if (!accountCandidates.length) return null;
     const selectedId = String(selectedAccountId || '');
     if (!selectedId) return accountCandidates[0];
-    return accountCandidates.find((account) => {
-      const accountId = String(account?.members_id || account?.id || '');
-      return accountId === selectedId;
-    }) || accountCandidates[0];
+    return accountCandidates.find((account) => String(account?.members_id || account?.id || '') === selectedId) || accountCandidates[0];
   };
 
   const completeLogin = async (selectedUser) => {
-    const allAccountMemberIds = Array.from(
-      new Set(
-        (Array.isArray(accountCandidates) ? accountCandidates : [])
-          .map((account) => account?.members_id || account?.id || null)
-          .filter(Boolean)
-          .map((id) => String(id))
-      )
-    );
+    const allAccountMemberIds = Array.from(new Set(
+      (Array.isArray(accountCandidates) ? accountCandidates : [])
+        .map((account) => account?.members_id || account?.id || null)
+        .filter(Boolean)
+        .map((id) => String(id))
+    ));
 
     const accountMembershipNo = normalizeText(
       selectedUser?.membership_number ||
@@ -161,10 +139,7 @@ function OTPVerification() {
       selectedUser?.membershipNumber
     );
 
-    let enrichedUser = {
-      ...selectedUser,
-      member_ids: allAccountMemberIds
-    };
+    let enrichedUser = { ...selectedUser, member_ids: allAccountMemberIds };
     try {
       const refreshedMemberships = await fetchMemberTrustMemberships({
         membersId: selectedUser?.members_id || selectedUser?.id || null,
@@ -172,12 +147,7 @@ function OTPVerification() {
       });
 
       if (Array.isArray(refreshedMemberships) && refreshedMemberships.length > 0) {
-        enrichedUser = {
-          ...enrichedUser,
-          member_ids: allAccountMemberIds,
-          hospital_memberships: refreshedMemberships
-        };
-
+        enrichedUser = { ...enrichedUser, member_ids: allAccountMemberIds, hospital_memberships: refreshedMemberships };
         const preferredMembership = refreshedMemberships.find((membership) => membership?.is_active !== false) || refreshedMemberships[0];
         if (preferredMembership?.trust_id) {
           enrichedUser.trust = {
@@ -210,6 +180,8 @@ function OTPVerification() {
       return false;
     }
 
+    await logUserSessionEvent({ user: enrichedUser, actionType: 'login', extra: { source: 'otp' } });
+
     const selectedMemberships = Array.isArray(enrichedUser?.hospital_memberships) ? enrichedUser.hospital_memberships : [];
     const baseTrustId = normalizeText(TRUST_ID || authDefaultTrust.id);
     const baseMembership = selectedMemberships.find((membership) => normalizeText(membership?.trust_id) === baseTrustId) || null;
@@ -220,20 +192,15 @@ function OTPVerification() {
       authDefaultTrust?.name ||
       localStorage.getItem('selected_trust_name')
     );
+
     localStorage.setItem('selected_trust_id', String(selectedTrustId));
     localStorage.setItem(LAST_SELECTED_TRUST_ID_KEY, String(selectedTrustId));
     if (selectedTrustName) localStorage.setItem('selected_trust_name', String(selectedTrustName));
     window.dispatchEvent(new CustomEvent('trust-changed', {
-      detail: {
-        trustId: String(selectedTrustId),
-        trustName: selectedTrustName || null,
-        source: 'otp-login-default-base'
-      }
+      detail: { trustId: String(selectedTrustId), trustName: selectedTrustName || null, source: 'otp-login-default-base' }
     }));
 
-    fetchDirectoryData(selectedTrustId, selectedTrustName).catch(err =>
-      console.warn('[OTP] Directory pre-fetch failed:', err)
-    );
+    fetchDirectoryData(selectedTrustId, selectedTrustName).catch((err) => console.warn('[OTP] Directory pre-fetch failed:', err));
 
     try { sessionStorage.removeItem('trust_selected_in_session'); } catch { /* ignore */ }
     try { sessionStorage.removeItem(OTP_FLOW_KEY); } catch { /* ignore */ }
@@ -242,7 +209,6 @@ function OTPVerification() {
     return true;
   };
 
-  // ─── OTP Submit ─────────────────────────────────────────────────────────────
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
@@ -261,7 +227,10 @@ function OTPVerification() {
         return;
       }
 
-      const result = await verifyOTP(phoneNumber, otp);
+      const result = await verifyOTP(phoneNumber, otp, {
+        secretCode,
+        trustId: normalizeText(TRUST_ID || authDefaultTrust.id)
+      });
       if (!result.success) {
         setError(result.message || 'Invalid OTP. Please try again.');
         setLoading(false);
@@ -301,86 +270,68 @@ function OTPVerification() {
     navigate('/login', { replace: true });
   };
 
-  // ─── Derived values ─────────────────────────────────────────────────────────────────────
-  // Only show logo when Supabase returns a real icon_url — no fallback to Mah-Setu image
-  const displayLogo = trustInfo?.icon_url || null;
-  const displayName = trustInfo?.name || 'Mahila Mandal';
-
   if (!canRenderOtpPage) return null;
 
-  // ─── Render ──────────────────────────────────────────────────────────────────
+  const hasOtp = otp.length === 6;
+  const hasSecretCode = secretCode.trim().length > 0;
+  const isSubmitDisabled = loading || (!otpVerified && !hasOtp && !hasSecretCode);
+
   return (
-    <div style={{ ...styles.page, color: theme?.themeConfig?.typography?.body_text_color || 'var(--body-text-color)' }}>
-      {/* Ambient blobs */}
-      <div style={styles.blobTL} />
-      <div style={styles.blobBR} />
+    <div style={styles.page}>
+      <div style={styles.card}>
 
-      <div style={styles.wrapper}>
-        <div style={styles.card}>
+        {/* Gold top bar */}
+        <div style={styles.accentBar} />
 
-          {/* Top accent bar */}
-          <div style={styles.topBar} />
+        <div style={styles.cardBody}>
 
-          {/* Logo — shows Supabase icon_url; monogram placeholder while loading */}
-          <div style={styles.logoWrap}>
-            <div style={styles.logoRing}>
-              {displayLogo ? (
-                <img
-                  src={displayLogo}
-                  alt={displayName || 'Trust Logo'}
-                  style={styles.logoImg}
-                  loading="eager"
-                  onError={(e) => {
-                    // Hide broken image; do not fall back to Mah-Setu logo
-                    e.currentTarget.style.display = 'none';
-                  }}
-                />
-              ) : (
-                <div style={styles.logoMonogram}>
-                  {(displayName || 'EU').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()}
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Header */}
-          <div style={styles.headerWrap}>
-            <h1 style={styles.heading}>{otpVerified ? 'Select Account' : 'Verify OTP'}</h1>
-            <div style={styles.divider}>
-              <span style={styles.divLine} />
-              <span style={styles.divDot} />
-              <span style={styles.divLine} />
-            </div>
-            <p style={styles.subtext}>
-              {otpVerified ? 'Choose the account you want to continue with' : 'Enter the 6-digit OTP sent to'}
+          {/* Heading */}
+          <div style={styles.headingGroup}>
+            <h1 style={styles.heading}>
+              {otpVerified ? 'Select Account' : 'Verify OTP'}
+            </h1>
+            <p style={styles.subheading}>
+              {otpVerified
+                ? 'Choose the account you want to continue with'
+                : <><span style={styles.subheadingMuted}>OTP sent to </span><span style={styles.subheadingPhone}>+91 {phoneNumber}</span></>
+              }
             </p>
-            {!otpVerified && phoneNumber && (
-              <p style={styles.phone}>+91 {phoneNumber}</p>
-            )}
           </div>
 
-          {/* Form */}
           <form onSubmit={handleSubmit} style={styles.form}>
-            <div style={{ display: otpVerified ? 'none' : 'block' }}>
-              <label style={styles.label}>OTP Code</label>
-              <input
-                type="text"
-                placeholder="— — — — — —"
-                value={otp}
-                onChange={e => setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                maxLength={6}
-                required={!otpVerified}
-                onFocus={() => setFocused(true)}
-                onBlur={() => setFocused(false)}
-                autoComplete="one-time-code"
-                inputMode="numeric"
-                style={{
-                  ...styles.otpInput,
-                  ...(focused ? styles.otpInputFocus : {}),
-                }}
-              />
-            </div>
 
+            {/* OTP Input */}
+            {!otpVerified && (
+              <div style={styles.fieldGroup}>
+                <label style={styles.label}>OTP CODE</label>
+                <input
+                  type="text"
+                  placeholder="— — — — — —"
+                  value={otp}
+                  onChange={(e) => setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                  maxLength={6}
+                  required={!hasSecretCode}
+                  onFocus={() => setFocused(true)}
+                  onBlur={() => setFocused(false)}
+                  autoComplete="one-time-code"
+                  inputMode="numeric"
+                  style={{ ...styles.otpInput, ...(focused ? styles.otpInputFocus : {}) }}
+                />
+                <p style={styles.otpHint}>Enter the 6-digit code sent via SMS</p>
+
+                <label style={{ ...styles.label, marginTop: '8px' }}>OR SECRET CODE</label>
+                <input
+                  type="text"
+                  placeholder="Enter trust secret code"
+                  value={secretCode}
+                  onChange={(e) => setSecretCode(e.target.value)}
+                  style={styles.secretInput}
+                  autoComplete="off"
+                />
+              </div>
+            )}
+
+            {/* Account selection */}
             {otpVerified && (
               <div style={styles.accountList}>
                 {accountCandidates.map((account, index) => {
@@ -388,56 +339,60 @@ function OTPVerification() {
                   const name = account?.Name || account?.name || `Account ${index + 1}`;
                   const membershipNumber = account?.membership_number || account?.['Membership number'] || 'N/A';
                   const mobile = account?.mobile || account?.Mobile || phoneNumber;
+                  const isSelected = String(selectedAccountId) === accountId;
                   return (
-                    <label key={accountId} style={styles.accountItem}>
+                    <label
+                      key={accountId}
+                      style={{ ...styles.accountItem, ...(isSelected ? styles.accountItemSelected : {}) }}
+                    >
                       <input
                         type="radio"
                         name="selected-account"
                         value={accountId}
-                        checked={String(selectedAccountId) === accountId}
+                        checked={isSelected}
                         onChange={(e) => setSelectedAccountId(e.target.value)}
+                        style={styles.radioInput}
                       />
-                      <div style={styles.accountMeta}>
-                        <span style={styles.accountName}>{name}</span>
-                        <span style={styles.accountSub}>Membership: {membershipNumber}</span>
-                        <span style={styles.accountSub}>Mobile: {mobile}</span>
+                      <div style={styles.accountInfo}>
+                        <div style={styles.accountName}>{name}</div>
+                        <div style={styles.accountMeta}>
+                          <span style={styles.accountMetaItem}>#{membershipNumber}</span>
+                          <span style={styles.accountMetaDot} />
+                          <span style={styles.accountMetaItem}>{mobile}</span>
+                        </div>
                       </div>
+                      {isSelected && <div style={styles.checkmark}>✓</div>}
                     </label>
                   );
                 })}
               </div>
             )}
 
+            {/* Error */}
             {error && (
               <div style={styles.errorBox}>
-                <span>⚠️</span>
-                <span>{error}</span>
+                <span style={styles.errorIcon}>!</span>
+                {error}
               </div>
             )}
 
+            {/* Buttons */}
             <div style={styles.btnRow}>
-              <button
-                type="button"
-                onClick={handleBack}
-                style={styles.backBtn}
-              >
+              <button type="button" onClick={handleBack} style={styles.backBtn}>
                 ← Back
               </button>
               <button
                 type="submit"
-                disabled={loading || (!otpVerified && otp.length !== 6)}
-                style={{
-                  ...styles.verifyBtn,
-                  ...(loading || (!otpVerified && otp.length !== 6) ? styles.verifyBtnDisabled : {}),
-                }}
+                disabled={isSubmitDisabled}
+                style={{ ...styles.verifyBtn, ...(isSubmitDisabled ? styles.verifyBtnDisabled : {}) }}
               >
                 {loading ? (
-                  <span style={styles.btnInner}>
+                  <span style={styles.btnLoading}>
                     <span style={styles.spinner} />
-                    Verifying…
+                    Verifying...
                   </span>
                 ) : (
-                  <span style={styles.btnInner}>{otpVerified ? 'Continue' : 'Verify OTP ✓'}</span>
+                  otpVerified ? 'Continue →' : 'Verify OTP →'
                 )}
               </button>
             </div>
@@ -445,37 +400,24 @@ function OTPVerification() {
 
           {/* Resend */}
           {!otpVerified && (
-            <div style={styles.resendWrap}>
-              <p style={styles.resendText}>
-                Didn't receive the OTP?{' '}
-                <button onClick={handleBack} style={styles.resendBtn}>
-                  Try again
-                </button>
-              </p>
-            </div>
+            <p style={styles.resendText}>
+              Didn't receive OTP?{' '}
+              <button onClick={handleBack} style={styles.resendBtn}>
+                Try again
+              </button>
+            </p>
           )}
 
         </div>
       </div>
 
+      {/* Powered by SETU */}
+      <div style={styles.poweredBy}>
+        <span style={styles.poweredText}>Powered by</span>
+        <img src={setuLogo} alt="SETU" style={styles.poweredLogo} />
+      </div>
+
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
-        @keyframes fadeUp {
-          from { opacity: 0; transform: translateY(28px); }
-          to   { opacity: 1; transform: translateY(0); }
-        }
-        @keyframes float1 {
-          0%,100% { transform: translateY(0) scale(1); }
-          50%      { transform: translateY(-20px) scale(1.05); }
-        }
-        @keyframes float2 {
-          0%,100% { transform: translateY(0) scale(1); }
-          50%      { transform: translateY(16px) scale(0.97); }
-        }
-        @keyframes pulseRing {
-          0%,100% { box-shadow: 0 0 0 0   color-mix(in srgb, var(--brand-red) 20%, transparent); }
-          50%      { box-shadow: 0 0 0 12px color-mix(in srgb, var(--brand-red) 0%, transparent); }
-        }
         @keyframes spin {
           to { transform: rotate(360deg); }
         }
@@ -484,181 +426,283 @@ function OTPVerification() {
   );
 }
 
-// ─── Design tokens ─────────────────────────────────────────────────────────────
-const RED      = 'var(--brand-red)';
-const RED_DARK = 'var(--brand-red-dark)';
-const NAVY     = 'var(--brand-navy)';
-const WHITE    = 'var(--surface-color)';
-const GRAY     = 'var(--body-text-color)';
-const BORDER   = 'color-mix(in srgb, var(--brand-navy) 22%, transparent)';
-
 const styles = {
   page: {
-    fontFamily: "var(--font-family, 'Inter', sans-serif)",
     minHeight: '100vh',
-    background: 'var(--page-bg, var(--app-page-bg))',
-    position: 'relative', overflow: 'hidden',
-    display: 'flex', alignItems: 'center', justifyContent: 'center',
-    padding: '24px 16px',
-  },
-  blobTL: {
-    position: 'absolute', top: '-80px', left: '-80px',
-    width: '300px', height: '300px', borderRadius: '50%',
-    background: 'radial-gradient(circle, color-mix(in srgb, var(--brand-red) 16%, transparent) 0%, transparent 70%)',
-    animation: 'float1 7s ease-in-out infinite', pointerEvents: 'none',
-  },
-  blobBR: {
-    position: 'absolute', bottom: '-100px', right: '-80px',
-    width: '340px', height: '340px', borderRadius: '50%',
-    background: 'radial-gradient(circle, color-mix(in srgb, var(--brand-navy) 14%, transparent) 0%, transparent 70%)',
-    animation: 'float2 9s ease-in-out infinite', pointerEvents: 'none',
-  },
-  wrapper: {
-    position: 'relative', width: '100%', maxWidth: '420px',
-    animation: 'fadeUp 0.55s ease-out both',
+    background: '#1a1a1a',
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: '16px',
+    fontFamily: "'Inter', 'Helvetica Neue', sans-serif",
+    gap: '20px',
   },
   card: {
-    background: WHITE, borderRadius: '28px',
-    boxShadow: '0 24px 60px color-mix(in srgb, var(--brand-red) 11%, transparent), 0 8px 24px color-mix(in srgb, var(--brand-navy) 8%, transparent)',
-    border: '1px solid color-mix(in srgb, var(--brand-red) 10%, transparent)',
-    overflow: 'hidden', padding: '0 0 28px 0',
+    width: '100%',
+    maxWidth: '400px',
+    background: '#222222',
+    border: '1px solid #5c4a1e',
+    borderRadius: '14px',
+    overflow: 'hidden',
   },
-  topBar: {
-    height: '5px',
-    background: `linear-gradient(90deg, ${RED} 0%, ${NAVY} 60%, ${RED} 100%)`,
+  accentBar: {
+    height: '3px',
+    background: 'linear-gradient(90deg, #7a5a10, #d4af37, #f5d07a, #d4af37, #7a5a10)',
   },
-  logoWrap: {
-    display: 'flex', justifyContent: 'center',
-    marginTop: '28px', marginBottom: '16px',
+  cardBody: {
+    padding: '32px 24px 28px',
   },
-  logoRing: {
-    width: '80px', height: '80px', borderRadius: '50%',
-    background: WHITE,
-    display: 'flex', alignItems: 'center', justifyContent: 'center',
-    boxShadow: '0 0 0 4px var(--brand-red-light), 0 6px 20px color-mix(in srgb, var(--brand-red) 20%, transparent)',
-    animation: 'pulseRing 3s ease-in-out infinite',
-    padding: '6px',
+  headingGroup: {
+    marginBottom: '28px',
+    borderBottom: '1px solid #1e1a08',
+    paddingBottom: '22px',
+    textAlign: 'center',
   },
-  logoImg: {
-    width: '100%', height: '100%',
-    objectFit: 'contain', borderRadius: '50%',
+  heading: {
+    margin: 0,
+    fontSize: '28px',
+    fontWeight: 700,
+    color: '#f5d07a',
+    letterSpacing: '-0.5px',
+    fontFamily: "'Palatino Linotype', Palatino, Georgia, serif",
   },
-  logoMonogram: {
-    width: '100%', height: '100%', borderRadius: '50%',
-    display: 'flex', alignItems: 'center', justifyContent: 'center',
-    background: 'linear-gradient(135deg, var(--brand-red-light) 0%, var(--brand-navy-light) 100%)',
-    color: NAVY, fontWeight: 800, fontSize: '24px', letterSpacing: '1px',
+  subheading: {
+    margin: '6px 0 0',
+    fontSize: '13px',
   },
-
-  headerWrap: { textAlign: 'center', padding: '0 24px', marginBottom: '20px' },
-  heading: { fontSize: '24px', fontWeight: 800, color: NAVY, margin: '0 0 6px 0', letterSpacing: '-0.4px' },
-  divider: {
-    display: 'flex', alignItems: 'center', justifyContent: 'center',
-    gap: '8px', margin: '0 auto 10px auto', width: '120px',
+  subheadingMuted: {
+    color: '#7a7060',
   },
-  divLine: {
-    flex: 1, height: '1.5px',
-    background: `linear-gradient(to right, transparent, ${RED})`,
-    borderRadius: '2px',
+  subheadingPhone: {
+    color: '#d4af37',
+    fontWeight: 600,
+    fontFamily: 'monospace',
+    letterSpacing: '0.5px',
   },
-  divDot: { width: '6px', height: '6px', borderRadius: '50%', background: RED, display: 'inline-block' },
-  subtext: { fontSize: '13px', color: GRAY, margin: 0, fontWeight: 500 },
-  phone: { fontSize: '16px', fontWeight: 700, color: NAVY, margin: '4px 0 0 0' },
-
-  form: { padding: '0 24px', display: 'flex', flexDirection: 'column', gap: '14px' },
-  label: { display: 'block', fontSize: '12px', fontWeight: 700, color: NAVY, textTransform: 'uppercase', letterSpacing: '0.10em', marginBottom: '8px' },
+  form: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '14px',
+  },
+  fieldGroup: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '7px',
+  },
+  label: {
+    fontSize: '10px',
+    color: '#c9a84c',
+    fontWeight: 700,
+    letterSpacing: '1.3px',
+  },
   otpInput: {
-    width: '100%', boxSizing: 'border-box',
-    padding: '16px 12px', fontSize: '28px',
-    textAlign: 'center', letterSpacing: '0.5em',
-    fontWeight: 700, color: 'var(--body-text-color)',
-    border: `2px solid ${BORDER}`, borderRadius: '16px',
-    background: 'color-mix(in srgb, var(--app-accent-bg) 72%, var(--surface-color))', outline: 'none',
-    fontFamily: "var(--font-family, 'Inter', monospace)",
-    transition: 'all 0.22s ease',
+    border: '1px solid #2e2710',
+    borderRadius: '8px',
+    background: '#080808',
+    color: '#f5d07a',
+    padding: '16px',
+    fontSize: '26px',
+    letterSpacing: '0.5em',
+    outline: 'none',
+    fontFamily: 'monospace',
+    fontWeight: 600,
+    transition: 'border-color 0.15s',
+    width: '100%',
+    boxSizing: 'border-box',
+    textAlign: 'center',
   },
   otpInputFocus: {
-    borderColor: RED, background: 'color-mix(in srgb, var(--surface-color) 85%, var(--brand-red-light))',
-    boxShadow: '0 0 0 4px color-mix(in srgb, var(--brand-red) 11%, transparent)',
+    borderColor: '#d4af37',
+    background: '#0d0d0d',
+  },
+  otpHint: {
+    margin: 0,
+    fontSize: '11px',
+    color: '#4a4030',
+    textAlign: 'center',
+  },
+  secretInput: {
+    border: '1px solid #5a4a1a',
+    borderRadius: '8px',
+    background: '#1f1f1f',
+    color: '#f3e6bf',
+    padding: '12px 14px',
+    fontSize: '14px',
+    outline: 'none',
+    fontFamily: "'Inter', sans-serif",
   },
   accountList: {
     display: 'flex',
     flexDirection: 'column',
-    gap: '10px',
+    gap: '8px',
   },
   accountItem: {
     display: 'flex',
-    alignItems: 'flex-start',
-    gap: '10px',
-    border: `1px solid ${BORDER}`,
-    borderRadius: '12px',
-    padding: '10px 12px',
-    background: 'color-mix(in srgb, var(--app-accent-bg) 72%, var(--surface-color))',
+    alignItems: 'center',
+    gap: '12px',
+    border: '1px solid #2e2710',
+    borderRadius: '8px',
+    padding: '13px',
+    background: '#080808',
     cursor: 'pointer',
+    transition: 'border-color 0.15s',
+  },
+  accountItemSelected: {
+    borderColor: '#d4af37',
+    background: '#0d0d08',
+  },
+  radioInput: {
+    accentColor: '#d4af37',
+    width: '16px',
+    height: '16px',
+    flexShrink: 0,
+  },
+  accountInfo: {
+    flex: 1,
+  },
+  accountName: {
+    fontWeight: 700,
+    color: '#f5d07a',
+    fontSize: '14px',
   },
   accountMeta: {
     display: 'flex',
-    flexDirection: 'column',
-    gap: '2px',
+    alignItems: 'center',
+    gap: '6px',
+    marginTop: '3px',
   },
-  accountName: {
+  accountMetaItem: {
+    color: '#7a7060',
+    fontSize: '12px',
+  },
+  accountMetaDot: {
+    display: 'inline-block',
+    width: '3px',
+    height: '3px',
+    background: '#5a4010',
+    borderRadius: '50%',
+  },
+  checkmark: {
     fontSize: '14px',
     fontWeight: 700,
-    color: NAVY,
+    color: '#d4af37',
+    flexShrink: 0,
   },
-  accountSub: {
-    fontSize: '12px',
-    color: GRAY,
-    fontWeight: 500,
-  },
-
   errorBox: {
-    display: 'flex', alignItems: 'center', gap: '8px',
-    background: 'var(--brand-red-light)', border: '1.5px solid color-mix(in srgb, var(--brand-red) 28%, transparent)',
-    borderRadius: '12px', padding: '12px 14px',
-    fontSize: '13px', fontWeight: 500, color: RED_DARK,
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    background: '#1a1100',
+    border: '1px solid #3a2800',
+    color: '#f5c842',
+    borderRadius: '7px',
+    padding: '10px 13px',
+    fontSize: '13px',
   },
-
-  btnRow: { display: 'flex', gap: '12px', marginTop: '4px' },
+  errorIcon: {
+    display: 'inline-flex',
+    width: '17px',
+    height: '17px',
+    border: '1.5px solid #d4af37',
+    borderRadius: '50%',
+    alignItems: 'center',
+    justifyContent: 'center',
+    fontSize: '10px',
+    fontWeight: 700,
+    flexShrink: 0,
+  },
+  btnRow: {
+    display: 'flex',
+    gap: '10px',
+  },
   backBtn: {
-    flex: 1, padding: '14px', borderRadius: '16px',
-    border: 'none', cursor: 'pointer',
-    background: 'var(--brand-navy-light)', color: NAVY,
-    fontSize: '15px', fontWeight: 700,
-    fontFamily: "var(--font-family, 'Inter', sans-serif)",
-    transition: 'all 0.2s ease',
+    flex: 1,
+    border: '1px solid #2e2710',
+    borderRadius: '8px',
+    padding: '14px',
+    background: '#080808',
+    color: '#c9a84c',
+    fontWeight: 600,
+    cursor: 'pointer',
+    fontSize: '14px',
+    fontFamily: "'Inter', sans-serif",
+    transition: 'border-color 0.15s',
   },
   verifyBtn: {
-    flex: 2, padding: '14px', borderRadius: '16px',
-    border: 'none', cursor: 'pointer',
-    background: `linear-gradient(135deg, ${RED} 0%, ${RED_DARK} 50%, ${NAVY} 100%)`,
-    color: WHITE, fontSize: '15px', fontWeight: 700,
-    fontFamily: "var(--font-family, 'Inter', sans-serif)",
-    boxShadow: '0 8px 24px color-mix(in srgb, var(--brand-red) 32%, transparent)',
-    transition: 'all 0.2s ease',
+    flex: 2,
+    border: 'none',
+    borderRadius: '8px',
+    padding: '14px',
+    background: '#d4af37',
+    color: '#080808',
+    fontWeight: 700,
+    cursor: 'pointer',
+    fontSize: '15px',
+    fontFamily: "'Inter', sans-serif",
+    transition: 'opacity 0.15s',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: '6px',
   },
-  verifyBtnDisabled: { opacity: 0.52, cursor: 'not-allowed', boxShadow: 'none' },
-  btnInner: { display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' },
+  verifyBtnDisabled: {
+    opacity: 0.35,
+    cursor: 'not-allowed',
+  },
+  btnLoading: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: '8px',
+  },
   spinner: {
-    width: '16px', height: '16px',
-    border: '2.5px solid color-mix(in srgb, var(--surface-color) 35%, transparent)',
-    borderTop: '2.5px solid var(--surface-color)',
-    borderRadius: '50%', display: 'inline-block',
-    animation: 'spin 0.75s linear infinite',
+    display: 'inline-block',
+    width: '14px',
+    height: '14px',
+    border: '2px solid rgba(8,8,8,0.3)',
+    borderTopColor: '#080808',
+    borderRadius: '50%',
+    animation: 'spin 0.7s linear infinite',
   },
-
-  resendWrap: {
-    marginTop: '20px', paddingTop: '16px',
-    borderTop: `1px solid ${BORDER}`, textAlign: 'center',
+  resendText: {
+    marginTop: '12px',
+    fontSize: '12px',
+    color: '#4a4030',
+    textAlign: 'center',
   },
-  resendText: { fontSize: '13px', color: GRAY, margin: 0 },
   resendBtn: {
-    background: 'none', border: 'none', cursor: 'pointer',
-    color: RED, fontWeight: 700, fontSize: '13px',
-    fontFamily: "var(--font-family, 'Inter', sans-serif)",
+    border: 'none',
+    background: 'transparent',
+    color: '#d4af37',
+    fontWeight: 700,
+    cursor: 'pointer',
     padding: 0,
+    fontFamily: "'Inter', sans-serif",
+    fontSize: '12px',
+    borderBottom: '1px solid #5a4010',
+  },
+  poweredBy: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: '10px',
+  },
+  poweredText: {
+    fontSize: '11px',
+    color: '#6e5a27',
+    letterSpacing: '0.8px',
+    textTransform: 'uppercase',
+  },
+  poweredLogo: {
+    width: '84px',
+    height: '36px',
+    objectFit: 'contain',
+    border: '1px solid #5c4a1e',
+    borderRadius: '6px',
+    background: '#111111',
+    padding: '2px',
   },
 };
 
 export default OTPVerification;
-

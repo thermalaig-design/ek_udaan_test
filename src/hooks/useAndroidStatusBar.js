@@ -13,9 +13,9 @@ export const useAndroidStatusBar = () => {
         try {
           // Set status bar style - light content on dark background
           await StatusBar.setStyle({ style: 'LIGHT' });
-          
-          // Set status bar background color to match navbar
-          await StatusBar.setBackgroundColor({ color: '#FFFFFF' });
+          await StatusBar.setOverlaysWebView({ overlay: false });
+          // Avoid white strip by matching app shell tone
+          await StatusBar.setBackgroundColor({ color: '#111827' });
           
           console.log('✅ Android Status Bar configured');
         } catch (error) {

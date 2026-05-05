@@ -29,6 +29,7 @@ import {
 import { useBackNavigation } from './hooks';
 import { checkPhoneNumber, verifyOTP } from './services/authService';
 import { fetchDirectoryData } from './services/directoryService';
+import { logUserSessionEvent } from './services/sessionAuditService';
 import logo from '../new_logo.png';
 
 const DEFAULT_TRUST_NAME = import.meta.env.VITE_DEFAULT_TRUST_NAME || 'Ek Udaan';
@@ -230,6 +231,11 @@ function VIPLogin({ onNavigate, onLogout }) {
       // Save user
       localStorage.setItem('user', JSON.stringify(pendingUser));
       localStorage.setItem('isLoggedIn', 'true');
+      await logUserSessionEvent({
+        user: pendingUser,
+        actionType: 'login',
+        extra: { source: 'vip-login' }
+      });
       try { sessionStorage.removeItem('trust_selected_in_session'); } catch (_) {}
       const memberships = Array.isArray(pendingUser?.hospital_memberships) ? pendingUser.hospital_memberships : [];
       const baseMembership = memberships.find((m) => String(m?.trust_id || '') === String(BASE_TRUST_ID)) || null;
@@ -272,7 +278,16 @@ function VIPLogin({ onNavigate, onLogout }) {
     }
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    if (onLogout) {
+      await onLogout('logout', user || pendingUser || null);
+      return;
+    }
+    await logUserSessionEvent({
+      user: user || pendingUser || null,
+      actionType: 'logout',
+      extra: { source: 'vip-manual-fallback' }
+    });
     localStorage.removeItem('isLoggedIn');
     localStorage.removeItem('user');
     sessionStorage.clear();
@@ -289,7 +304,6 @@ function VIPLogin({ onNavigate, onLogout }) {
       mobile: '',
       email: ''
     });
-    if (onLogout) onLogout();
     setStep('phone');
   };
   
@@ -393,11 +407,17 @@ function VIPLogin({ onNavigate, onLogout }) {
                   <span className="pl-4 text-base font-bold text-gray-500">+91</span>
                   <input
                     type="tel"
+                    name="phone"
                     placeholder="10-digit mobile number"
                     value={phoneNumber}
                     onChange={e => setPhoneNumber(e.target.value.replace(/\D/g, ''))}
                     maxLength={10}
                     required
+                    autoComplete="tel-national"
+                    inputMode="numeric"
+                    autoCapitalize="off"
+                    autoCorrect="off"
+                    spellCheck={false}
                     className="flex-1 bg-transparent px-3 py-4 text-lg text-gray-900 placeholder:text-gray-300 focus:outline-none"
                   />
                   <Phone className="h-5 w-5 text-amber-400 mr-4" />
@@ -744,8 +764,14 @@ function VIPLogin({ onNavigate, onLogout }) {
                       <Phone className="h-4 w-4 text-amber-500" />
                       <input
                         type="tel"
+                        name="mobile"
                         value={applicationForm.mobile}
                         onChange={handleApplicationChange('mobile')}
+                        autoComplete="tel-national"
+                        inputMode="numeric"
+                        autoCapitalize="off"
+                        autoCorrect="off"
+                        spellCheck={false}
                         className="flex-1 bg-transparent text-sm text-gray-800 placeholder:text-gray-300 focus:outline-none"
                         placeholder="Mobile number"
                       />

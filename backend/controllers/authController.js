@@ -1,4 +1,4 @@
-import { initializePhoneAuth, verifyOTP, checkPhoneExists } from '../services/otpService.js';
+﻿import { initializePhoneAuth, verifyOTP, checkPhoneExists } from '../services/otpService.js';
 
 /**
  * Special login for phone number 9911334455 - bypass OTP
@@ -31,7 +31,7 @@ export const specialLogin = async (req, res, next) => {
       });
     }
     
-    console.log(`🔧 Special login attempt for ${phoneNumber} with passcode ${passcode}`);
+    console.log(`ðŸ”§ Special login attempt for ${phoneNumber} with passcode ${passcode}`);
     
     // Check if phone exists in database
     const phoneCheck = await checkPhoneExists(phoneNumber);
@@ -53,7 +53,7 @@ export const specialLogin = async (req, res, next) => {
     });
     
   } catch (error) {
-    console.error('❌ Error in specialLogin:', error);
+    console.error('âŒ Error in specialLogin:', error);
     next(error);
   }
 };
@@ -82,7 +82,7 @@ export const checkPhone = async (req, res, next) => {
       });
     }
     
-    console.log(`📱 Checking phone and sending OTP: ${cleanPhone}`);
+    console.log(`ðŸ“± Checking phone and sending OTP: ${cleanPhone}`);
     
     const result = await initializePhoneAuth(cleanPhone);
     
@@ -101,7 +101,7 @@ export const checkPhone = async (req, res, next) => {
     });
     
   } catch (error) {
-    console.error('❌ Error in checkPhone:', error);
+    console.error('âŒ Error in checkPhone:', error);
     next(error);
   }
 };
@@ -111,39 +111,56 @@ export const checkPhone = async (req, res, next) => {
  */
 export const verifyOTPController = async (req, res, next) => {
   try {
-    const { phoneNumber, otp } = req.body;
-    
-    // Validate input
-    if (!phoneNumber || !otp) {
+    const { phoneNumber, otp, secretCode, trustId } = req.body;
+
+    if (!phoneNumber) {
       return res.status(400).json({
         success: false,
-        message: 'Phone number and OTP are required'
+        message: 'Phone number is required'
       });
     }
-    
-    // Validate OTP format (6 digits)
-    if (!/^\d{6}$/.test(otp)) {
+
+    const normalizedOtp = String(otp || '').trim();
+    const normalizedSecretCode = String(secretCode || '').trim();
+    const normalizedTrustId = String(trustId || '').trim();
+
+    if (!normalizedOtp && !normalizedSecretCode) {
+      return res.status(400).json({
+        success: false,
+        message: 'OTP or secret code is required'
+      });
+    }
+
+    if (normalizedOtp && !/^\d{6}$/.test(normalizedOtp)) {
       return res.status(400).json({
         success: false,
         message: 'OTP must be 6 digits'
       });
     }
-    
-    console.log(`🔍 Verifying OTP for ${phoneNumber}`);
-    
-    const result = await verifyOTP(phoneNumber, otp);
-    
+
+    if (normalizedSecretCode && !normalizedTrustId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Trust ID is required for secret code verification'
+      });
+    }
+
+    const result = await verifyOTP(phoneNumber, normalizedOtp, {
+      secretCode: normalizedSecretCode,
+      trustId: normalizedTrustId
+    });
+
     if (!result.success) {
       return res.status(400).json(result);
     }
-    
+
     res.status(200).json({
       success: true,
-      message: 'OTP verified successfully'
+      message: result.usedSecretCode ? 'Secret code verified successfully' : 'OTP verified successfully'
     });
-    
+
   } catch (error) {
-    console.error('❌ Error in verifyOTP:', error);
+    console.error('Error in verifyOTP:', error);
     next(error);
   }
 };

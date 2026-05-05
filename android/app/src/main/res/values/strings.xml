@@ -1,7 +1,7 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
-    <string name="app_name">MAH SETU</string>
-    <string name="title_activity_main">MAH SETU</string>
+    <string name="app_name">Ek Udaan</string>
+    <string name="title_activity_main">Ek Udaan</string>
     <string name="package_name">com.maharajaagarsen.app</string>
     <string name="custom_url_scheme">com.maharajaagarsen.app</string>
 </resources>

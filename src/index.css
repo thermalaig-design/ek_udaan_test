@@ -145,8 +145,8 @@ body {
 
 @supports (padding: max(0px)) {
   body {
-    padding-top: max(0px, var(--safe-area-top));
-    padding-bottom: max(0px, var(--safe-area-bottom));
+    padding-top: 0px;
+    padding-bottom: 0px;
     padding-left: 0px;
     padding-right: 0px;
   }

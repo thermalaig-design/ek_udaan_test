@@ -1,4 +1,4 @@
-import { supabase } from '../config/supabase.js';
+﻿import { supabase } from '../config/supabase.js';
 import axios from 'axios';
 import process from 'process';
 import { initializeFast2SMSService, verifyOTP as verifyFast2SMSOTP } from './fast2smsService.js';
@@ -42,7 +42,7 @@ export const sendOTP = async (phoneNumber, otp) => {
       formattedPhone = cleanPhone;
     }
     
-    console.log(`📱 Sending OTP ${otp} to ${formattedPhone}`);
+    console.log(`ðŸ“± Sending OTP ${otp} to ${formattedPhone}`);
     
     const url = 'https://control.msg91.com/api/v5/otp';
     
@@ -62,7 +62,7 @@ export const sendOTP = async (phoneNumber, otp) => {
       }
     });
     
-    console.log('✅ MSG91 Response:', response.data);
+    console.log('âœ… MSG91 Response:', response.data);
     
     if (response.data.type === 'success') {
       return {
@@ -75,7 +75,7 @@ export const sendOTP = async (phoneNumber, otp) => {
     }
     
   } catch (error) {
-    console.error('❌ Error sending OTP via MSG91:', error.response?.data || error.message);
+    console.error('âŒ Error sending OTP via MSG91:', error.response?.data || error.message);
     throw new Error('Failed to send OTP. Please try again.');
   }
 };
@@ -98,7 +98,7 @@ export const verifyOTPWithMSG91 = async (phoneNumber, otp) => {
       formattedPhone = cleanPhone;
     }
     
-    console.log(`🔍 Verifying OTP ${otp} for ${formattedPhone}`);
+    console.log(`ðŸ” Verifying OTP ${otp} for ${formattedPhone}`);
     
     const url = 'https://control.msg91.com/api/v5/otp/verify';
     
@@ -115,7 +115,7 @@ export const verifyOTPWithMSG91 = async (phoneNumber, otp) => {
       }
     });
     
-    console.log('✅ MSG91 Verify Response:', response.data);
+    console.log('âœ… MSG91 Verify Response:', response.data);
     
     if (response.data.type === 'success') {
       return {
@@ -130,7 +130,7 @@ export const verifyOTPWithMSG91 = async (phoneNumber, otp) => {
     }
     
   } catch (error) {
-    console.error('❌ Error verifying OTP:', error.response?.data || error.message);
+    console.error('âŒ Error verifying OTP:', error.response?.data || error.message);
     return {
       success: false,
       message: 'Invalid or expired OTP'
@@ -218,7 +218,7 @@ export const checkPhoneExists = async (phoneNumber) => {
   try {
     const cleanPhone = phoneNumber.replace(/\D/g, '');
     
-    console.log(`🔍 Checking if phone ${cleanPhone} exists in database...`);
+    console.log(`ðŸ” Checking if phone ${cleanPhone} exists in database...`);
     
     const searchPatterns = [];
     
@@ -239,7 +239,7 @@ export const checkPhoneExists = async (phoneNumber) => {
     
     const uniquePatterns = [...new Set(searchPatterns)];
     
-    console.log('📱 Search patterns:', uniquePatterns);
+    console.log('ðŸ“± Search patterns:', uniquePatterns);
     
     // Build search conditions for Members table
     const conditions = [];
@@ -263,7 +263,7 @@ export const checkPhoneExists = async (phoneNumber) => {
     
     const searchCondition = conditions.join(',');
     
-    // ── (1) Check in new Members table ──────────────────────────────────────
+    // â”€â”€ (1) Check in new Members table â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     const { data: memberData, error: memberError } = await supabase
       .from('Members')
       .select(`
@@ -282,11 +282,11 @@ export const checkPhoneExists = async (phoneNumber) => {
       .limit(1);
     
     if (memberError) {
-      console.error('❌ Error querying Members:', memberError);
+      console.error('âŒ Error querying Members:', memberError);
     }
     
     if (memberData && memberData.length > 0) {
-      console.log('✅ Phone found in Members');
+      console.log('âœ… Phone found in Members');
       const member = memberData[0];
       
       const mergedUser = {
@@ -308,7 +308,7 @@ export const checkPhoneExists = async (phoneNumber) => {
         membership_number: null
       };
 
-      // ── (2) Fetch trust memberships from reg_members ──────────────────────
+      // â”€â”€ (2) Fetch trust memberships from reg_members â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       if (member.members_id) {
         const { data: regMemberships, error: membershipError } = await supabase
           .from('reg_members')
@@ -368,7 +368,7 @@ export const checkPhoneExists = async (phoneNumber) => {
       };
     }
     
-    // ── (3) Check in opd_schedule ─────────────────────────────────────────
+    // â”€â”€ (3) Check in opd_schedule â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     const opdConditions = [];
     uniquePatterns.forEach(pattern => {
       opdConditions.push(`mobile.ilike.%${pattern}%`);
@@ -384,7 +384,7 @@ export const checkPhoneExists = async (phoneNumber) => {
       .limit(1);
     
     if (opdData && opdData.length > 0) {
-      console.log('✅ Phone found in opd_schedule');
+      console.log('âœ… Phone found in opd_schedule');
       return {
         exists: true,
         table: 'opd_schedule',
@@ -399,7 +399,7 @@ export const checkPhoneExists = async (phoneNumber) => {
       };
     }
     
-    // ── (4) Check in hospitals ────────────────────────────────────────────
+    // â”€â”€ (4) Check in hospitals â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     const hospitalConditions = [];
     uniquePatterns.forEach(pattern => {
       hospitalConditions.push(`contact_phone.ilike.%${pattern}%`);
@@ -414,7 +414,7 @@ export const checkPhoneExists = async (phoneNumber) => {
       .limit(1);
     
     if (hospitalData && hospitalData.length > 0) {
-      console.log('✅ Phone found in hospitals');
+      console.log('âœ… Phone found in hospitals');
       return {
         exists: true,
         table: 'hospitals',
@@ -428,7 +428,7 @@ export const checkPhoneExists = async (phoneNumber) => {
       };
     }
     
-    console.log('❌ Phone not found in any table');
+    console.log('âŒ Phone not found in any table');
     return {
       exists: false,
       table: null,
@@ -436,7 +436,7 @@ export const checkPhoneExists = async (phoneNumber) => {
     };
     
   } catch (error) {
-    console.error('❌ Error checking phone existence:', error);
+    console.error('âŒ Error checking phone existence:', error);
     throw error;
   }
 };
@@ -482,10 +482,10 @@ export const initializePhoneAuth = async (phoneNumber) => {
     
     if (FAST2SMS_API_KEY) {
       try {
-        console.log('🔄 Using Fast2SMS as OTP service');
+        console.log('ðŸ”„ Using Fast2SMS as OTP service');
         sendResult = await initializeFast2SMSService(cleanPhone);
       } catch (fast2smsError) {
-        console.error('❌ Fast2SMS failed:', fast2smsError.message);
+        console.error('âŒ Fast2SMS failed:', fast2smsError.message);
         throw new Error('Failed to send OTP via Fast2SMS. Please complete website verification in your Fast2SMS account.');
       }
     } else {
@@ -496,7 +496,7 @@ export const initializePhoneAuth = async (phoneNumber) => {
       throw new Error('Failed to send OTP');
     }
     
-    console.log(`📱 OTP sent successfully to ${formattedPhone}`);
+    console.log(`ðŸ“± OTP sent successfully to ${formattedPhone}`);
     
     return {
       success: true,
@@ -509,7 +509,7 @@ export const initializePhoneAuth = async (phoneNumber) => {
     };
     
   } catch (error) {
-    console.error('❌ Error in initializePhoneAuth:', error);
+    console.error('âŒ Error in initializePhoneAuth:', error);
     throw error;
   }
 };
@@ -517,36 +517,91 @@ export const initializePhoneAuth = async (phoneNumber) => {
 /**
  * Verify OTP
  */
-export const verifyOTP = async (phoneNumber, otp) => {
+const verifyTrustSecretCode = async (trustId, secretCode) => {
   try {
-    console.log(`🔍 Verifying OTP for ${phoneNumber}`);
-    
-    // 🔧 DEVELOPMENT MODE BYPASS - Accept 123456 as master OTP
-    if (NODE_ENV === 'development' && otp === '123456') {
-      console.log('🔧 DEVELOPMENT MODE: Bypassing OTP verification with master code 123456');
+    const normalizedTrustId = String(trustId || '').trim();
+    const normalizedSecretCode = String(secretCode || '').trim();
+    if (!normalizedTrustId || !normalizedSecretCode) {
+      return { success: false, message: 'Trust ID and secret code are required' };
+    }
+
+    const { data: trustRow, error } = await supabase
+      .from('Trust')
+      .select('id, secretcode')
+      .eq('id', normalizedTrustId)
+      .maybeSingle();
+
+    if (error) {
+      console.error('Trust secret code lookup error:', error);
+      return { success: false, message: 'Unable to validate secret code' };
+    }
+
+    const expectedSecret = String(trustRow?.secretcode || '').trim();
+    if (!expectedSecret) {
+      return { success: false, message: 'Secret code is not configured for this trust' };
+    }
+
+    if (normalizedSecretCode === expectedSecret) {
+      return { success: true, message: 'Secret code verified successfully' };
+    }
+
+    return { success: false, message: 'Invalid secret code' };
+  } catch (error) {
+    console.error('Error verifying trust secret code:', error);
+    return { success: false, message: 'Failed to verify secret code' };
+  }
+};
+
+/**
+ * Verify OTP OR secret code
+ */
+export const verifyOTP = async (phoneNumber, otp, options = {}) => {
+  try {
+    const { secretCode = '', trustId = '' } = options || {};
+    const normalizedOtp = String(otp || '').trim();
+    const normalizedSecretCode = String(secretCode || '').trim();
+
+    console.log(`Verifying OTP for ${phoneNumber}`);
+
+    if (normalizedOtp && NODE_ENV === 'development' && normalizedOtp === '123456') {
       return {
         success: true,
         message: 'OTP verified successfully (Development mode)'
       };
     }
-    
-    // Verify OTP via Fast2SMS only
-    if (FAST2SMS_API_KEY) {
-      const fast2smsResult = verifyFast2SMSOTP(phoneNumber, otp);
-      if (fast2smsResult.success) {
-        return fast2smsResult;
+
+    if (normalizedOtp) {
+      if (FAST2SMS_API_KEY) {
+        const fast2smsResult = verifyFast2SMSOTP(phoneNumber, normalizedOtp);
+        if (fast2smsResult.success) {
+          return fast2smsResult;
+        }
+
+        const localResult = verifyOTPLocal(phoneNumber, normalizedOtp);
+        if (localResult.success) return localResult;
       } else {
-        console.log('⚠️ Fast2SMS verification failed:', fast2smsResult.message);
-        // Try local verification as fallback
-        console.log('⚠️ Fast2SMS verification failed, trying local verification');
-        return verifyOTPLocal(phoneNumber, otp);
+        throw new Error('Fast2SMS API key not configured for verification');
       }
-    } else {
-      throw new Error('Fast2SMS API key not configured for verification');
     }
-    
+
+    if (normalizedSecretCode) {
+      const secretResult = await verifyTrustSecretCode(trustId, normalizedSecretCode);
+      if (secretResult.success) {
+        return {
+          success: true,
+          message: 'Secret code verified successfully',
+          usedSecretCode: true
+        };
+      }
+      return secretResult;
+    }
+
+    return {
+      success: false,
+      message: 'Invalid OTP or secret code'
+    };
   } catch (error) {
-    console.error('❌ Error verifying OTP:', error);
+    console.error('Error verifying OTP:', error);
     return {
       success: false,
       message: 'Failed to verify OTP'

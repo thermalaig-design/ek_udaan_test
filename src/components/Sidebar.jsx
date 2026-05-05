@@ -6,6 +6,7 @@ import { Capacitor } from '@capacitor/core';
 import { getProfile } from '../services/api';
 import { fetchFeatureFlags, isFeatureEnabled } from '../services/featureFlags';
 import { fetchShareAppLinksByTrustId } from '../services/trustService';
+import { logUserSessionEvent } from '../services/sessionAuditService';
 import { useAppTheme } from '../context/ThemeContext';
 import { applyOpacity } from '../utils/colorUtils';
 import { getThemeToken } from '../utils/themeUtils';
@@ -687,9 +688,22 @@ const Sidebar = ({ isOpen, onClose, onNavigate, currentPage, onLogout }) => {
         }}
       >
         <button
-          onClick={() => {
-            if (typeof onLogout === 'function') onLogout();
-            else {
+          onClick={async () => {
+            if (typeof onLogout === 'function') {
+              await onLogout();
+            } else {
+              let currentUser = null;
+              try {
+                const rawUser = localStorage.getItem('user');
+                if (rawUser) currentUser = JSON.parse(rawUser);
+              } catch {
+                currentUser = null;
+              }
+              await logUserSessionEvent({
+                user: currentUser,
+                actionType: 'logout',
+                extra: { source: 'sidebar-fallback' }
+              });
               localStorage.removeItem('user');
               localStorage.removeItem('isLoggedIn');
               localStorage.removeItem('lastVisitedRoute');

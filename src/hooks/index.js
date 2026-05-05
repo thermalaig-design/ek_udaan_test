@@ -18,5 +18,8 @@ export { useRegisterBackButton } from './useRegisterBackButton';
 export { useImprovedAndroidBack, useBackCleanup } from './useImprovedAndroidBack';
 export { useAndroidBack, useModalBackHandler, useProperBackNavigation } from './useAndroidBack';
 export { useTheme } from './useTheme';
+export { useAppVersion } from './useAppVersion';
+export { useTrustDataVersion } from './useTrustDataVersion';
+export { useInAppUpdate } from './useInAppUpdate';
 
 

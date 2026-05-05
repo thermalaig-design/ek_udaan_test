@@ -19,21 +19,11 @@ export const useAndroidSafeArea = () => {
     const initSafeArea = async () => {
       if (Capacitor.getPlatform() === 'android') {
         try {
-          // Get viewport info
-          const viewport = window.visualViewport;
-          
-          // Calculate safe area based on device orientation and viewport
-          let topSafeArea = 0;
-          let bottomSafeArea = 0;
-
-          // Status bar height (approximately)
-          if (window.outerHeight > window.innerHeight) {
-            topSafeArea = Math.max(24, window.outerHeight - window.innerHeight);
-          }
-
+          // Do not infer safe-area using outer/inner height.
+          // It can add an artificial top gap in Android WebView.
           const insets = {
-            top: topSafeArea,
-            bottom: bottomSafeArea || 0,
+            top: 0,
+            bottom: 0,
             left: 0,
             right: 0
           };

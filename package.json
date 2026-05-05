@@ -1,7 +1,7 @@
 {
   "name": "mah-setu",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.0.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -11,6 +11,7 @@
     "resize-icon": "node resize_icon.js"
   },
   "dependencies": {
+    "@capawesome/capacitor-app-update": "^7.0.1",
     "@capacitor/android": "^8.0.2",
     "@capacitor/app": "^8.0.1",
     "@capacitor/cli": "^8.0.2",

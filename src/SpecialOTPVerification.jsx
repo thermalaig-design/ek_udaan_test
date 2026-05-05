@@ -3,6 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { useBackNavigation } from './hooks';
 import { specialLogin } from './services/authService';
 import { fetchDirectoryData } from './services/directoryService';
+import { logUserSessionEvent } from './services/sessionAuditService';
 import { persistUserSession } from './utils/storageUtils';
 import { useAppTheme } from './context/ThemeContext';
 
@@ -54,6 +55,11 @@ function SpecialOTPVerification() {
           setLoading(false);
           return;
         }
+        await logUserSessionEvent({
+          user,
+          actionType: 'login',
+          extra: { source: 'special-otp' }
+        });
         const memberships = Array.isArray(user?.hospital_memberships) ? user.hospital_memberships : [];
         const baseMembership = memberships.find((m) => String(m?.trust_id || '') === String(TRUST_ID)) || null;
         const selectedTrustId = TRUST_ID;

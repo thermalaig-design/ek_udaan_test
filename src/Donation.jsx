@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAppTheme } from './context/ThemeContext';
 import { applyOpacity } from './utils/colorUtils';
 import { fetchDonationsByTrust, getDonationFormPrefill } from './services/donationService';
+import { TRUST_VERSION_UPDATED_EVENT } from './services/trustVersionService';
 
 const formatCurrency = (amount) => {
   const numeric = Number(amount);
@@ -103,8 +104,19 @@ const Donation = ({ onNavigate }) => {
       loadDonationScreen();
     };
 
+    const handleTrustVersionUpdated = (event) => {
+      const changedTrustId = String(event?.detail?.trustId || '').trim();
+      const selectedTrustId = String(localStorage.getItem('selected_trust_id') || '').trim();
+      if (!changedTrustId || changedTrustId !== selectedTrustId) return;
+      loadDonationScreen();
+    };
+
     window.addEventListener('trust-changed', handleTrustChange);
-    return () => window.removeEventListener('trust-changed', handleTrustChange);
+    window.addEventListener(TRUST_VERSION_UPDATED_EVENT, handleTrustVersionUpdated);
+    return () => {
+      window.removeEventListener('trust-changed', handleTrustChange);
+      window.removeEventListener(TRUST_VERSION_UPDATED_EVENT, handleTrustVersionUpdated);
+    };
   }, []);
 
   const donationSummary = (row) => {

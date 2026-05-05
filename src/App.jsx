@@ -41,6 +41,8 @@ import AdminUserProfiles from './admin/AdminUserProfiles';
 import ContactUs from './ContactUs';
 import MyFamily from './MyFamily';
 import { getCurrentNotificationContext, matchesNotificationForContext } from './services/notificationAudience';
+import { syncTrustVersion } from './services/trustVersionService';
+import { logUserSessionEvent } from './services/sessionAuditService';
 import { applyThemeCssVariables, scopeCustomCss } from './utils/themeUtils';
 import { colorToHex } from './utils/colorUtils';
 import {
@@ -54,12 +56,15 @@ import {
   useAndroidScreenOrientation,
   useAndroidKeyboard,
   useSwipeBackNavigation,
-  useTheme
+  useTheme,
+  useInAppUpdate
 } from './hooks';
 
 const LAST_THEME_CACHE_KEY = 'last_theme_cache_v2';
 const LEGACY_LAST_THEME_CACHE_KEY = 'last_theme_cache_v1';
 const LAST_SELECTED_TRUST_ID_KEY = 'last_selected_trust_id';
+const AUTO_LOGOUT_MINUTES = Number(import.meta.env.VITE_AUTO_LOGOUT_MINUTES || 30);
+const AUTO_LOGOUT_MS = Math.max(1, AUTO_LOGOUT_MINUTES) * 60 * 1000;
 const getPersistTrustCacheIndexKey = (trustId) => `theme_cache_persist_trust_v2_${trustId}`;
 
 const safeParse = (value) => {
@@ -251,6 +256,7 @@ const HospitalTrusteeApp = () => {
     applyThemeToDocument(cachedTheme);
   }, [resolvedThemeTrustId]);
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     const rootBrand = typeof window !== 'undefined'
       ? window.getComputedStyle(document.documentElement).getPropertyValue('--brand-red').trim()
@@ -266,8 +272,23 @@ const HospitalTrusteeApp = () => {
   useAndroidSafeArea();
   useAndroidScreenOrientation('PORTRAIT');
   useAndroidKeyboard();
+  useInAppUpdate();
 
-  const clearAuthAndRedirectToLogin = () => {
+  const clearAuthAndRedirectToLogin = async (reason = 'logout', explicitUser = null) => {
+    let currentUser = explicitUser;
+    if (!currentUser) {
+      try {
+        const rawUser = localStorage.getItem('user');
+        if (rawUser) currentUser = JSON.parse(rawUser);
+      } catch {
+        currentUser = null;
+      }
+    }
+    await logUserSessionEvent({
+      user: currentUser,
+      actionType: reason === 'autologout' ? 'autologout' : 'logout',
+      extra: { source: 'app-shell', reason }
+    });
     const resetTrust = resolveDefaultThemeTrust();
     localStorage.removeItem('isLoggedIn');
     localStorage.removeItem('user');
@@ -291,6 +312,47 @@ const HospitalTrusteeApp = () => {
     }));
     navigate('/login', { replace: true });
   };
+
+  useEffect(() => {
+    if (PUBLIC_ROUTES.includes(location.pathname)) return undefined;
+
+    const isLoggedIn = localStorage.getItem('isLoggedIn') === 'true';
+    if (!isLoggedIn) return undefined;
+
+    let isLoggingOut = false;
+    let lastActivityAt = Date.now();
+
+    const markActivity = () => {
+      lastActivityAt = Date.now();
+    };
+
+    // Keep activity signals strict so tiny cursor movement does not keep session alive.
+    const events = ['click', 'touchstart', 'keydown'];
+    events.forEach((evt) => window.addEventListener(evt, markActivity, { passive: true }));
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        markActivity();
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibilityChange);
+
+    const intervalId = setInterval(() => {
+      if (isLoggingOut) return;
+      const isStillLoggedIn = localStorage.getItem('isLoggedIn') === 'true';
+      if (!isStillLoggedIn) return;
+      const idleMs = Date.now() - lastActivityAt;
+      if (idleMs >= AUTO_LOGOUT_MS) {
+        isLoggingOut = true;
+        clearAuthAndRedirectToLogin('autologout');
+      }
+    }, 5000);
+
+    return () => {
+      clearInterval(intervalId);
+      events.forEach((evt) => window.removeEventListener(evt, markActivity));
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+    };
+  }, [location.pathname]);
 
   useEffect(() => {
     const syncTrustId = () => {
@@ -328,6 +390,51 @@ const HospitalTrusteeApp = () => {
       document.removeEventListener('visibilitychange', syncTrustId);
     };
   }, []);
+
+  useEffect(() => {
+    if (!activeTrustId) return undefined;
+
+    let cancelled = false;
+
+    const runVersionSync = async () => {
+      try {
+        await syncTrustVersion(activeTrustId);
+      } catch (error) {
+        if (!cancelled) {
+          console.warn('[TrustVersion] sync failed:', error?.message || error);
+        }
+      }
+    };
+
+    const onFocus = () => {
+      runVersionSync();
+    };
+
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') runVersionSync();
+    };
+
+    const onTrustChanged = (event) => {
+      const nextTrustId = String(event?.detail?.trustId || localStorage.getItem('selected_trust_id') || '').trim();
+      if (nextTrustId) {
+        syncTrustVersion(nextTrustId).catch((error) => {
+          console.warn('[TrustVersion] trust change sync failed:', error?.message || error);
+        });
+      }
+    };
+
+    runVersionSync();
+    window.addEventListener('focus', onFocus);
+    document.addEventListener('visibilitychange', onVisibility);
+    window.addEventListener('trust-changed', onTrustChanged);
+
+    return () => {
+      cancelled = true;
+      window.removeEventListener('focus', onFocus);
+      document.removeEventListener('visibilitychange', onVisibility);
+      window.removeEventListener('trust-changed', onTrustChanged);
+    };
+  }, [activeTrustId]);
 
   useEffect(() => {
     applyThemeToDocument(appTheme);

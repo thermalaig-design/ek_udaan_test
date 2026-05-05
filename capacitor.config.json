@@ -1,12 +1,13 @@
 {
   "appId": "com.maharajaagarsen.app",
-  "appName": "Mah-Setu",
+  "appName": "Ek Udaan",
   "webDir": "dist",
   "bundledWebRuntime": false,
   "plugins": {
     "StatusBar": {
       "style": "LIGHT",
-      "backgroundColor": "#FFFFFF"
+      "backgroundColor": "#111827",
+      "overlaysWebView": false
     },
     "SplashScreen": {
       "launchAutoHide": true,
@@ -18,6 +19,6 @@
     }
   },
   "android": {
-    "backgroundColor": "#FFFFFF"
+    "backgroundColor": "#111827"
   }
 }
