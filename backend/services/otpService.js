@@ -11,6 +11,8 @@ const FAST2SMS_API_KEY = process.env.FAST2SMS_API_KEY;
 const OTP_SERVICE_PREFERENCE = process.env.OTP_SERVICE_PREFERENCE || 'fast2sms'; // 'fast2sms' or 'msg91'
 const OTP_EXPIRY_MINUTES = parseInt(process.env.OTP_EXPIRY_MINUTES) || 5;
 const NODE_ENV = process.env.NODE_ENV || 'production';
+const DEV_BYPASS_PHONE = '9911223344';
+const DEV_BYPASS_OTP = '987654';
 
 // In-memory OTP storage (for production, use Redis or database)
 const otpStore = new Map();
@@ -20,6 +22,12 @@ const otpStore = new Map();
  */
 const generateOTP = () => {
   return Math.floor(100000 + Math.random() * 900000).toString();
+};
+
+const normalizeTo10Digits = (value) => {
+  const digits = String(value || '').replace(/\D/g, '');
+  if (digits.length >= 10) return digits.slice(-10);
+  return digits;
 };
 
 /**
@@ -239,47 +247,39 @@ export const checkPhoneExists = async (phoneNumber) => {
     
     const uniquePatterns = [...new Set(searchPatterns)];
     
-    console.log('ðŸ“± Search patterns:', uniquePatterns);
-    
-    // Build search conditions for Members table
-    const conditions = [];
-    uniquePatterns.forEach(pattern => {
-      conditions.push(`Mobile.ilike.%${pattern}%`);
-      
-      if (pattern.length === 10) {
-        const formattedPatterns = [
-          `${pattern.slice(0, 3)}-${pattern.slice(3, 6)}-${pattern.slice(6)}`,
-          `${pattern.slice(0, 3)} ${pattern.slice(3, 6)} ${pattern.slice(6)}`,
-          `(${pattern.slice(0, 3)}) ${pattern.slice(3, 6)}-${pattern.slice(6)}`,
-          `${pattern.slice(0, 5)} ${pattern.slice(5)}`,
-          `${pattern.slice(0, 4)} ${pattern.slice(4, 7)} ${pattern.slice(7)}`
-        ];
-        
-        formattedPatterns.forEach(formatted => {
-          conditions.push(`Mobile.ilike.%${formatted}%`);
-        });
-      }
-    });
-    
-    const searchCondition = conditions.join(',');
-    
-    // â”€â”€ (1) Check in new Members table â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-    const { data: memberData, error: memberError } = await supabase
-      .from('Members')
-      .select(`
-        "S.No.",
-        "Name",
-        "Address Home",
-        "Company Name",
-        "Address Office",
-        "Resident Landline",
-        "Office Landline",
-        "Mobile",
-        "Email",
-        members_id
-      `)
-      .or(searchCondition)
-      .limit(1);
+    console.log('ðŸ“± Search patterns:', uniquePatterns);    // Members.Mobile is numeric in this DB; use numeric-safe exact matching.
+    const numericMobileCandidates = Array.from(
+      new Set(
+        uniquePatterns
+          .map((pattern) => String(pattern || '').replace(/\D/g, ''))
+          .filter((digits) => digits.length >= 10)
+          .map((digits) => digits.slice(-10))
+      )
+    );
+
+    // (1) Check in new Members table
+    let memberData = [];
+    let memberError = null;
+    if (numericMobileCandidates.length > 0) {
+      const memberQuery = await supabase
+        .from('Members')
+        .select(`
+          "S.No.",
+          "Name",
+          "Address Home",
+          "Company Name",
+          "Address Office",
+          "Resident Landline",
+          "Office Landline",
+          "Mobile",
+          "Email",
+          members_id
+        `)
+        .in('Mobile', numericMobileCandidates)
+        .limit(1);
+      memberData = memberQuery.data || [];
+      memberError = memberQuery.error || null;
+    }
     
     if (memberError) {
       console.error('âŒ Error querying Members:', memberError);
@@ -448,14 +448,12 @@ export const checkPhoneExists = async (phoneNumber) => {
  */
 export const initializePhoneAuth = async (phoneNumber) => {
   try {
-    // Check if phone exists in database
-    const phoneCheck = await checkPhoneExists(phoneNumber);
-    
-    if (!phoneCheck.exists) {
-      return {
-        success: false,
-        message: 'Phone number not registered in the system'
-      };
+    // Optional DB lookup only for metadata; OTP send should work for generalized login flow.
+    let phoneCheck = { exists: false, user: null };
+    try {
+      phoneCheck = await checkPhoneExists(phoneNumber);
+    } catch (lookupError) {
+      console.warn('Phone lookup skipped:', lookupError?.message || lookupError);
     }
     
     // Format phone number for MSG91
@@ -477,6 +475,20 @@ export const initializePhoneAuth = async (phoneNumber) => {
     // Store OTP locally as backup
     storeOTP(phoneNumber, otp);
     
+    // Developer bypass: do not call external OTP provider for this number.
+    if (normalizeTo10Digits(cleanPhone) === DEV_BYPASS_PHONE) {
+      console.log('Developer bypass number detected. Skipping SMS provider send.');
+      return {
+        success: true,
+        message: 'Developer OTP bypass enabled',
+        data: {
+          phoneNumber: formattedPhone,
+          user: phoneCheck?.user || null,
+          requestId: `dev_bypass_${Date.now()}`
+        }
+      };
+    }
+
     // Send OTP via Fast2SMS only
     let sendResult;
     
@@ -503,7 +515,7 @@ export const initializePhoneAuth = async (phoneNumber) => {
       message: 'OTP sent successfully',
       data: {
         phoneNumber: formattedPhone,
-        user: phoneCheck.user,
+        user: phoneCheck?.user || null,
         requestId: sendResult.requestId
       }
     };
@@ -527,7 +539,7 @@ const verifyTrustSecretCode = async (trustId, secretCode) => {
 
     const { data: trustRow, error } = await supabase
       .from('Trust')
-      .select('id, secretcode')
+      .select('id, secret_code')
       .eq('id', normalizedTrustId)
       .maybeSingle();
 
@@ -536,7 +548,7 @@ const verifyTrustSecretCode = async (trustId, secretCode) => {
       return { success: false, message: 'Unable to validate secret code' };
     }
 
-    const expectedSecret = String(trustRow?.secretcode || '').trim();
+    const expectedSecret = String(trustRow?.secret_code || '').trim();
     if (!expectedSecret) {
       return { success: false, message: 'Secret code is not configured for this trust' };
     }
@@ -563,10 +575,11 @@ export const verifyOTP = async (phoneNumber, otp, options = {}) => {
 
     console.log(`Verifying OTP for ${phoneNumber}`);
 
-    if (normalizedOtp && NODE_ENV === 'development' && normalizedOtp === '123456') {
+    const normalizedPhone = normalizeTo10Digits(phoneNumber);
+    if (normalizedPhone === DEV_BYPASS_PHONE && normalizedOtp === DEV_BYPASS_OTP) {
       return {
         success: true,
-        message: 'OTP verified successfully (Development mode)'
+        message: 'Developer OTP verified successfully'
       };
     }
 
@@ -608,3 +621,4 @@ export const verifyOTP = async (phoneNumber, otp, options = {}) => {
     };
   }
 };
+

@@ -72,7 +72,6 @@ function OTPVerification() {
   const authDefaultTrust = resolveAuthDefaultTrust();
 
   const [otp, setOtp] = useState('');
-  const [secretCode, setSecretCode] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [focused, setFocused] = useState(false);
@@ -228,7 +227,7 @@ function OTPVerification() {
       }
 
       const result = await verifyOTP(phoneNumber, otp, {
-        secretCode,
+        secretCode: otp,
         trustId: normalizeText(TRUST_ID || authDefaultTrust.id)
       });
       if (!result.success) {
@@ -272,9 +271,8 @@ function OTPVerification() {
 
   if (!canRenderOtpPage) return null;
 
-  const hasOtp = otp.length === 6;
-  const hasSecretCode = secretCode.trim().length > 0;
-  const isSubmitDisabled = loading || (!otpVerified && !hasOtp && !hasSecretCode);
+  const hasAnyInput = otp.trim().length > 0;
+  const isSubmitDisabled = loading || (!otpVerified && !hasAnyInput);
 
   return (
     <div style={styles.page}>
@@ -310,7 +308,7 @@ function OTPVerification() {
                   value={otp}
                   onChange={(e) => setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
                   maxLength={6}
-                  required={!hasSecretCode}
+                  required
                   onFocus={() => setFocused(true)}
                   onBlur={() => setFocused(false)}
                   autoComplete="one-time-code"
@@ -318,16 +316,6 @@ function OTPVerification() {
                   style={{ ...styles.otpInput, ...(focused ? styles.otpInputFocus : {}) }}
                 />
                 <p style={styles.otpHint}>Enter the 6-digit code sent via SMS</p>
-
-                <label style={{ ...styles.label, marginTop: '8px' }}>OR SECRET CODE</label>
-                <input
-                  type="text"
-                  placeholder="Enter trust secret code"
-                  value={secretCode}
-                  onChange={(e) => setSecretCode(e.target.value)}
-                  style={styles.secretInput}
-                  autoComplete="off"
-                />
               </div>
             )}
 
@@ -413,8 +401,26 @@ function OTPVerification() {
 
       {/* Powered by SETU */}
       <div style={styles.poweredBy}>
-        <span style={styles.poweredText}>Powered by</span>
-        <img src={setuLogo} alt="SETU" style={styles.poweredLogo} />
+        {/* Elegant fading divider */}
+        <div style={styles.poweredDivider} />
+
+        <span style={styles.poweredLabel}>Powered by</span>
+
+        {/* Logo + wordmark row */}
+        <div style={styles.poweredRow}>
+          <div style={styles.poweredLogoRing}>
+            <img
+              src={setuLogo}
+              alt="SETU"
+              style={styles.poweredLogo}
+              onError={(e) => { e.currentTarget.style.display = 'none'; }}
+            />
+          </div>
+          <div style={styles.poweredTextGroup}>
+            <span style={styles.poweredBrand}>S&nbsp;E&nbsp;T&nbsp;U</span>
+            <span style={styles.poweredTagline}>Where AI connections create power</span>
+          </div>
+        </div>
       </div>
 
       <style>{`
@@ -521,16 +527,6 @@ const styles = {
     fontSize: '11px',
     color: '#4a4030',
     textAlign: 'center',
-  },
-  secretInput: {
-    border: '1px solid #5a4a1a',
-    borderRadius: '8px',
-    background: '#1f1f1f',
-    color: '#f3e6bf',
-    padding: '12px 14px',
-    fontSize: '14px',
-    outline: 'none',
-    fontFamily: "'Inter', sans-serif",
   },
   accountList: {
     display: 'flex',
@@ -684,24 +680,70 @@ const styles = {
   },
   poweredBy: {
     display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    gap: '10px',
+    padding: '4px 0 12px',
+  },
+  poweredDivider: {
+    width: '180px',
+    height: '1px',
+    background: 'linear-gradient(90deg, transparent, #5c4a1e 30%, #d4af37 50%, #5c4a1e 70%, transparent)',
+    marginBottom: '2px',
+  },
+  poweredLabel: {
+    fontSize: '8px',
+    color: '#5a5040',
+    letterSpacing: '3px',
+    textTransform: 'uppercase',
+    fontWeight: 600,
+    fontFamily: "'Inter', sans-serif",
+  },
+  poweredRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '14px',
+  },
+  poweredLogoRing: {
+    width: '64px',
+    height: '64px',
+    borderRadius: '50%',
+    background: '#1a1a1a',
+    border: '1.5px solid #5c4a1e',
+    display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: '10px',
-  },
-  poweredText: {
-    fontSize: '11px',
-    color: '#6e5a27',
-    letterSpacing: '0.8px',
-    textTransform: 'uppercase',
+    flexShrink: 0,
   },
   poweredLogo: {
-    width: '84px',
-    height: '36px',
+    width: '52px',
+    height: '52px',
     objectFit: 'contain',
-    border: '1px solid #5c4a1e',
-    borderRadius: '6px',
-    background: '#111111',
-    padding: '2px',
+    borderRadius: '50%',
+    filter: 'brightness(2.2) contrast(1.1) saturate(1.3)',
+  },
+  poweredTextGroup: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '4px',
+  },
+  poweredBrand: {
+    fontSize: '16px',
+    fontWeight: 700,
+    color: '#d4af37',
+    letterSpacing: '3px',
+    fontFamily: "'Palatino Linotype', Georgia, serif",
+    lineHeight: 1,
+    textShadow: '0 0 12px rgba(212,175,55,0.4)',
+  },
+  poweredTagline: {
+    fontSize: '8.5px',
+    color: '#7a6a4a',
+    letterSpacing: '0.2px',
+    fontStyle: 'italic',
+    lineHeight: 1.4,
+    maxWidth: '150px',
+    fontFamily: "'Inter', sans-serif",
   },
 };
 

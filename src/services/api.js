@@ -24,11 +24,13 @@ const resolveDevApiBaseUrl = () => {
   return 'http://localhost:5003/api';
 };
 
-const API_BASE_URL =
+const RAW_API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL ||
   (import.meta.env.DEV
     ? resolveDevApiBaseUrl()
     : 'https://test-mahila-mandal.vercel.app/api');
+
+const API_BASE_URL = String(RAW_API_BASE_URL || '').replace(/\/auth\/?$/i, '');
 
 
 // Create axios instance

@@ -2,7 +2,6 @@
 import { supabase } from './supabaseClient';
 
 const USE_MOCK_AUTH = import.meta.env.VITE_AUTH_MOCK === 'true';
-const MOCK_OTP = '123456';
 const BASE_TRUST_ID = import.meta.env.VITE_DEFAULT_TRUST_ID || 'b353d2ff-ec3b-4b90-a896-69f40662084e';
 const AUTH_API_URL = import.meta.env.VITE_AUTH_API_URL || '';
 
@@ -28,7 +27,15 @@ const postAuthJson = async (endpoint, payload) => {
 
 const triggerOtpSend = async (phoneNumber) => {
   const cleanedPhone = normalizeTo10Digits(phoneNumber);
-  await postAuthJson('/check-phone', { phoneNumber: cleanedPhone });
+  try {
+    await postAuthJson('/check-phone', { phoneNumber: cleanedPhone });
+    return { success: true };
+  } catch (error) {
+    // Keep legacy login condition unchanged: do not block auth pre-check flow
+    // when OTP provider/backend lookup fails.
+    console.warn('[Auth] OTP send skipped:', error?.message || error);
+    return { success: false, message: error?.message || 'OTP send failed' };
+  }
 };
 
 const buildMockUser = (phoneNumber) => ({
@@ -270,7 +277,13 @@ export const checkPhoneNumber = async (phoneNumber) => {
         reg_member_id: null
       };
 
-      await triggerOtpSend(last10);
+      const otpSendResult = await triggerOtpSend(last10);
+      if (!otpSendResult.success) {
+        return {
+          success: false,
+          message: otpSendResult.message || 'OTP send failed. Please try again.'
+        };
+      }
 
       return {
         success: true,
@@ -439,7 +452,13 @@ export const checkPhoneNumber = async (phoneNumber) => {
       `User check complete: accounts=${accounts.length}, trusts=${hospitalMemberships.length}, selectedMember=${user?.members_id || user?.id}`
     );
 
-    await triggerOtpSend(last10);
+    const otpSendResult = await triggerOtpSend(last10);
+    if (!otpSendResult.success) {
+      return {
+        success: false,
+        message: otpSendResult.message || 'OTP send failed. Please try again.'
+      };
+    }
 
     return {
       success: true,
@@ -460,11 +479,6 @@ export const checkPhoneNumber = async (phoneNumber) => {
  */
 export const verifyOTP = async (phoneNumber, otp, options = {}) => {
   try {
-    if (USE_MOCK_AUTH) {
-      if (otp === MOCK_OTP) return { success: true, message: 'OTP verified' };
-      return { success: false, message: 'Invalid OTP. Use 123456.' };
-    }
-
     const payload = {
       phoneNumber: normalizeTo10Digits(phoneNumber),
       otp: String(otp || '').trim(),
@@ -488,14 +502,11 @@ export const verifyOTP = async (phoneNumber, otp, options = {}) => {
  */
 export const specialLogin = async (phoneNumber, passcode) => {
   try {
-    // Static passcode for now (no live special login)
-    if (passcode === MOCK_OTP) {
-      return { success: true, message: 'Passcode verified' };
-    }
-    return { success: false, message: 'Invalid passcode. Use 123456.' };
+    const response = await postAuthJson('/special-login', { phoneNumber, passcode });
+    return { success: true, message: response?.message || 'Passcode verified' };
   } catch (error) {
-    console.error('Error in special login:', error);
-    throw error;
+    console.error('Error in special login:', error?.message || error);
+    return { success: false, message: error?.message || 'Invalid passcode' };
   }
 };
 
