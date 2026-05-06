@@ -16,6 +16,10 @@ const normalizeText = (value) => String(value || '').trim();
 
 const resolveAuthDefaultTrust = () => {
   const defaultName = import.meta.env.VITE_DEFAULT_TRUST_NAME || 'Mahila Mandal';
+  const selectedId = String(localStorage.getItem('selected_trust_id') || '').trim();
+  const selectedName = String(localStorage.getItem('selected_trust_name') || '').trim();
+  if (selectedId) return { id: selectedId, name: selectedName || defaultName };
+
   try {
     const cachedDefault = localStorage.getItem('default_trust_cache');
     if (cachedDefault) {
@@ -27,10 +31,6 @@ const resolveAuthDefaultTrust = () => {
   } catch {
     // ignore
   }
-
-  const selectedId = String(localStorage.getItem('selected_trust_id') || '').trim();
-  const selectedName = String(localStorage.getItem('selected_trust_name') || '').trim();
-  if (selectedId) return { id: selectedId, name: selectedName || defaultName };
   if (TRUST_ID) return { id: TRUST_ID, name: defaultName };
   return { id: '', name: defaultName };
 };
@@ -227,7 +227,7 @@ function OTPVerification() {
 
       const result = await verifyOTP(phoneNumber, otp, {
         secretCode: otp,
-        trustId: normalizeText(TRUST_ID || authDefaultTrust.id)
+        trustId: normalizeText(authDefaultTrust.id)
       });
       if (!result.success) {
         setError(result.message || 'Invalid OTP. Please try again.');

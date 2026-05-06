@@ -13,6 +13,10 @@ const OTP_FLOW_KEY = 'otp_flow_allowed';
 const SETU_POWERED_LOGO = '/assets/setu-logo.png';
 
 const resolveAuthDefaultTrust = () => {
+  const selectedId = String(localStorage.getItem('selected_trust_id') || '').trim();
+  const selectedName = String(localStorage.getItem('selected_trust_name') || '').trim();
+  if (selectedId) return { id: selectedId, name: selectedName || DEFAULT_TRUST_NAME };
+
   try {
     const cachedDefault = localStorage.getItem('default_trust_cache');
     if (cachedDefault) {
@@ -24,10 +28,6 @@ const resolveAuthDefaultTrust = () => {
   } catch {
     // ignore malformed cache
   }
-
-  const selectedId = String(localStorage.getItem('selected_trust_id') || '').trim();
-  const selectedName = String(localStorage.getItem('selected_trust_name') || '').trim();
-  if (selectedId) return { id: selectedId, name: selectedName || DEFAULT_TRUST_NAME };
 
   if (TRUST_ID) return { id: TRUST_ID, name: DEFAULT_TRUST_NAME };
   return { id: '', name: DEFAULT_TRUST_NAME };
@@ -107,20 +107,6 @@ function Login() {
     setError('');
 
     try {
-      if (phoneNumber === '9911334455') {
-        const checkResult = await checkPhoneNumber(phoneNumber);
-        if (!checkResult.success) {
-          setError(checkResult.message);
-          setLoading(false);
-          return;
-        }
-        sessionStorage.setItem(OTP_FLOW_KEY, 'special');
-        navigate('/special-otp-verification', {
-          state: { user: checkResult.data.user, accounts: checkResult.data.accounts || [checkResult.data.user], phoneNumber }
-        });
-        return;
-      }
-
       const checkResult = await checkPhoneNumber(phoneNumber);
       if (!checkResult.success) {
         setError(checkResult.message);

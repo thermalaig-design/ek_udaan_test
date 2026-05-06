@@ -498,11 +498,11 @@ export const verifyOTP = async (phoneNumber, otp, options = {}) => {
 };
 
 /**
- * Special login for phone number 9911334455
+ * Special login with passcode + trust validation
  */
-export const specialLogin = async (phoneNumber, passcode) => {
+export const specialLogin = async (phoneNumber, passcode, trustId = '') => {
   try {
-    const response = await postAuthJson('/special-login', { phoneNumber, passcode });
+    const response = await postAuthJson('/special-login', { phoneNumber, passcode, trustId: String(trustId || '').trim() });
     return { success: true, message: response?.message || 'Passcode verified' };
   } catch (error) {
     console.error('Error in special login:', error?.message || error);

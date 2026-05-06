@@ -1,59 +1,68 @@
-﻿import { initializePhoneAuth, verifyOTP, checkPhoneExists } from '../services/otpService.js';
+import { supabase } from '../config/supabase.js';
+import { initializePhoneAuth, verifyOTP, checkPhoneExists } from '../services/otpService.js';
 
 /**
- * Special login for phone number 9911334455 - bypass OTP
+ * Special login using trust-configured developer credentials (no hardcoded bypass).
  */
 export const specialLogin = async (req, res, next) => {
   try {
-    const { phoneNumber, passcode } = req.body;
-    
-    // Validate input
-    if (!phoneNumber || !passcode) {
+    const { phoneNumber, passcode, trustId } = req.body;
+
+    if (!phoneNumber || !passcode || !trustId) {
       return res.status(400).json({
         success: false,
-        message: 'Phone number and passcode are required'
+        message: 'Phone number, passcode and trustId are required'
       });
     }
-    
-    // Check if it's the special phone number
-    if (phoneNumber !== '9911334455') {
-      return res.status(403).json({
+
+    const normalizedTrustId = String(trustId || '').trim();
+    const normalizedPhone = String(phoneNumber || '').replace(/\D/g, '').slice(-10);
+    const normalizedPasscode = String(passcode || '').trim();
+
+    const { data: trustRow, error: trustError } = await supabase
+      .from('Trust')
+      .select('id, developer_mobile, developer_secret_code')
+      .eq('id', normalizedTrustId)
+      .maybeSingle();
+
+    if (trustError) {
+      return res.status(500).json({
         success: false,
-        message: 'This endpoint is only for special phone number 9911334455'
+        message: 'Unable to validate passcode right now'
       });
     }
-    
-    // Check if passcode is correct
-    if (passcode !== '123456') {
+
+    const expectedPhone = String(trustRow?.developer_mobile || '').replace(/\D/g, '').slice(-10);
+    const expectedPasscode = String(trustRow?.developer_secret_code || '').trim();
+
+    if (!expectedPhone || !expectedPasscode || expectedPhone !== normalizedPhone || expectedPasscode !== normalizedPasscode) {
       return res.status(401).json({
         success: false,
         message: 'Invalid passcode'
       });
     }
-    
-    console.log(`ðŸ”§ Special login attempt for ${phoneNumber} with passcode ${passcode}`);
-    
-    // Check if phone exists in database
+
+    console.log(`Special login attempt for ${phoneNumber} on trust ${normalizedTrustId}`);
+
     const phoneCheck = await checkPhoneExists(phoneNumber);
-    
+
     if (!phoneCheck.exists) {
       return res.status(404).json({
         success: false,
         message: 'Phone number not registered in the system'
       });
     }
-    
+
     res.status(200).json({
       success: true,
       message: 'Special login successful',
       data: {
         user: phoneCheck.user,
-        phoneNumber: phoneNumber
+        phoneNumber
       }
     });
-    
   } catch (error) {
-    console.error('âŒ Error in specialLogin:', error);
+    console.error('Error in specialLogin:', error);
     next(error);
   }
 };
@@ -64,16 +73,14 @@ export const specialLogin = async (req, res, next) => {
 export const checkPhone = async (req, res, next) => {
   try {
     const { phoneNumber } = req.body;
-    
-    // Validate phone number
+
     if (!phoneNumber) {
       return res.status(400).json({
         success: false,
         message: 'Phone number is required'
       });
     }
-    
-    // Clean and validate phone format
+
     const cleanPhone = phoneNumber.replace(/\D/g, '');
     if (cleanPhone.length < 10) {
       return res.status(400).json({
@@ -81,15 +88,15 @@ export const checkPhone = async (req, res, next) => {
         message: 'Invalid phone number format'
       });
     }
-    
-    console.log(`ðŸ“± Checking phone and sending OTP: ${cleanPhone}`);
-    
+
+    console.log(`Checking phone and sending OTP: ${cleanPhone}`);
+
     const result = await initializePhoneAuth(cleanPhone);
-    
+
     if (!result.success) {
       return res.status(404).json(result);
     }
-    
+
     res.status(200).json({
       success: true,
       message: 'OTP sent successfully',
@@ -99,9 +106,8 @@ export const checkPhone = async (req, res, next) => {
         requestId: result.data.requestId
       }
     });
-    
   } catch (error) {
-    console.error('âŒ Error in checkPhone:', error);
+    console.error('Error in checkPhone:', error);
     next(error);
   }
 };
@@ -158,7 +164,6 @@ export const verifyOTPController = async (req, res, next) => {
       success: true,
       message: result.usedSecretCode ? 'Secret code verified successfully' : 'OTP verified successfully'
     });
-
   } catch (error) {
     console.error('Error in verifyOTP:', error);
     next(error);

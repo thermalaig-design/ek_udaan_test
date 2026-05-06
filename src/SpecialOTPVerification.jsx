@@ -42,7 +42,11 @@ function SpecialOTPVerification() {
     setLoading(true);
     setError('');
     try {
-      const result = await specialLogin(phoneNumber, passcode);
+      const result = await specialLogin(
+        phoneNumber,
+        passcode,
+        String(localStorage.getItem('selected_trust_id') || TRUST_ID || '')
+      );
       if (!result.success) {
         setError(result.message || 'Invalid passcode. Please try again.');
         setLoading(false);

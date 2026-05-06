@@ -11,8 +11,6 @@ const FAST2SMS_API_KEY = process.env.FAST2SMS_API_KEY;
 const OTP_SERVICE_PREFERENCE = process.env.OTP_SERVICE_PREFERENCE || 'fast2sms'; // 'fast2sms' or 'msg91'
 const OTP_EXPIRY_MINUTES = parseInt(process.env.OTP_EXPIRY_MINUTES) || 5;
 const NODE_ENV = process.env.NODE_ENV || 'production';
-const DEV_BYPASS_PHONE = '9911223344';
-const DEV_BYPASS_OTP = '987654';
 
 // In-memory OTP storage (for production, use Redis or database)
 const otpStore = new Map();
@@ -475,20 +473,6 @@ export const initializePhoneAuth = async (phoneNumber) => {
     // Store OTP locally as backup
     storeOTP(phoneNumber, otp);
     
-    // Developer bypass: do not call external OTP provider for this number.
-    if (normalizeTo10Digits(cleanPhone) === DEV_BYPASS_PHONE) {
-      console.log('Developer bypass number detected. Skipping SMS provider send.');
-      return {
-        success: true,
-        message: 'Developer OTP bypass enabled',
-        data: {
-          phoneNumber: formattedPhone,
-          user: phoneCheck?.user || null,
-          requestId: `dev_bypass_${Date.now()}`
-        }
-      };
-    }
-
     // Send OTP via Fast2SMS only
     let sendResult;
     
@@ -564,22 +548,61 @@ const verifyTrustSecretCode = async (trustId, secretCode) => {
   }
 };
 
+const getTrustDeveloperCredentials = async (trustId) => {
+  try {
+    const normalizedTrustId = String(trustId || '').trim();
+    if (!normalizedTrustId) {
+      return { phone: '', code: '' };
+    }
+
+    const { data: trustRow, error } = await supabase
+      .from('Trust')
+      .select('id, developer_mobile, developer_secret_code')
+      .eq('id', normalizedTrustId)
+      .maybeSingle();
+
+    if (error) {
+      console.error('Developer code trust lookup error:', error);
+      return { phone: '', code: '' };
+    }
+
+    return {
+      phone: normalizeTo10Digits(trustRow?.developer_mobile || ''),
+      code: String(trustRow?.developer_secret_code || '').trim()
+    };
+  } catch (error) {
+    console.error('Error loading developer credentials:', error);
+    return { phone: '', code: '' };
+  }
+};
+
 /**
  * Verify OTP OR secret code
  */
 export const verifyOTP = async (phoneNumber, otp, options = {}) => {
   try {
     const { secretCode = '', trustId = '' } = options || {};
+    const normalizedPhone = normalizeTo10Digits(phoneNumber);
     const normalizedOtp = String(otp || '').trim();
     const normalizedSecretCode = String(secretCode || '').trim();
 
     console.log(`Verifying OTP for ${phoneNumber}`);
 
-    const normalizedPhone = normalizeTo10Digits(phoneNumber);
-    if (normalizedPhone === DEV_BYPASS_PHONE && normalizedOtp === DEV_BYPASS_OTP) {
+    const devCreds = await getTrustDeveloperCredentials(trustId);
+    const isDeveloperMobile = Boolean(devCreds.phone) && normalizedPhone === devCreds.phone;
+    const isDeveloperCodeMatch = isDeveloperMobile && Boolean(devCreds.code) && normalizedOtp === devCreds.code;
+
+    if (isDeveloperCodeMatch) {
       return {
         success: true,
         message: 'Developer OTP verified successfully'
+      };
+    }
+
+    if (isDeveloperMobile) {
+      return {
+        success: false,
+        message: 'Invalid developer code'
       };
     }
 
