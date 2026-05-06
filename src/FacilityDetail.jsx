@@ -315,7 +315,7 @@ const FacilityDetail = ({ onNavigate }) => {
                   {normalizedAttachments.filter(a => a.type === 'image').length > 0 && (
                     <ImageSlider 
                       images={normalizedAttachments.filter(a => a.type === 'image')}
-                      autoPlayInterval={3000}
+                      autoPlayInterval={5000}
                     />
                   )}
 

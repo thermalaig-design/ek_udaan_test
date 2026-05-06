@@ -1,6 +1,6 @@
 import { classifyEvent, fetchAllEventsForTrust, fetchEventById, sortEventsByCategory } from './eventsService';
 
-const TTL_MS = 5 * 60 * 1000;
+const TTL_MS = 30 * 60 * 1000;
 export const CATEGORIES = ['current', 'upcoming', 'past'];
 export const eventsConfig = { PAGE_SIZE: 10 };
 

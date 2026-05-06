@@ -1,8 +1,9 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Calendar, CheckCircle2, ChevronRight, Clock3, FileText, Home as HomeIcon, MapPin, Menu, Paperclip, X, Zap } from 'lucide-react';
+import { Calendar, CheckCircle2, ChevronRight, Clock3, FileText, Home as HomeIcon, MapPin, Menu, X, Zap } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import Sidebar from './components/Sidebar';
 import { useAppTheme } from './context/ThemeContext';
+import { supabase } from './services/supabaseClient';
 import {
   CATEGORIES,
   clearEventsCache,
@@ -15,6 +16,7 @@ import { formatEventDate, formatTimeRange } from './services/eventsService';
 import { applyOpacity } from './utils/colorUtils';
 
 const EVENTS_SCROLL_KEY = 'events_scroll_y';
+const EVENTS_ACTIVE_TAB_KEY = 'events_active_tab';
 
 const CATEGORY_META = {
   current: { label: 'Current', icon: Zap },
@@ -60,7 +62,10 @@ const Events = ({ onNavigate }) => {
   const theme = useAppTheme();
 
   const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState('current');
+  const [activeTab, setActiveTab] = useState(() => {
+    const saved = String(sessionStorage.getItem(EVENTS_ACTIVE_TAB_KEY) || '').toLowerCase();
+    return CATEGORIES.includes(saved) ? saved : 'current';
+  });
   const [events, setEvents] = useState([]);
   const [pageByCategory, setPageByCategory] = useState({ current: 1, upcoming: 1, past: 1 });
   const [hasMore, setHasMore] = useState(false);
@@ -119,8 +124,24 @@ const Events = ({ onNavigate }) => {
       return;
     }
 
+    const cachedSnap = getEventsSnapshot(normalizedTrustId, normalizedCategory, safePage);
+    const hasCachedData = Array.isArray(cachedSnap?.events) && cachedSnap.events.length > 0;
+    const cachedCounts = getEventsCounts(normalizedTrustId);
+    const hasAnyCachedData = Object.values(cachedCounts || {}).some((n) => Number(n) > 0);
+
+    if (!forLoadMore && hasCachedData) {
+      setEvents(cachedSnap.events);
+      setHasMore(Boolean(cachedSnap.hasMore));
+      setCounts(cachedCounts);
+      setLoading(false);
+    } else if (!forLoadMore && hasAnyCachedData) {
+      // Keep UI responsive: reuse cached counts/list shell and refresh in background.
+      setCounts(cachedCounts);
+      setLoading(false);
+    }
+
     if (forLoadMore) setLoadingMore(true);
-    else setLoading(true);
+    else if (!hasCachedData && !hasAnyCachedData) setLoading(true);
 
     try {
       const res = await loadEventsPage({
@@ -199,14 +220,18 @@ const Events = ({ onNavigate }) => {
     if (savedY > 0) requestAnimationFrame(() => window.scrollTo(0, savedY));
 
     const trustId = localStorage.getItem('selected_trust_id') || '';
-    loadCategoryPage({ trustId, category: 'current', pageNo: 1, forceRefresh: false });
+    const initialTab = CATEGORIES.includes(activeTabRef.current) ? activeTabRef.current : 'current';
+    syncFromStore(trustId, initialTab, 1);
+    loadCategoryPage({ trustId, category: initialTab, pageNo: 1, forceRefresh: false });
 
     const onTrustChanged = () => {
       sessionStorage.removeItem(EVENTS_SCROLL_KEY);
+      sessionStorage.setItem(EVENTS_ACTIVE_TAB_KEY, 'current');
       window.scrollTo(0, 0);
       setPageByCategory({ current: 1, upcoming: 1, past: 1 });
       setActiveTab('current');
       const nextTrustId = localStorage.getItem('selected_trust_id') || '';
+      syncFromStore(nextTrustId, 'current', 1);
       loadCategoryPage({ trustId: nextTrustId, category: 'current', pageNo: 1, forceRefresh: false });
     };
 
@@ -214,9 +239,37 @@ const Events = ({ onNavigate }) => {
     return () => window.removeEventListener('trust-changed', onTrustChanged);
   }, []);
 
+  useEffect(() => {
+    if (!selectedTrustId) return undefined;
+
+    const channel = supabase
+      .channel(`events-realtime-${selectedTrustId}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'events', filter: `trust_id=eq.${selectedTrustId}` },
+        () => {
+          const pageNo = Number(pageByCategory[activeTabRef.current]) > 0
+            ? Number(pageByCategory[activeTabRef.current])
+            : 1;
+          loadCategoryPage({
+            trustId: selectedTrustId,
+            category: activeTabRef.current,
+            pageNo,
+            forceRefresh: true
+          });
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [selectedTrustId, pageByCategory]);
+
   const handleTabSwitch = (category) => {
     if (category === activeTab) return;
     setActiveTab(category);
+    sessionStorage.setItem(EVENTS_ACTIVE_TAB_KEY, category);
     const pageNo = Number(pageByCategory[category]) > 0 ? Number(pageByCategory[category]) : 1;
     syncFromStore(selectedTrustId, category, pageNo);
     loadCategoryPage({ trustId: selectedTrustId, category, pageNo, forceRefresh: false });
@@ -236,6 +289,7 @@ const Events = ({ onNavigate }) => {
 
   const openEventDetail = (eventId) => {
     sessionStorage.setItem(EVENTS_SCROLL_KEY, String(window.scrollY || 0));
+    sessionStorage.setItem(EVENTS_ACTIVE_TAB_KEY, activeTab);
     navigate(`/events/${encodeURIComponent(eventId)}`);
   };
 
@@ -245,20 +299,43 @@ const Events = ({ onNavigate }) => {
   return (
     <div className={`min-h-screen pb-10 relative${isMenuOpen ? ' overflow-hidden max-h-screen' : ''}`} style={{ background: 'var(--page-bg, var(--app-page-bg))' }}>
       <div className="theme-navbar border-b px-6 py-5 flex items-center justify-between sticky top-0 z-50 shadow-sm" style={{ paddingTop: 'max(env(safe-area-inset-top, 0px), 20px)' }}>
-        <button onClick={() => setIsMenuOpen(!isMenuOpen)} className="p-2 rounded-xl transition-colors" style={{ background: 'color-mix(in srgb, var(--surface-color) 88%, var(--app-accent-bg))' }}>
-          {isMenuOpen ? <X className="h-6 w-6" style={{ color: 'var(--navbar-text)' }} /> : <Menu className="h-6 w-6" style={{ color: 'var(--navbar-text)' }} />}
+        <button
+          onClick={() => setIsMenuOpen(!isMenuOpen)}
+          className="w-10 h-10 rounded-2xl flex items-center justify-center transition-all active:scale-95"
+          style={{
+            background: isMenuOpen
+              ? 'var(--app-button-bg)'
+              : 'color-mix(in srgb, var(--navbar-bg) 72%, var(--surface-color))',
+            boxShadow: isMenuOpen ? `0 4px 12px ${applyOpacity(theme.primary, 0.25)}` : 'none',
+          }}
+        >
+          {isMenuOpen ? <X className="h-5 w-5" style={{ color: 'var(--app-button-text)' }} /> : <Menu className="h-[22px] w-[22px]" style={{ color: 'var(--navbar-text)' }} />}
         </button>
         <h1 className="text-lg font-bold" style={{ color: 'var(--navbar-text)' }}>Events</h1>
-        <button onClick={() => onNavigate('home')} className="p-2 rounded-xl transition-colors" style={{ color: 'var(--navbar-text)', background: 'color-mix(in srgb, var(--surface-color) 88%, var(--app-accent-bg))' }}>
-          <HomeIcon className="h-5 w-5" />
+        <button
+          onClick={() => onNavigate('home')}
+          className="w-10 h-10 rounded-2xl flex items-center justify-center transition-all active:scale-95"
+          style={{
+            color: 'var(--navbar-text)',
+            background: 'color-mix(in srgb, var(--navbar-bg) 72%, var(--surface-color))'
+          }}
+        >
+          <HomeIcon className="h-[22px] w-[22px]" />
         </button>
       </div>
 
       {isMenuOpen && <div className="fixed inset-0 z-25" style={{ background: applyOpacity('var(--brand-navy-dark)', 0.01) }} onClick={() => setIsMenuOpen(false)} />}
       <Sidebar isOpen={isMenuOpen} onClose={() => setIsMenuOpen(false)} onNavigate={onNavigate} currentPage="events" />
 
-      <div className="px-6 pb-3">
-        <div className="flex gap-2 p-1 rounded-2xl" style={{ background: 'color-mix(in srgb, var(--app-accent-bg) 20%, var(--surface-color))', border: '1px solid color-mix(in srgb, var(--brand-navy) 8%, transparent)' }}>
+      <div className="px-4 pb-4 pt-3">
+        <div
+          className="relative flex items-center p-1 rounded-2xl gap-1"
+          style={{
+            background: 'color-mix(in srgb, var(--brand-navy) 7%, var(--surface-color))',
+            border: '1.5px solid color-mix(in srgb, var(--brand-navy) 13%, transparent)',
+            boxShadow: 'inset 0 1px 3px color-mix(in srgb, var(--brand-navy) 8%, transparent)',
+          }}
+        >
           {CATEGORIES.map((cat) => {
             const m = CATEGORY_META[cat];
             const isActive = activeTab === cat;
@@ -267,23 +344,40 @@ const Events = ({ onNavigate }) => {
               <button
                 key={cat}
                 onClick={() => handleTabSwitch(cat)}
-                className="flex-1 flex items-center justify-center gap-1.5 py-2 px-2 rounded-xl text-xs font-bold transition-all duration-200"
+                className="relative flex-1 flex items-center justify-center gap-1.5 py-2.5 px-1 rounded-xl text-[11px] font-bold transition-all duration-250 z-10"
                 style={isActive ? {
                   background: `linear-gradient(135deg, ${theme.primary} 0%, ${theme.secondary} 100%)`,
-                  color: 'var(--surface-color)',
-                  boxShadow: `0 4px 12px ${applyOpacity(theme.primary, 0.19)}`,
+                  color: '#fff',
+                  boxShadow: `0 4px 16px color-mix(in srgb, ${theme.primary} 35%, transparent), 0 1px 0 rgba(255,255,255,0.15) inset`,
+                  transform: 'scale(1.03)',
                 } : {
-                  color: 'var(--body-text-color)',
+                  color: 'color-mix(in srgb, var(--body-text-color) 75%, var(--surface-color))',
+                  background: 'transparent',
                 }}
               >
-                <m.icon className="h-3.5 w-3.5 shrink-0" />
-                <span className="truncate">{m.label}</span>
+                <m.icon
+                  className="shrink-0"
+                  style={{
+                    width: 13,
+                    height: 13,
+                    opacity: isActive ? 1 : 0.65,
+                  }}
+                />
+                <span className="tracking-wide">{m.label}</span>
                 {count > 0 && (
                   <span
-                    className="text-[9px] font-bold px-1 py-0.5 rounded-full min-w-[16px] text-center"
+                    className="text-[9px] font-extrabold px-1.5 py-0.5 rounded-full min-w-[18px] text-center leading-none"
                     style={isActive
-                      ? { background: applyOpacity('var(--surface-color)', 0.22), color: 'var(--surface-color)' }
-                      : { background: 'color-mix(in srgb, var(--surface-color) 76%, var(--app-accent-bg))', color: 'var(--body-text-color)', border: '1px solid color-mix(in srgb, var(--brand-navy) 12%, transparent)' }
+                      ? {
+                          background: 'rgba(255,255,255,0.25)',
+                          color: '#fff',
+                          border: '1px solid rgba(255,255,255,0.3)',
+                        }
+                      : {
+                          background: `color-mix(in srgb, ${theme.primary} 12%, var(--surface-color))`,
+                          color: theme.primary,
+                          border: `1px solid color-mix(in srgb, ${theme.primary} 22%, transparent)`,
+                        }
                     }
                   >
                     {count}
@@ -294,6 +388,7 @@ const Events = ({ onNavigate }) => {
           })}
         </div>
       </div>
+
 
       {!loading && !error && events.length > 0 && (
         <div className="px-6 pb-2">
@@ -359,79 +454,119 @@ const Events = ({ onNavigate }) => {
               <button
                 key={event.id}
                 onClick={() => openEventDetail(event.id)}
-                className="w-full text-left rounded-2xl p-4 sm:p-5 border transition-all hover:shadow-md active:scale-[0.995] border-l-4 shadow-sm"
+                className="w-full text-left rounded-2xl overflow-hidden transition-all active:scale-[0.995] shadow-sm"
                 style={{
                   background: 'var(--surface-color)',
-                  borderLeftColor: isPast ? applyOpacity(theme.secondary, 0.55) : theme.primary,
-                  borderColor: 'color-mix(in srgb, var(--brand-navy) 10%, transparent)',
-                  opacity: isPast ? 0.88 : 1,
+                  border: '1px solid color-mix(in srgb, var(--brand-navy) 10%, transparent)',
+                  opacity: isPast ? 0.9 : 1,
                 }}
               >
-                <div className="flex items-center justify-between gap-3 mb-3">
-                  <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded-full inline-flex items-center gap-1"
-                    style={isPast
-                      ? { color: 'var(--body-text-color)', background: 'color-mix(in srgb, var(--surface-color) 70%, var(--app-accent-bg))' }
-                      : isOngoing
-                        ? { color: theme.secondary, background: 'color-mix(in srgb, var(--app-accent) 55%, var(--surface-color))' }
-                        : { color: theme.primary, background: `color-mix(in srgb, ${theme.primary} 12%, var(--surface-color))` }
-                    }
-                  >
-                    <TabIcon className="h-3 w-3" />
-                    {isPast ? 'Completed' : isOngoing ? 'Ongoing' : event.type || 'Upcoming'}
-                  </span>
-                  {dateLabel && (
-                    <div className="flex items-center gap-1.5 text-[10px] font-bold whitespace-nowrap" style={{ color: 'color-mix(in srgb, var(--body-text-color) 72%, var(--surface-color))' }}>
-                      <Calendar className="h-3 w-3" />
-                      {dateLabel}
-                    </div>
-                  )}
-                </div>
+                {/* ── Image / Attachment Hero ── */}
+                {firstAttachment && firstAttachment.type === 'image' ? (
+                  <div className="relative w-full overflow-hidden aspect-[16/9]" style={{ background: 'color-mix(in srgb, var(--brand-navy) 10%, var(--surface-color))' }}>
+                    <img
+                      src={firstAttachment.url}
+                      alt={firstAttachment.label}
+                      loading="lazy"
+                      onError={(e) => { e.currentTarget.parentElement.style.display = 'none'; }}
+                      style={{
+                        width: '100%',
+                        height: '100%',
+                        objectFit: 'cover',
+                        objectPosition: 'center',
+                        display: 'block',
+                      }}
+                    />
+                    {/* Status badge overlaid on image */}
+                    <span
+                      className="absolute top-2.5 left-2.5 text-[10px] font-bold uppercase tracking-wider px-2.5 py-1 rounded-full inline-flex items-center gap-1 backdrop-blur-sm"
+                      style={isPast
+                        ? { color: '#fff', background: 'rgba(0,0,0,0.45)', border: '1px solid rgba(255,255,255,0.15)' }
+                        : isOngoing
+                          ? { color: '#fff', background: 'rgba(20, 24, 38, 0.72)', border: '1px solid rgba(255,255,255,0.24)' }
+                          : { color: '#fff', background: `${theme.primary}cc`, border: '1px solid rgba(255,255,255,0.2)' }
+                      }
+                    >
+                      <TabIcon style={{ width: 10, height: 10 }} />
+                      {isPast ? 'Completed' : isOngoing ? 'Ongoing' : event.type || 'Upcoming'}
+                    </span>
+                  </div>
+                ) : null}
 
-                <h3 className="font-bold text-lg mb-2 leading-tight" style={{ color: 'var(--heading-color)' }}>{event.title}</h3>
-
-                {event.description && (
-                  <p className="text-sm leading-relaxed line-clamp-2 mb-3" style={{ color: 'var(--body-text-color)' }}>{event.description}</p>
-                )}
-
-                <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] font-medium mb-3" style={{ color: 'var(--body-text-color)' }}>
-                  {timeLabel && (
-                    <div className="flex items-center gap-1"><Clock3 className="h-3 w-3" style={{ color: theme.primary }} />{timeLabel}</div>
-                  )}
-                  {event.location && (
-                    <div className="flex items-center gap-1"><MapPin className="h-3 w-3" style={{ color: theme.primary }} />{event.location}</div>
-                  )}
-                </div>
-
-                {firstAttachment && (
-                  <div
-                    className="mb-3 rounded-xl overflow-hidden border"
-                    style={{ borderColor: 'color-mix(in srgb, var(--brand-navy) 12%, transparent)' }}
-                  >
-                    {firstAttachment.type === 'image' ? (
-                      <img
-                        src={firstAttachment.url}
-                        alt={firstAttachment.label}
-                        loading="lazy"
-                        className="w-full h-36 object-cover bg-slate-100"
-                      />
-                    ) : (
-                      <div
-                        className="h-16 px-3 flex items-center gap-2 text-xs font-semibold"
-                        style={{ background: 'color-mix(in srgb, var(--surface-color) 70%, var(--app-accent-bg))', color: 'var(--body-text-color)' }}
+                {/* ── Card Content ── */}
+                <div
+                  className="p-4"
+                  style={{
+                    borderTop: firstAttachment?.type === 'image'
+                      ? `2px solid ${isPast ? applyOpacity(theme.secondary, 0.4) : theme.primary}`
+                      : 'none',
+                  }}
+                >
+                  {/* Status badge (when no image) + Date row */}
+                  <div className="flex items-center justify-between gap-2 mb-2.5">
+                    {!(firstAttachment?.type === 'image') && (
+                      <span
+                        className="text-[10px] font-bold uppercase tracking-wider px-2.5 py-1 rounded-full inline-flex items-center gap-1"
+                        style={isPast
+                          ? { color: 'var(--body-text-color)', background: 'color-mix(in srgb, var(--surface-color) 70%, var(--app-accent-bg))' }
+                          : isOngoing
+                            ? { color: theme.secondary, background: `color-mix(in srgb, ${theme.secondary} 14%, var(--surface-color))` }
+                            : { color: theme.primary, background: `color-mix(in srgb, ${theme.primary} 12%, var(--surface-color))` }
+                        }
                       >
-                        <FileText className="h-4 w-4 shrink-0" />
-                        <span>{firstAttachment.type === 'pdf' ? 'PDF Preview Available' : 'File Attachment'}</span>
+                        <TabIcon style={{ width: 10, height: 10 }} />
+                        {isPast ? 'Completed' : isOngoing ? 'Ongoing' : event.type || 'Upcoming'}
+                      </span>
+                    )}
+                    {dateLabel && (
+                      <div
+                        className="flex items-center gap-1 text-[10px] font-semibold ml-auto"
+                        style={{ color: 'color-mix(in srgb, var(--body-text-color) 72%, var(--surface-color))' }}
+                      >
+                        <Calendar style={{ width: 11, height: 11 }} />
+                        {dateLabel}
                       </div>
                     )}
                   </div>
-                )}
 
-                <div className="pt-3 flex items-center justify-between gap-3" style={{ borderTop: '1px solid color-mix(in srgb, var(--brand-navy) 10%, transparent)' }}>
-                  <div className="flex items-center gap-1.5 text-xs font-medium" style={{ color: 'var(--body-text-color)' }}>
-                    {attachCount > 0 && <><Paperclip className="h-3.5 w-3.5" />{attachCount} Attachment{attachCount === 1 ? '' : 's'}</>}
-                  </div>
-                  <div className="inline-flex items-center gap-1 text-xs font-semibold" style={{ color: theme.primary }}>
-                    Tap to view details <ChevronRight className="h-3.5 w-3.5" />
+                  {/* Title */}
+                  <h3 className="font-bold text-base leading-snug mb-1.5" style={{ color: 'var(--heading-color)' }}>
+                    {event.title}
+                  </h3>
+
+                  {/* Description */}
+                  {event.description && (
+                    <p className="text-xs leading-relaxed line-clamp-2 mb-2.5" style={{ color: 'var(--body-text-color)' }}>
+                      {event.description}
+                    </p>
+                  )}
+
+                  {/* Time & Location */}
+                  {(timeLabel || event.location) && (
+                    <div className="flex flex-wrap gap-x-3 gap-y-1 text-[11px] font-medium mb-3" style={{ color: 'var(--body-text-color)' }}>
+                      {timeLabel && (
+                        <div className="flex items-center gap-1">
+                          <Clock3 style={{ width: 11, height: 11, color: theme.primary }} />
+                          {timeLabel}
+                        </div>
+                      )}
+                      {event.location && (
+                        <div className="flex items-center gap-1">
+                          <MapPin style={{ width: 11, height: 11, color: theme.primary }} />
+                          {event.location}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Footer */}
+                  <div
+                    className="pt-2.5 flex items-center justify-end"
+                    style={{ borderTop: '1px solid color-mix(in srgb, var(--brand-navy) 8%, transparent)' }}
+                  >
+                    <div className="inline-flex items-center gap-1 text-xs font-semibold" style={{ color: theme.primary }}>
+                      Tap to view details <ChevronRight style={{ width: 13, height: 13 }} />
+                    </div>
                   </div>
                 </div>
               </button>

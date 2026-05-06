@@ -1,5 +1,5 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { Calendar, Home as HomeIcon, Menu, X, Paperclip, Star, ChevronRight, FileText } from 'lucide-react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { Calendar, Home as HomeIcon, Menu, X, Star, ChevronRight, FileText } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import Sidebar from './components/Sidebar';
 import { useAppTheme } from './context/ThemeContext';
@@ -205,6 +205,9 @@ const Notices = ({ onNavigate }) => {
   const [selectedTrustId, setSelectedTrustId] = useState(() => localStorage.getItem('selected_trust_id') || '');
   const [hasMoreNotices, setHasMoreNotices] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
+  const latestLoadRequestRef = useRef(0);
+  const missingTrustRetryRef = useRef(0);
+  const missingTrustTimerRef = useRef(null);
   const sortedNotices = useMemo(() => sortNoticesByTimeline(notices), [notices]);
 
   const syncFromStore = (trustId) => {
@@ -213,7 +216,7 @@ const Notices = ({ onNavigate }) => {
     setHasMoreNotices(Boolean(snapshot.hasMoreNotices));
   };
 
-  const loadPage = async ({ trustId, page, forceRefresh = false, trustName = null }) => {
+  const loadPage = async ({ trustId, page, forceRefresh = false, trustName = null, canApplyState = () => true }) => {
     if (!trustId) {
       setNotices([]);
       setHasMoreNotices(false);
@@ -226,7 +229,7 @@ const Notices = ({ onNavigate }) => {
       pageSize: noticeboardConfig.PAGE_SIZE,
       forceRefresh
     });
-    syncFromStore(trustId);
+    if (canApplyState()) syncFromStore(trustId);
     const progress = readNoticeboardProgress(trustId);
     console.log(
       '[Noticeboard][Debug] page=',
@@ -250,7 +253,8 @@ const Notices = ({ onNavigate }) => {
         res.debug.regMemberMatch?.id || null
       );
     }
-    if (res?.error) setError(res.error);
+    if (res?.error && canApplyState()) setError(res.error);
+    return res;
   };
 
   useEffect(() => {
@@ -284,48 +288,90 @@ const Notices = ({ onNavigate }) => {
   }, [isMenuOpen]);
 
   const loadNotices = async ({ forceRefresh = false } = {}) => {
+    const requestId = Date.now();
+    latestLoadRequestRef.current = requestId;
+    const isStale = () => latestLoadRequestRef.current !== requestId;
     try {
-      setError('');
+      if (!isStale()) setError('');
       const { trustId, trustName } = resolveTrustContextForNotices();
-      setSelectedTrustId(trustId || '');
+      if (!isStale()) setSelectedTrustId(trustId || '');
 
       if (!trustId) {
-        setNotices([]);
-        setHasMoreNotices(false);
-        setLoading(false);
+        if (missingTrustTimerRef.current) {
+          clearTimeout(missingTrustTimerRef.current);
+          missingTrustTimerRef.current = null;
+        }
+        // selected_trust_id can arrive a bit late after route mount; auto-retry a few times.
+        if (!forceRefresh && missingTrustRetryRef.current < 4) {
+          missingTrustRetryRef.current += 1;
+          if (!isStale()) setLoading(true);
+          missingTrustTimerRef.current = setTimeout(() => {
+            loadNotices({ forceRefresh: false });
+          }, 450);
+        }
+        const isRetryScheduled = !forceRefresh && missingTrustRetryRef.current > 0 && missingTrustRetryRef.current <= 4;
+        if (!isStale() && notices.length === 0 && !isRetryScheduled) {
+          setNotices([]);
+          setHasMoreNotices(false);
+          setLoading(false);
+        }
         return;
+      }
+      missingTrustRetryRef.current = 0;
+      if (missingTrustTimerRef.current) {
+        clearTimeout(missingTrustTimerRef.current);
+        missingTrustTimerRef.current = null;
       }
 
       // Show cached notices immediately if available (avoids blank flash)
       const snapshot = getNoticeboardSnapshot(trustId);
       if (!forceRefresh && snapshot.hasCachedData && Array.isArray(snapshot.notices) && snapshot.notices.length > 0) {
-        setNotices(snapshot.notices);
-        setHasMoreNotices(Boolean(snapshot.hasMoreNotices));
-        setLoading(false);
+        if (!isStale()) {
+          setNotices(snapshot.notices);
+          setHasMoreNotices(Boolean(snapshot.hasMoreNotices));
+          setLoading(false);
+        }
       } else {
         // No valid cache or forceRefresh → show spinner
-        setLoading(true);
+        if (!isStale()) setLoading(true);
       }
 
-      await loadPage({ trustId, trustName, page: 1, forceRefresh });
+      const pageRes = await loadPage({ trustId, trustName, page: 1, forceRefresh, canApplyState: () => !isStale() });
+      if (isStale()) return;
 
       // Always sync from store after fetch to pick up latest data
       syncFromStore(trustId);
+      const postSyncSnapshot = getNoticeboardSnapshot(trustId);
+      const postSyncNotices = Array.isArray(postSyncSnapshot?.notices) ? postSyncSnapshot.notices : [];
+      if (postSyncNotices.length === 0 && Array.isArray(pageRes?.notices) && pageRes.notices.length > 0) {
+        // Fallback: if cache/store is unavailable, hydrate UI directly from API response.
+        setNotices(pageRes.notices);
+        setHasMoreNotices(Boolean(pageRes.hasMore));
+      }
 
       // If still empty after first fetch, bust cache and retry once
       if (!forceRefresh) {
         const afterSnapshot = getNoticeboardSnapshot(trustId);
         if (!Array.isArray(afterSnapshot.notices) || afterSnapshot.notices.length === 0) {
           console.log('[Noticeboard] Empty result after first fetch, retrying with forceRefresh=true');
-          await loadPage({ trustId, trustName, page: 1, forceRefresh: true });
+          const retryRes = await loadPage({ trustId, trustName, page: 1, forceRefresh: true, canApplyState: () => !isStale() });
+          if (isStale()) return;
           syncFromStore(trustId);
+          const retrySnapshot = getNoticeboardSnapshot(trustId);
+          const retryNotices = Array.isArray(retrySnapshot?.notices) ? retrySnapshot.notices : [];
+          if (retryNotices.length === 0 && Array.isArray(retryRes?.notices) && retryRes.notices.length > 0) {
+            setNotices(retryRes.notices);
+            setHasMoreNotices(Boolean(retryRes.hasMore));
+          }
         }
       }
     } catch (err) {
-      setError(err?.message || 'Failed to fetch notices');
-      setNotices([]);
+      if (!isStale()) {
+        setError(err?.message || 'Failed to fetch notices');
+        setNotices([]);
+      }
     } finally {
-      setLoading(false);
+      if (!isStale()) setLoading(false);
     }
   };
 
@@ -350,6 +396,10 @@ const Notices = ({ onNavigate }) => {
     window.addEventListener('trust-changed', handleTrustChanged);
     window.addEventListener('storage', handleStorage);
     return () => {
+      if (missingTrustTimerRef.current) {
+        clearTimeout(missingTrustTimerRef.current);
+        missingTrustTimerRef.current = null;
+      }
       window.removeEventListener('trust-changed', handleTrustChanged);
       window.removeEventListener('storage', handleStorage);
     };
@@ -361,7 +411,18 @@ const Notices = ({ onNavigate }) => {
       setLoadingMore(true);
       const progress = readNoticeboardProgress(selectedTrustId);
       const nextPage = Number(progress?.nextPage) > 0 ? Number(progress.nextPage) : 2;
-      await loadPage({ trustId: selectedTrustId, page: nextPage, forceRefresh: false, trustName: localStorage.getItem('selected_trust_name') || null });
+      const moreRes = await loadPage({ trustId: selectedTrustId, page: nextPage, forceRefresh: false, trustName: localStorage.getItem('selected_trust_name') || null });
+      const snapshot = getNoticeboardSnapshot(selectedTrustId);
+      const snapshotNotices = Array.isArray(snapshot?.notices) ? snapshot.notices : [];
+      if (snapshotNotices.length === 0 && Array.isArray(moreRes?.notices) && moreRes.notices.length > 0) {
+        setNotices((prev) => {
+          const prevList = Array.isArray(prev) ? prev : [];
+          const byId = new Map(prevList.map((n) => [String(n?.id || ''), n]));
+          for (const n of moreRes.notices) byId.set(String(n?.id || ''), n);
+          return [...byId.values()].filter(Boolean);
+        });
+        setHasMoreNotices(Boolean(moreRes.hasMore));
+      }
     } finally {
       setLoadingMore(false);
     }
@@ -379,14 +440,14 @@ const Notices = ({ onNavigate }) => {
       <div className="theme-navbar border-b px-6 py-5 flex items-center justify-between sticky top-0 z-50 shadow-sm pointer-events-auto" style={{ paddingTop: 'max(env(safe-area-inset-top, 0px), 20px)' }}>
         <button
           onClick={() => setIsMenuOpen(!isMenuOpen)}
-          className="p-2 rounded-xl hover:bg-gray-100 transition-colors pointer-events-auto"
+          className="p-2 rounded-xl transition-colors pointer-events-auto"
         >
           {isMenuOpen ? <X className="h-6 w-6" style={{ color: 'var(--navbar-text)' }} /> : <Menu className="h-6 w-6" style={{ color: 'var(--navbar-text)' }} />}
         </button>
         <h1 className="text-lg font-bold" style={{ color: 'var(--navbar-text)' }}>Notice Board</h1>
         <button
           onClick={() => onNavigate('home')}
-          className="p-2 rounded-xl hover:bg-gray-100 transition-colors flex items-center justify-center"
+          className="p-2 rounded-xl transition-colors flex items-center justify-center"
           style={{ color: 'var(--navbar-text)' }}
         >
           <HomeIcon className="h-5 w-5" />
@@ -546,14 +607,6 @@ const Notices = ({ onNavigate }) => {
               )}
 
               <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-3">
-                <div className="flex items-center gap-1.5 text-xs font-medium text-slate-500">
-                  {attachCount > 0 && (
-                    <>
-                      <Paperclip className="h-3.5 w-3.5" />
-                      {attachCount} Attachment{attachCount === 1 ? '' : 's'}
-                    </>
-                  )}
-                </div>
                 <div className="inline-flex items-center gap-1 text-xs font-semibold" style={{ color: theme.primary }}>
                   Tap to view details
                   <ChevronRight className="h-3.5 w-3.5" />
@@ -602,3 +655,4 @@ const Notices = ({ onNavigate }) => {
 };
 
 export default Notices;
+

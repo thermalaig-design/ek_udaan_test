@@ -194,7 +194,14 @@ const EventDetail = () => {
                     style={{ borderColor: 'color-mix(in srgb, var(--brand-navy) 12%, transparent)' }}
                   >
                     {attachment.type === 'image' && (
-                      <img src={attachment.url} alt={attachment.label} loading="lazy" className="w-full h-44 object-cover bg-slate-100" />
+                      <div className="w-full bg-slate-100">
+                        <img
+                          src={attachment.url}
+                          alt={attachment.label}
+                          loading="lazy"
+                          className="w-full max-h-[70vh] object-contain bg-slate-100"
+                        />
+                      </div>
                     )}
 
                     {attachment.type === 'pdf' && (

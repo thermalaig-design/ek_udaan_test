@@ -3,69 +3,82 @@ import React, { useState, useEffect, useRef } from 'react';
 const ImageSlider = ({ images, autoPlayInterval = 3000, onNavigate }) => {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isDragging, setIsDragging] = useState(false);
-  const [startX, setStartX] = useState(0);
   const [translateX, setTranslateX] = useState(0);
   const sliderRef = useRef(null);
   const autoPlayRef = useRef(null);
+  const resumeTimerRef = useRef(null);
   const dragDistanceRef = useRef(0);
+  const startXRef = useRef(0);
+  const isDraggingRef = useRef(false);
+  const wasSwipeRef = useRef(false);
+  const interactionLockRef = useRef(false);
 
-  // Auto-play functionality
-  useEffect(() => {
-    if (images.length <= 1) return;
-    
-    autoPlayRef.current = setInterval(() => {
-      if (!isDragging) {
-        setCurrentIndex((prev) => (prev + 1) % images.length);
-      }
-    }, autoPlayInterval);
-
-    return () => {
-      if (autoPlayRef.current) {
-        clearInterval(autoPlayRef.current);
-      }
-    };
-  }, [images.length, autoPlayInterval, isDragging]);
-
-  // Touch/Mouse handlers
-  const handleStart = (clientX) => {
-    setIsDragging(true);
-    setStartX(clientX);
-    setTranslateX(0);
-    dragDistanceRef.current = 0;
+  const clearTimers = () => {
     if (autoPlayRef.current) {
       clearInterval(autoPlayRef.current);
+      autoPlayRef.current = null;
+    }
+    if (resumeTimerRef.current) {
+      clearTimeout(resumeTimerRef.current);
+      resumeTimerRef.current = null;
     }
   };
 
+  const startAutoPlay = () => {
+    clearTimers();
+    if (!Array.isArray(images) || images.length <= 1) return;
+    autoPlayRef.current = setInterval(() => {
+      if (isDraggingRef.current || interactionLockRef.current) return;
+      setCurrentIndex((prev) => (prev + 1) % images.length);
+    }, Math.max(3500, autoPlayInterval));
+  };
+
+  // Auto-play functionality
+  useEffect(() => {
+    startAutoPlay();
+    return () => {
+      clearTimers();
+    };
+  }, [images.length, autoPlayInterval]);
+
+  // Touch/Mouse handlers
+  const handleStart = (clientX) => {
+    clearTimers();
+    setIsDragging(true);
+    isDraggingRef.current = true;
+    startXRef.current = clientX;
+    setTranslateX(0);
+    dragDistanceRef.current = 0;
+    wasSwipeRef.current = false;
+  };
+
   const handleMove = (clientX) => {
-    if (!isDragging) return;
-    const diff = clientX - startX;
+    if (!isDraggingRef.current) return;
+    const diff = clientX - startXRef.current;
     setTranslateX(diff);
     dragDistanceRef.current = Math.max(dragDistanceRef.current, Math.abs(diff));
   };
 
   const handleEnd = () => {
-    if (!isDragging) return;
+    if (!isDraggingRef.current) return;
     setIsDragging(false);
-    
-    const threshold = 50;
-    if (translateX < -threshold && currentIndex < images.length - 1) {
-      setCurrentIndex((prev) => prev + 1);
-    } else if (translateX > threshold && currentIndex > 0) {
-      setCurrentIndex((prev) => prev - 1);
+    isDraggingRef.current = false;
+
+    const threshold = 40;
+    if (translateX < -threshold) {
+      wasSwipeRef.current = true;
+      setCurrentIndex((prev) => (prev + 1) % images.length);
+    } else if (translateX > threshold) {
+      wasSwipeRef.current = true;
+      setCurrentIndex((prev) => (prev - 1 + images.length) % images.length);
     }
-    
+
     setTranslateX(0);
-    
-    // Restart auto-play
-    if (autoPlayRef.current) {
-      clearInterval(autoPlayRef.current);
-    }
-    autoPlayRef.current = setInterval(() => {
-      if (!isDragging) {
-        setCurrentIndex((prev) => (prev + 1) % images.length);
-      }
-    }, autoPlayInterval);
+    interactionLockRef.current = true;
+    resumeTimerRef.current = setTimeout(() => {
+      interactionLockRef.current = false;
+      startAutoPlay();
+    }, 4500);
   };
 
   // Touch events
@@ -80,11 +93,11 @@ const ImageSlider = ({ images, autoPlayInterval = 3000, onNavigate }) => {
   };
   const onMouseUp = () => handleEnd();
   const onMouseLeave = () => {
-    if (isDragging) handleEnd();
+    if (isDraggingRef.current) handleEnd();
   };
 
   const handleSliderClick = () => {
-    if (dragDistanceRef.current > 8) return;
+    if (wasSwipeRef.current || dragDistanceRef.current > 8) return;
     if (typeof onNavigate === 'function') onNavigate('gallery');
   };
 
@@ -95,10 +108,11 @@ const ImageSlider = ({ images, autoPlayInterval = 3000, onNavigate }) => {
       {/* Slider container */}
       <div
         ref={sliderRef}
-        className="flex transition-transform duration-300 ease-out"
+        className="flex transition-transform duration-500 ease-in-out"
         style={{
           transform: `translateX(calc(-${currentIndex * 100}% + ${translateX}px))`,
-          transition: isDragging ? 'none' : 'transform 0.3s ease-out'
+          transition: isDragging ? 'none' : 'transform 500ms cubic-bezier(0.22, 0.61, 0.36, 1)',
+          touchAction: 'pan-y'
         }}
         onTouchStart={onTouchStart}
         onTouchMove={onTouchMove}
@@ -118,7 +132,8 @@ const ImageSlider = ({ images, autoPlayInterval = 3000, onNavigate }) => {
             <img
               src={image.url}
               alt={image.label || `Image ${index + 1}`}
-              loading="lazy"
+              loading={index === 0 ? 'eager' : 'lazy'}
+              decoding="async"
               className="w-full h-56 sm:h-64 object-cover bg-slate-100"
               draggable={false}
             />

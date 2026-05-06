@@ -215,7 +215,7 @@ export const fetchNoticeboardPage = async ({
       finalNoticeIds: []
     };
 
-    // Main query: trust + active + gen.
+    // Main query: trust + active + type.
     const { data, error } = await supabase
       .from('noticeboard')
       .select('id, trust_id, type, name, description, attachments, start_date, end_date, status, created_at, updated_at')
@@ -224,8 +224,7 @@ export const fetchNoticeboardPage = async ({
       .in('type', allowedTypes)
       .order('start_date', { ascending: false, nullsFirst: false })
       .order('created_at', { ascending: false })
-      .order('id', { ascending: true })
-      .range(rangeFrom, rangeTo);
+      .order('id', { ascending: true });
 
     if (error) throw error;
 
@@ -234,9 +233,11 @@ export const fetchNoticeboardPage = async ({
 
     // Client-side date filter removed — we trust DB's status='active' as source of truth.
     // Notices with expired end_date should be deactivated at DB level by admin.
-    debug.counts.afterDateFilterRows = rowsBeforeDate.length;
+    const rowsAfterDate = rowsBeforeDate.filter((row) => isDateValidForToday(row, today));
+    debug.counts.afterDateFilterRows = rowsAfterDate.length;
 
-    const finalRows = rowsBeforeDate
+    const pagedRows = rowsAfterDate.slice(rangeFrom, rangeTo + 1);
+    const finalRows = pagedRows
       .map((item) => ({
         id: item.id,
         trust_id: item.trust_id,
@@ -306,7 +307,7 @@ export const fetchNoticeboardPage = async ({
     return {
       success: true,
       data: finalRows,
-      hasMore: rowsBeforeDate.length === limit,
+      hasMore: rowsAfterDate.length > rangeTo + 1,
       debug
     };
   } catch (error) {

@@ -199,7 +199,6 @@ const Achievements = ({ onNavigate }) => {
         <button
           onClick={() => setIsMenuOpen(!isMenuOpen)}
           className="p-2 rounded-xl transition-colors"
-          style={{ background: 'color-mix(in srgb, var(--surface-color) 88%, var(--app-accent-bg))' }}
           aria-label="Toggle menu"
         >
           {isMenuOpen ? <X className="h-5 w-5" style={{ color: 'var(--navbar-text)' }} /> : <Menu className="h-5 w-5" style={{ color: 'var(--navbar-text)' }} />}
@@ -208,7 +207,7 @@ const Achievements = ({ onNavigate }) => {
         <button
           onClick={() => onNavigate?.('home')}
           className="p-2 rounded-xl transition-colors"
-          style={{ color: 'var(--navbar-text)', background: 'color-mix(in srgb, var(--surface-color) 88%, var(--app-accent-bg))' }}
+          style={{ color: 'var(--navbar-text)' }}
           aria-label="Go to home"
         >
           <HomeIcon className="h-5 w-5" />
@@ -259,16 +258,13 @@ const Achievements = ({ onNavigate }) => {
                         if (!url) return null;
                         if (isImageUrl(url)) {
                           return (
-                            <a
+                            <div
                               key={`spotlight-${spotlight.id}-image-${idx}`}
-                              href={url}
-                              target="_blank"
-                              rel="noreferrer"
                               className="block overflow-hidden rounded-xl border"
                               style={{ borderColor: 'var(--card-border)' }}
                             >
                               <img src={url} alt={getAttachmentLabel(attachment, idx)} className="w-full h-auto max-h-56 object-cover" loading="lazy" />
-                            </a>
+                            </div>
                           );
                         }
                         return (
@@ -312,16 +308,13 @@ const Achievements = ({ onNavigate }) => {
                               if (!url) return null;
                               if (isImageUrl(url)) {
                                 return (
-                                  <a
+                                  <div
                                     key={`${item.id}-image-${idx}`}
-                                    href={url}
-                                    target="_blank"
-                                    rel="noreferrer"
                                     className="block overflow-hidden rounded-lg border"
                                     style={{ borderColor: 'var(--card-border)' }}
                                   >
                                     <img src={url} alt={getAttachmentLabel(attachment, idx)} className="w-full h-auto max-h-52 object-cover" loading="lazy" />
-                                  </a>
+                                  </div>
                                 );
                               }
                               return (

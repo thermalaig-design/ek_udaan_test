@@ -1407,7 +1407,7 @@ const HealthcareTrusteeDirectory = ({ onNavigate }) => {
                                   (item.position || item.member_role || item.type || item['Company Name']) &&
                                   (item.position || item.member_role || item.type || item['Company Name']) !== 'N/A' && (
                                     <span
-                                      className="text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full inline-block"
+                                      className="self-start text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full inline-block"
                                       style={{ background: 'var(--brand-navy-light)', color: 'var(--brand-navy)' }}
                                     >
                                       {item.position || item.member_role || item.type || item['Company Name']}

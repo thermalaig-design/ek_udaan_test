@@ -113,20 +113,24 @@ const resolvePhotoUrl = (...candidates) => {
   }
   return '';
 };
-const getSharedProfilePhoto = (user = {}) => {
+const getCurrentUserPhotoCacheKey = (user = {}) => {
+  const userId = String(user?.Mobile || user?.mobile || user?.id || user?.['Membership number'] || 'default').trim();
+  return `last_profile_photo_url_${userId || 'default'}`;
+};
+
+const getScopedProfilePhoto = (user = {}) => {
   try {
+    const scopedPhoto = localStorage.getItem(getCurrentUserPhotoCacheKey(user));
     const direct = resolvePhotoUrl(
-      localStorage.getItem('last_profile_photo_url'),
+      scopedPhoto,
       user?.profile_photo_url,
       user?.profilePhotoUrl
     );
     if (direct) return direct;
-    const keys = Object.keys(localStorage).filter((k) => k.startsWith('userProfile_'));
-    for (const key of keys) {
-      const row = JSON.parse(localStorage.getItem(key) || '{}');
-      const url = resolvePhotoUrl(row?.profile_photo_url, row?.profilePhotoUrl);
-      if (url) return url;
-    }
+    const currentUserProfileKey = `userProfile_${user?.Mobile || user?.mobile || user?.id || 'default'}`;
+    const row = JSON.parse(localStorage.getItem(currentUserProfileKey) || '{}');
+    const url = resolvePhotoUrl(row?.profile_photo_url, row?.profilePhotoUrl);
+    if (url) return url;
   } catch {
     // ignore cache errors
   }
@@ -268,6 +272,7 @@ const Profile = ({ onNavigate, onProfileUpdate }) => {
   const isBlank = (value) => value === undefined || value === null || String(value).trim() === '';
   const getMissingSectionKeys = (data) => {
     const next = [];
+    if (isBlank(data.name)) next.push('name');
     if (isBlank(data.email) || isBlank(data.gender) || isBlank(data.dob) || isBlank(data.blood_group) || isBlank(data.marital_status) || isBlank(data.nationality)) next.push('personal');
     if (isBlank(data.address_home) || isBlank(data.address_office)) next.push('address');
     if (isBlank(data.company_name) || isBlank(data.resident_landline) || isBlank(data.office_landline)) next.push('work');
@@ -345,6 +350,7 @@ const Profile = ({ onNavigate, onProfileUpdate }) => {
   useEffect(() => {
     if (hasLoadedProfileRef.current) return;
     hasLoadedProfileRef.current = true;
+    try { localStorage.removeItem('last_profile_photo_url'); } catch { /* ignore */ }
     loadProfile();
   }, []);
 
@@ -419,7 +425,7 @@ const Profile = ({ onNavigate, onProfileUpdate }) => {
           }
         }
         if (!resolvedPhotoUrl) {
-          resolvedPhotoUrl = getSharedProfilePhoto(user);
+          resolvedPhotoUrl = getScopedProfilePhoto(user);
         }
         setProfileData({
           name: resolvedName,
@@ -445,7 +451,7 @@ const Profile = ({ onNavigate, onProfileUpdate }) => {
         });
         if (resolvedPhotoUrl) {
           setPhotoPreview(resolvedPhotoUrl);
-          localStorage.setItem('last_profile_photo_url', resolvedPhotoUrl);
+          localStorage.setItem(getCurrentUserPhotoCacheKey(user), resolvedPhotoUrl);
         }
       } else {
         loadFromLS();
@@ -490,10 +496,10 @@ const Profile = ({ onNavigate, onProfileUpdate }) => {
         memberId: trustMemberId || '',
         name_locked: nameLocked
       }));
-      const fallbackPhoto = resolvePhotoUrl(p.profile_photo_url, getSharedProfilePhoto(user));
+      const fallbackPhoto = resolvePhotoUrl(p.profile_photo_url, getScopedProfilePhoto(user));
       if (fallbackPhoto) {
         setPhotoPreview(fallbackPhoto);
-        localStorage.setItem('last_profile_photo_url', fallbackPhoto);
+        localStorage.setItem(getCurrentUserPhotoCacheKey(user), fallbackPhoto);
       }
     } else {
       const resolvedName = resolveNameValue(
@@ -519,10 +525,10 @@ const Profile = ({ onNavigate, onProfileUpdate }) => {
         resident_landline: user['Resident Landline'] || '', office_landline: user['Office Landline'] || '',
         name_locked: nameLocked
       }));
-      const fallbackPhoto = getSharedProfilePhoto(user);
+      const fallbackPhoto = getScopedProfilePhoto(user);
       if (fallbackPhoto) {
         setPhotoPreview(fallbackPhoto);
-        localStorage.setItem('last_profile_photo_url', fallbackPhoto);
+        localStorage.setItem(getCurrentUserPhotoCacheKey(user), fallbackPhoto);
       }
     }
   };
@@ -598,7 +604,7 @@ const Profile = ({ onNavigate, onProfileUpdate }) => {
       setCurrentEditStep(0);
       if (response?.profile?.profile_photo_url) {
         setPhotoPreview(response.profile.profile_photo_url);
-        localStorage.setItem('last_profile_photo_url', response.profile.profile_photo_url);
+        localStorage.setItem(getCurrentUserPhotoCacheKey(user), response.profile.profile_photo_url);
       }
       if (onProfileUpdate) onProfileUpdate(mergedProfile);
       if (!shouldTreatAsTrustMember) {
@@ -700,7 +706,7 @@ const Profile = ({ onNavigate, onProfileUpdate }) => {
                 <button onClick={() => document.getElementById('photo-upload').click()}
                   className="absolute -bottom-1 -right-1 p-2 rounded-full shadow-sm active:scale-95 transition-all"
                   style={{ background: 'var(--surface-color)', border: '1px solid color-mix(in srgb, var(--brand-navy) 14%, transparent)' }}>
-                  <Pencil className="h-3.5 w-3.5" style={{ color: 'var(--brand-navy)' }} />
+                  <Pencil className="h-3.5 w-3.5" style={{ color: '#000000' }} />
                 </button>
                 <input id="photo-upload" type="file" accept="image/*" className="hidden" onChange={handlePhotoChange} />
               </div>
@@ -723,9 +729,17 @@ const Profile = ({ onNavigate, onProfileUpdate }) => {
                   });
                   if (isEditMode) setMessage({ type: '', text: '' });
                 }}
-                className="mt-3 px-5 py-2 rounded-2xl text-sm font-bold transition-all active:scale-[0.98]"
-                style={{ color: 'var(--surface-color)', background: 'linear-gradient(135deg, var(--brand-red) 0%, var(--brand-navy) 100%)' }}
+                className="mt-4 w-full max-w-[240px] mx-auto flex items-center justify-center gap-2 px-5 py-3 rounded-2xl text-base font-extrabold transition-all active:scale-[0.98] border"
+                style={{
+                  color: '#ffffff',
+                  background: 'linear-gradient(135deg, #7c3aed 0%, #e5e7eb 100%)',
+                  borderColor: 'rgba(255,255,255,0.5)',
+                  boxShadow: '0 10px 24px rgba(76, 29, 149, 0.28)',
+                  position: 'relative',
+                  zIndex: 5
+                }}
               >
+                <Pencil className="h-4 w-4" />
                 {isEditMode ? 'View Profile' : 'Edit Profile'}
               </button>
             </div>
@@ -755,9 +769,18 @@ const Profile = ({ onNavigate, onProfileUpdate }) => {
               <div className="rounded-2xl p-4 border" style={{ borderColor: 'color-mix(in srgb, var(--brand-navy) 10%, transparent)', background: 'var(--surface-color)' }}>
                 <p className="text-xs font-bold uppercase tracking-wider mb-3" style={{ color: 'var(--brand-red)' }}>Basic Info</p>
                 <div className="space-y-2 text-sm">
-                  <p><span className="font-semibold">Name:</span> {profileData.name || '-'}</p>
-                  <p><span className="font-semibold">Mobile:</span> {profileData.mobile || '-'}</p>
-                  <p><span className="font-semibold">Email:</span> {profileData.email || '-'}</p>
+                  {String(profileData.name || '').trim() && (
+                    <p><span className="font-semibold">Name:</span> {profileData.name}</p>
+                  )}
+                  {String(profileData.mobile || '').trim() && (
+                    <p><span className="font-semibold">Mobile:</span> {profileData.mobile}</p>
+                  )}
+                  {String(profileData.email || '').trim() && (
+                    <p><span className="font-semibold">Email:</span> {profileData.email}</p>
+                  )}
+                  {!String(profileData.name || '').trim() && !String(profileData.mobile || '').trim() && !String(profileData.email || '').trim() && (
+                    <p style={{ color: 'color-mix(in srgb, var(--body-text-color) 55%, var(--surface-color))' }}>Abhi koi basic info add nahi ki gayi.</p>
+                  )}
                 </div>
               </div>
             </div>
@@ -767,6 +790,18 @@ const Profile = ({ onNavigate, onProfileUpdate }) => {
                 <div className="rounded-2xl p-4 border text-sm font-semibold" style={{ borderColor: 'color-mix(in srgb, var(--brand-navy) 12%, transparent)', background: 'var(--surface-color)', color: 'var(--brand-navy)' }}>
                   Sab required fields fill ho chuke hain. Aap direct save kar sakte ho.
                 </div>
+              )}
+              {activeEditKey === 'name' && (
+                <SectionCard title="Name Form" subtitle={`Step ${currentEditStep + 1} of ${editStepKeys.length}`} isOpen={true}>
+                  <RowField
+                    label="Full Name"
+                    value={profileData.name}
+                    onChange={set('name')}
+                    placeholder="Enter your full name"
+                    disabled={!allowManualNameEntry}
+                    icon={User}
+                  />
+                </SectionCard>
               )}
               {activeEditKey === 'personal' && (
                 <SectionCard title="Personal Form" subtitle={`Step ${currentEditStep + 1} of ${editStepKeys.length}`} isOpen={true}>

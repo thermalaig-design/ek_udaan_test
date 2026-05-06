@@ -1,8 +1,13 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeft, Calendar, ExternalLink, FileText, Home as HomeIcon, Paperclip, Star } from 'lucide-react';
+import { ArrowLeft, Calendar, FileText, Home as HomeIcon, Paperclip, Star } from 'lucide-react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useAppTheme } from './context/ThemeContext';
 import { getNoticeboardSnapshot, loadNoticeDetail } from './services/noticeboardStore';
+
+const AUTO_SWIPE_INTERVAL_MS = 5000;
+const AUTO_SWIPE_PAUSE_AFTER_INTERACTION_MS = 3500;
+const SWIPE_THRESHOLD_PX = 44;
+const MAX_DRAG_TRANSLATE_PX = 72;
 
 const formatDateRange = (startDate, endDate) => {
   const toLabel = (value) => {
@@ -96,8 +101,11 @@ const NoticeDetail = ({ onNavigate }) => {
   const [currentNoticeIndex, setCurrentNoticeIndex] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [dragTranslateX, setDragTranslateX] = useState(0);
+  const [isDragging, setIsDragging] = useState(false);
   const touchStartXRef = useRef(null);
   const touchEndXRef = useRef(null);
+  const lastInteractionTsRef = useRef(0);
   const selectedTrustId = useMemo(() => localStorage.getItem('selected_trust_id') || '', []);
 
   useEffect(() => {
@@ -153,8 +161,9 @@ const NoticeDetail = ({ onNavigate }) => {
   useEffect(() => {
     if (loading || error || !Array.isArray(noticeList) || noticeList.length <= 1) return undefined;
     const timer = setInterval(() => {
+      if (Date.now() - lastInteractionTsRef.current < AUTO_SWIPE_PAUSE_AFTER_INTERACTION_MS) return;
       setCurrentNoticeIndex((prev) => (prev + 1) % noticeList.length);
-    }, 5000);
+    }, AUTO_SWIPE_INTERVAL_MS);
     return () => clearInterval(timer);
   }, [loading, error, noticeList]);
 
@@ -164,22 +173,36 @@ const NoticeDetail = ({ onNavigate }) => {
   };
 
   const onCardTouchStart = (event) => {
+    if (!Array.isArray(noticeList) || noticeList.length <= 1) return;
+    lastInteractionTsRef.current = Date.now();
     touchStartXRef.current = event.touches?.[0]?.clientX ?? null;
-    touchEndXRef.current = null;
+    touchEndXRef.current = touchStartXRef.current;
+    setIsDragging(true);
+    setDragTranslateX(0);
   };
 
   const onCardTouchMove = (event) => {
-    touchEndXRef.current = event.touches?.[0]?.clientX ?? null;
+    if (!isDragging) return;
+    const currentX = event.touches?.[0]?.clientX ?? null;
+    touchEndXRef.current = currentX;
+    const start = touchStartXRef.current;
+    if (start == null || currentX == null) return;
+    const rawDelta = currentX - start;
+    const boundedDelta = Math.max(-MAX_DRAG_TRANSLATE_PX, Math.min(MAX_DRAG_TRANSLATE_PX, rawDelta));
+    setDragTranslateX(boundedDelta);
   };
 
   const onCardTouchEnd = () => {
     if (!Array.isArray(noticeList) || noticeList.length <= 1) return;
+    lastInteractionTsRef.current = Date.now();
+    setIsDragging(false);
     const start = touchStartXRef.current;
     const end = touchEndXRef.current;
+    setDragTranslateX(0);
     if (start == null || end == null) return;
-    const delta = start - end;
-    if (Math.abs(delta) < 50) return;
-    if (delta > 0) setCurrentNoticeIndex((prev) => (prev + 1) % noticeList.length);
+    const delta = end - start;
+    if (Math.abs(delta) < SWIPE_THRESHOLD_PX) return;
+    if (delta < 0) setCurrentNoticeIndex((prev) => (prev + 1) % noticeList.length);
     else setCurrentNoticeIndex((prev) => (prev - 1 + noticeList.length) % noticeList.length);
   };
 
@@ -257,11 +280,15 @@ const NoticeDetail = ({ onNavigate }) => {
             style={{
               borderLeftColor: isVip ? 'color-mix(in srgb, var(--brand-red) 45%, #d4af37)' : theme.primary,
               borderColor: isVip ? 'color-mix(in srgb, var(--brand-red) 22%, #f1e2a4)' : 'color-mix(in srgb, var(--brand-navy) 10%, transparent)',
-              background: isVip ? 'linear-gradient(180deg, color-mix(in srgb, var(--brand-red-light) 50%, #fffdf6) 0%, #ffffff 48%)' : '#ffffff'
+              background: isVip ? 'linear-gradient(180deg, color-mix(in srgb, var(--brand-red-light) 50%, #fffdf6) 0%, #ffffff 48%)' : '#ffffff',
+              transform: `translate3d(${dragTranslateX}px, 0, 0)`,
+              opacity: Math.max(0.9, 1 - Math.abs(dragTranslateX) / 280),
+              transition: isDragging ? 'none' : 'transform 260ms cubic-bezier(0.22, 0.61, 0.36, 1), opacity 220ms ease'
             }}
             onTouchStart={onCardTouchStart}
             onTouchMove={onCardTouchMove}
             onTouchEnd={onCardTouchEnd}
+            onTouchCancel={onCardTouchEnd}
           >
             <div className="flex items-center justify-between gap-3 mb-4">
               <span
@@ -340,17 +367,6 @@ const NoticeDetail = ({ onNavigate }) => {
                         </div>
                       )}
 
-                      <div className="px-3 py-2 text-xs font-medium flex items-center justify-end gap-2" style={{ color: 'var(--body-text-color)' }}>
-                        <a
-                          href={attachment.url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center gap-1 font-semibold"
-                          style={{ color: theme.primary }}
-                        >
-                          Open <ExternalLink className="h-3.5 w-3.5" />
-                        </a>
-                      </div>
                     </div>
                   ))}
                 </div>
@@ -363,7 +379,10 @@ const NoticeDetail = ({ onNavigate }) => {
                   return (
                     <button
                       key={item?.id || idx}
-                      onClick={() => setCurrentNoticeIndex(idx)}
+                      onClick={() => {
+                        lastInteractionTsRef.current = Date.now();
+                        setCurrentNoticeIndex(idx);
+                      }}
                       className="rounded-full transition-all"
                       style={{
                         width: active ? 16 : 6,

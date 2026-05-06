@@ -1,15 +1,19 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Home as HomeIcon, Mail, Phone, Search, Users } from 'lucide-react';
+import { Home as HomeIcon, Mail, Menu, Phone, Search, Users, X } from 'lucide-react';
 import { useAppTheme } from './context/ThemeContext';
 import { getExecutiveBodyMembers } from './services/supabaseService';
 import { getNavbarThemeStyles } from './utils/themeUtils';
+import { applyOpacity } from './utils/colorUtils';
+import Sidebar from './components/Sidebar';
 
 const TAB_OPTIONS = [
   { id: 'all', label: 'All' },
   { id: 'committee', label: 'Committee' },
   { id: 'elected', label: 'Elected' },
 ];
+const MEMBERS_PER_PAGE = 20;
+const EXEC_BODY_ACTIVE_TAB_KEY = 'executive_body_active_tab';
 
 const ExecutiveBody = ({ onNavigate }) => {
   const navigate = useNavigate();
@@ -18,9 +22,14 @@ const ExecutiveBody = ({ onNavigate }) => {
   const navbarTextColor = navbarTheme?.textColor || 'var(--navbar-text)';
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [tab, setTab] = useState('all');
+  const [tab, setTab] = useState(() => {
+    const saved = String(sessionStorage.getItem(EXEC_BODY_ACTIVE_TAB_KEY) || '').trim().toLowerCase();
+    return TAB_OPTIONS.some((item) => item.id === saved) ? saved : 'all';
+  });
   const [query, setQuery] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
   const [data, setData] = useState({ all: [], committee: [], elected: [] });
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
 
   useEffect(() => {
     let mounted = true;
@@ -97,12 +106,35 @@ const ExecutiveBody = ({ onNavigate }) => {
   );
 
   useEffect(() => {
+    if (loading) return;
     if (!visibleTabs.some((item) => item.id === tab)) {
       setTab('all');
     }
-  }, [tab, visibleTabs]);
+  }, [tab, visibleTabs, loading]);
+
+  useEffect(() => {
+    sessionStorage.setItem(EXEC_BODY_ACTIVE_TAB_KEY, tab);
+  }, [tab]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [tab, query]);
+
+  const totalPages = Math.max(1, Math.ceil(activeMembers.length / MEMBERS_PER_PAGE));
+
+  useEffect(() => {
+    if (currentPage > totalPages) {
+      setCurrentPage(totalPages);
+    }
+  }, [currentPage, totalPages]);
+
+  const paginatedMembers = useMemo(() => {
+    const start = (currentPage - 1) * MEMBERS_PER_PAGE;
+    return activeMembers.slice(start, start + MEMBERS_PER_PAGE);
+  }, [activeMembers, currentPage]);
 
   const openMemberDetails = (item) => {
+    sessionStorage.setItem(EXEC_BODY_ACTIVE_TAB_KEY, tab);
     const memberData = {
       'S. No.': item?.['S. No.'] || item?.original_id || item?.id || 'N/A',
       Name: item?.Name || item?.member_name_english || 'N/A',
@@ -126,6 +158,7 @@ const ExecutiveBody = ({ onNavigate }) => {
       isCommitteeMember: item?.role_type === 'committee',
       isElectedMember: item?.role_type === 'elected',
       previousScreenName: 'executive-body',
+      restoreExecutiveTab: tab,
     };
 
     if (typeof onNavigate === 'function') {
@@ -152,12 +185,12 @@ const ExecutiveBody = ({ onNavigate }) => {
           <div className="flex items-center justify-between">
             <button
               type="button"
-              onClick={() => navigate('/')}
+              onClick={() => setIsMenuOpen((prev) => !prev)}
               className="p-2 rounded-xl transition-colors"
-              style={{ color: navbarTextColor, background: 'transparent' }}
-              aria-label="Go home"
+              style={{ color: navbarTextColor, background: 'color-mix(in srgb, var(--navbar-bg) 72%, var(--surface-color))' }}
+              aria-label="Open menu"
             >
-              <ArrowLeft className="h-5 w-5" />
+              {isMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
             </button>
             <h1 className="text-lg font-extrabold tracking-wide" style={{ color: navbarTextColor }}>Executive Body</h1>
             <button
@@ -170,11 +203,17 @@ const ExecutiveBody = ({ onNavigate }) => {
               <HomeIcon className="h-5 w-5" />
             </button>
           </div>
-          <p className="text-xs mt-1 text-center" style={{ color: 'color-mix(in srgb, var(--navbar-text) 78%, var(--surface-color))' }}>
-            Member roles based listing
-          </p>
         </div>
       </div>
+
+      {isMenuOpen && (
+        <div
+          className="fixed inset-0 z-25"
+          style={{ background: applyOpacity('var(--brand-navy-dark)', 0.12) }}
+          onClick={() => setIsMenuOpen(false)}
+        />
+      )}
+      <Sidebar isOpen={isMenuOpen} onClose={() => setIsMenuOpen(false)} onNavigate={onNavigate} currentPage="executive-body" />
 
       <div className="px-4 pt-4">
         <div className="rounded-2xl p-3 flex items-center gap-2" style={{ background: 'var(--surface-color)', border: '1px solid color-mix(in srgb, var(--brand-navy) 12%, transparent)' }}>
@@ -233,64 +272,103 @@ const ExecutiveBody = ({ onNavigate }) => {
             <p className="text-sm font-semibold" style={{ color: 'var(--body-text-color)' }}>No members found</p>
           </div>
         ) : (
-          activeMembers.map((item) => (
-            <button
-              type="button"
-              key={item?.id || item?.reg_id || item?.['S. No.']}
-              onClick={() => openMemberDetails(item)}
-              className="w-full text-left rounded-2xl p-3.5"
-              style={{ background: 'var(--surface-color)', border: '1px solid color-mix(in srgb, var(--brand-navy) 10%, transparent)' }}
-            >
-              <div className="flex items-start justify-between gap-2">
-                <div className="min-w-0">
-                  <h3 className="text-sm font-extrabold truncate" style={{ color: 'var(--heading-color)' }}>
-                    {item?.Name || item?.member_name_english || 'N/A'}
-                  </h3>
-                  <p className="text-[11px] mt-0" style={{ color: 'var(--body-text-color)' }}>
+          <>
+            {paginatedMembers.map((item) => (
+              <button
+                type="button"
+                key={item?.id || item?.reg_id || item?.['S. No.']}
+                onClick={() => openMemberDetails(item)}
+                className="w-full text-left rounded-2xl p-3"
+                style={{
+                  background: `linear-gradient(165deg, ${applyOpacity(theme.secondary, 0.08)} 0%, ${applyOpacity(theme.primary, 0.1)} 100%)`,
+                  border: `1px solid ${applyOpacity(theme.primary, 0.2)}`,
+                  boxShadow: `0 8px 18px ${applyOpacity(theme.secondary, 0.12)}`
+                }}
+              >
+                <div className="flex flex-col gap-2">
+                  <div className="flex items-start justify-between gap-2">
+                    <h3 className="text-sm font-extrabold truncate min-w-0" style={{ color: 'var(--heading-color)' }}>
+                      {item?.Name || item?.member_name_english || 'N/A'}
+                    </h3>
+                  <span
+                    className="text-[10px] font-bold uppercase px-2 py-1 rounded-full shrink-0"
+                    style={item?.role_type === 'committee'
+                      ? { background: applyOpacity(theme.secondary, 0.18), color: 'var(--heading-color)' }
+                      : { background: applyOpacity(theme.primary, 0.2), color: 'var(--heading-color)' }}
+                  >
+                    {item?.role_type || 'role'}
+                  </span>
+                  </div>
+
+                  <p className="text-[11px] leading-[1.2]" style={{ color: 'var(--body-text-color)' }}>
                     {item?.member_role || item?.title || item?.type || 'N/A'}
                   </p>
-                </div>
-                <span
-                  className="text-[10px] font-bold uppercase px-2 py-1 rounded-full"
-                  style={item?.role_type === 'committee'
-                    ? { background: 'var(--brand-navy-light)', color: 'var(--brand-navy)' }
-                    : { background: 'var(--brand-red-light)', color: 'var(--brand-red-dark)' }}
-                >
-                  {item?.role_type || 'role'}
-                </span>
-              </div>
 
-              {(item?.['Membership number'] || item?.subtitle) && (
-                <div className="mt-1 flex flex-wrap gap-1">
-                  {item?.['Membership number'] ? (
-                    <span className="text-[10px] font-semibold px-2 py-1 rounded-full" style={{ background: 'color-mix(in srgb, var(--brand-navy-light) 55%, var(--surface-color))', color: 'var(--brand-navy)' }}>
-                      M No: {item['Membership number']}
-                    </span>
-                  ) : null}
-                  {item?.subtitle ? (
-                    <span className="text-[10px] font-semibold px-2 py-1 rounded-full" style={{ background: 'color-mix(in srgb, var(--brand-red-light) 50%, var(--surface-color))', color: 'var(--brand-red-dark)' }}>
-                      {item.subtitle}
-                    </span>
-                  ) : null}
-                </div>
-              )}
+                  {(item?.['Membership number'] || item?.subtitle) && (
+                    <div className="flex flex-wrap gap-1 justify-start">
+                      {item?.['Membership number'] ? (
+                        <span className="text-[10px] font-semibold px-2 py-1 rounded-full" style={{ background: applyOpacity(theme.secondary, 0.14), color: 'var(--heading-color)' }}>
+                          M No: {item['Membership number']}
+                        </span>
+                      ) : null}
+                      {item?.subtitle ? (
+                        <span className="self-start text-[10px] font-semibold px-2 py-1 rounded-full" style={{ background: applyOpacity(theme.primary, 0.14), color: 'var(--heading-color)' }}>
+                          {item.subtitle}
+                        </span>
+                      ) : null}
+                    </div>
+                  )}
 
-              <div className="mt-1 flex items-center gap-2 text-[11px]">
-                {item?.Mobile ? (
-                  <span className="inline-flex items-center gap-1" style={{ color: 'var(--body-text-color)' }}>
-                    <Phone className="h-3 w-3" />
-                    {item.Mobile}
-                  </span>
-                ) : null}
-                {item?.Email ? (
-                  <span className="inline-flex items-center gap-1 truncate" style={{ color: 'var(--body-text-color)' }}>
-                    <Mail className="h-3 w-3" />
-                    {item.Email}
-                  </span>
-                ) : null}
-              </div>
-            </button>
-          ))
+                  <div className="flex items-center gap-2 text-[11px]">
+                    {item?.Mobile ? (
+                      <span className="inline-flex items-center gap-1" style={{ color: 'var(--body-text-color)' }}>
+                        <Phone className="h-3 w-3" />
+                        {item.Mobile}
+                      </span>
+                    ) : null}
+                    {item?.Email ? (
+                      <span className="inline-flex items-center gap-1 truncate" style={{ color: 'var(--body-text-color)' }}>
+                        <Mail className="h-3 w-3" />
+                        {item.Email}
+                      </span>
+                    ) : null}
+                  </div>
+                </div>
+              </button>
+            ))}
+
+            <div className="mt-2 pt-2 flex items-center justify-between gap-2">
+              <button
+                type="button"
+                onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
+                disabled={currentPage <= 1}
+                className="px-3 py-1.5 rounded-lg text-xs font-bold disabled:opacity-50 disabled:cursor-not-allowed"
+                style={{
+                  background: applyOpacity(theme.secondary, 0.14),
+                  color: 'var(--heading-color)',
+                  border: `1px solid ${applyOpacity(theme.secondary, 0.24)}`,
+                }}
+              >
+                Prev
+              </button>
+              <span className="text-xs font-semibold" style={{ color: 'var(--body-text-color)' }}>
+                Page {currentPage} of {totalPages}
+              </span>
+              <button
+                type="button"
+                onClick={() => setCurrentPage((prev) => Math.min(totalPages, prev + 1))}
+                disabled={currentPage >= totalPages}
+                className="px-3 py-1.5 rounded-lg text-xs font-bold disabled:opacity-50 disabled:cursor-not-allowed"
+                style={{
+                  background: applyOpacity(theme.primary, 0.16),
+                  color: 'var(--heading-color)',
+                  border: `1px solid ${applyOpacity(theme.primary, 0.24)}`,
+                }}
+              >
+                Next
+              </button>
+            </div>
+          </>
         )}
       </div>
     </div>

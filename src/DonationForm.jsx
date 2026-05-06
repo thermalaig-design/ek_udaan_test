@@ -31,10 +31,10 @@ const DonationForm = () => {
     const nextPrefill = getDonationFormPrefill();
     setPrefill(nextPrefill);
     setFormData((prev) => ({
-      donorName: nextPrefill.donorName || prev.donorName || '',
-      mobile: nextPrefill.mobile || prev.mobile || '',
+      donorName: prev.donorName || '',
+      mobile: prev.mobile || '',
       email: nextPrefill.email || prev.email || '',
-      membershipNumber: nextPrefill.membershipNumber || prev.membershipNumber || '',
+      membershipNumber: prev.membershipNumber || '',
       amount: prev.amount || '',
       donationId: prev.donationId || preferredDonationId || '',
     }));

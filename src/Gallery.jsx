@@ -121,6 +121,7 @@ export function Gallery({ onNavigate }) {
   const [albumPageImages, setAlbumPageImages] = useState([]);
   const [albumTotalPages, setAlbumTotalPages] = useState(0);
   const [showLoadingFallback, setShowLoadingFallback] = useState(false);
+  const [hasSettledInitialAlbums, setHasSettledInitialAlbums] = useState(false);
   const listBottomRef = useRef(null);
   const fetchDebounceRef = useRef(null);
   const touchStartXRef = useRef(null);
@@ -190,6 +191,12 @@ export function Gallery({ onNavigate }) {
   }, [isLoading, selectedAlbumId]);
 
   useEffect(() => {
+    if (!selectedAlbumId && !isLoading) {
+      setHasSettledInitialAlbums(true);
+    }
+  }, [isLoading, selectedAlbumId]);
+
+  useEffect(() => {
     if (isMenuOpen) {
       const scrollY = window.scrollY;
       document.body.style.overflow = 'hidden';
@@ -222,6 +229,7 @@ export function Gallery({ onNavigate }) {
     setAlbumTotalPages(0);
     setSelectedImage(null);
     setIsPlaying(false);
+    setHasSettledInitialAlbums(false);
     if (import.meta.env.DEV || import.meta.env.VITE_GALLERY_DEBUG === 'true') {
       // eslint-disable-next-line no-console
       console.log('[Gallery][Trust] UI state reset on trust change', {
@@ -347,7 +355,7 @@ export function Gallery({ onNavigate }) {
       </div>
 
       <div style={{ padding: '16px 14px 40px', maxWidth: 520, margin: '0 auto' }}>
-        {isLoading && !showLoadingFallback && (
+        {isLoading && !showLoadingFallback && !hasSettledInitialAlbums && (
           <div style={gl.folderGrid}>
             {Array.from({ length: 6 }).map((_, i) => (
               <div key={i} style={{ ...gl.folderCard, background: 'color-mix(in srgb, var(--app-accent-bg) 85%, var(--surface-muted))', animation: 'pulse 1.4s ease-in-out infinite' }}>
@@ -367,14 +375,12 @@ export function Gallery({ onNavigate }) {
           </div>
         )}
 
-        {(!isLoading || showLoadingFallback) && !error && !selectedAlbumId && (
+        {(!isLoading || showLoadingFallback || hasSettledInitialAlbums) && !error && !selectedAlbumId && (
           <>
             {albums.length === 0 || totalAlbumImageCount === 0 ? (
               <div style={{ textAlign: 'center', padding: '60px 24px' }}>
                 <FolderOpen style={{ width: 48, height: 48, color: 'color-mix(in srgb, var(--body-text-color) 35%, var(--surface-color))', margin: '0 auto 16px' }} />
-                <p style={{ color: 'var(--body-text-color)', fontWeight: 600 }}>
-                  {albums.length === 0 ? 'No albums found' : 'No images available'}
-                </p>
+                <p style={{ color: 'var(--body-text-color)', fontWeight: 600 }}>No images found</p>
               </div>
             ) : (
               <>

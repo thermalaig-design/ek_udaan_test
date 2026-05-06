@@ -1,13 +1,12 @@
 import React, { useEffect, useState } from 'react';
-import { Calendar, Home as HomeIcon, Menu, X, Paperclip, Star, ChevronRight, FileText } from 'lucide-react';
+import { Calendar, Home as HomeIcon, Menu, X, Star, ChevronRight, FileText } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import Sidebar from './components/Sidebar';
 import { useAppTheme } from './context/ThemeContext';
 import {
   facilitiesConfig,
   getFacilitiesSnapshot,
-  loadFacilitiesPage,
-  readFacilitiesProgress
+  loadFacilitiesPage
 } from './services/facilitiesStore';
 
 const LEGACY_ATTACHMENT_SEPARATOR = '||::||';
@@ -86,6 +85,36 @@ const getAttachmentType = (url) => {
   return 'other';
 };
 
+const getOptimizedImageUrl = (url, width = 900) => {
+  const source = String(url || '').trim();
+  if (!source) return '';
+  try {
+    const parsed = new URL(source);
+    const host = parsed.hostname.toLowerCase();
+
+    if (host.includes('supabase')) {
+      const marker = '/storage/v1/object/public/';
+      if (parsed.pathname.includes(marker)) {
+        parsed.pathname = parsed.pathname.replace(marker, '/storage/v1/render/image/public/');
+      }
+      if (!parsed.searchParams.has('width')) parsed.searchParams.set('width', String(width));
+      if (!parsed.searchParams.has('quality')) parsed.searchParams.set('quality', '72');
+      if (!parsed.searchParams.has('resize')) parsed.searchParams.set('resize', 'cover');
+      return parsed.toString();
+    }
+
+    if (host.includes('cloudinary.com') || host.includes('res.cloudinary.com')) {
+      parsed.searchParams.set('w', String(width));
+      parsed.searchParams.set('q', 'auto');
+      parsed.searchParams.set('f', 'auto');
+      return parsed.toString();
+    }
+  } catch {
+    return source;
+  }
+  return source;
+};
+
 const Facilities = ({ onNavigate }) => {
   const navigate = useNavigate();
   const theme = useAppTheme();
@@ -94,20 +123,15 @@ const Facilities = ({ onNavigate }) => {
   const [facilities, setFacilities] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [selectedTrustId, setSelectedTrustId] = useState(() => localStorage.getItem('selected_trust_id') || '');
-  const [hasMoreFacilities, setHasMoreFacilities] = useState(true);
-  const [loadingMore, setLoadingMore] = useState(false);
 
   const syncFromStore = (trustId) => {
     const snapshot = getFacilitiesSnapshot(trustId);
     setFacilities(Array.isArray(snapshot.facilities) ? snapshot.facilities : []);
-    setHasMoreFacilities(Boolean(snapshot.hasMoreFacilities));
   };
 
   const loadPage = async ({ trustId, page, forceRefresh = false, trustName = null }) => {
     if (!trustId) {
       setFacilities([]);
-      setHasMoreFacilities(false);
       return;
     }
     const res = await loadFacilitiesPage({
@@ -125,15 +149,11 @@ const Facilities = ({ onNavigate }) => {
       const snapshotRows = Array.isArray(latestSnapshot?.facilities) ? latestSnapshot.facilities : [];
       if (snapshotRows.length === 0) {
         setFacilities(res.facilities);
-        if (typeof res?.hasMore === 'boolean') setHasMoreFacilities(res.hasMore);
       }
     }
-    const progress = readFacilitiesProgress(trustId);
     console.log(
       '[Facilities][Debug] page=',
       page,
-      'hasMoreFacilities=',
-      Boolean(progress.hasMoreFacilities),
       'returned_ids=',
       Array.isArray(res?.facilities) ? res.facilities.map((n) => n?.id).filter(Boolean) : [],
       'returned_types=',
@@ -189,10 +209,8 @@ const Facilities = ({ onNavigate }) => {
       setError('');
       const trustId = localStorage.getItem('selected_trust_id') || null;
       const trustName = localStorage.getItem('selected_trust_name') || null;
-      setSelectedTrustId(trustId || '');
       if (!trustId) {
         setFacilities([]);
-        setHasMoreFacilities(false);
         setLoading(false);
         return;
       }
@@ -200,7 +218,6 @@ const Facilities = ({ onNavigate }) => {
       const snapshot = getFacilitiesSnapshot(trustId);
       if (!forceRefresh && Array.isArray(snapshot.facilities) && snapshot.facilities.length > 0) {
         setFacilities(snapshot.facilities);
-        setHasMoreFacilities(Boolean(snapshot.hasMoreFacilities));
         setLoading(false);
       } else {
         setLoading(true);
@@ -234,18 +251,6 @@ const Facilities = ({ onNavigate }) => {
     };
   }, []);
 
-  const handleLoadMore = async () => {
-    if (loadingMore || loading || !hasMoreFacilities || !selectedTrustId) return;
-    try {
-      setLoadingMore(true);
-      const progress = readFacilitiesProgress(selectedTrustId);
-      const nextPage = Number(progress?.nextPage) > 0 ? Number(progress.nextPage) : 2;
-      await loadPage({ trustId: selectedTrustId, page: nextPage, forceRefresh: false, trustName: localStorage.getItem('selected_trust_name') || null });
-    } finally {
-      setLoadingMore(false);
-    }
-  };
-
   const openFacilityDetail = (facilityId) => {
     const id = String(facilityId || '').trim();
     if (!id) return;
@@ -258,15 +263,16 @@ const Facilities = ({ onNavigate }) => {
       <div className="theme-navbar border-b px-6 py-5 flex items-center justify-between sticky top-0 z-50 shadow-sm pointer-events-auto" style={{ paddingTop: 'max(env(safe-area-inset-top, 0px), 20px)' }}>
         <button
           onClick={() => setIsMenuOpen(!isMenuOpen)}
-          className="p-2 rounded-xl hover:bg-gray-100 transition-colors pointer-events-auto"
+          className="p-2 rounded-xl transition-colors pointer-events-auto"
+          style={{ background: 'transparent' }}
         >
           {isMenuOpen ? <X className="h-6 w-6" style={{ color: 'var(--navbar-text)' }} /> : <Menu className="h-6 w-6" style={{ color: 'var(--navbar-text)' }} />}
         </button>
         <h1 className="text-lg font-bold" style={{ color: 'var(--navbar-text)' }}>Facilities</h1>
         <button
           onClick={() => onNavigate('home')}
-          className="p-2 rounded-xl hover:bg-gray-100 transition-colors flex items-center justify-center"
-          style={{ color: 'var(--navbar-text)' }}
+          className="p-2 rounded-xl transition-colors flex items-center justify-center"
+          style={{ color: 'var(--navbar-text)', background: 'transparent' }}
         >
           <HomeIcon className="h-5 w-5" />
         </button>
@@ -325,7 +331,7 @@ const Facilities = ({ onNavigate }) => {
 
       {!loading && !error && (
         <div className="px-6 py-4 space-y-4">
-          {facilities.map((facility) => {
+          {facilities.map((facility, index) => {
             const dateLabel = formatTimestamp(facility.created_at, facility.updated_at);
             const isVip = String(facility?.type || '').toLowerCase() === 'vip';
             const rawAttachments = Array.isArray(facility.attachments) ? facility.attachments : [];
@@ -343,6 +349,10 @@ const Facilities = ({ onNavigate }) => {
               .filter(Boolean);
             const attachCount = normalizedAttachments.length;
             const firstAttachment = attachCount > 0 ? normalizedAttachments[0] : null;
+            const optimizedImageUrl = firstAttachment?.type === 'image'
+              ? getOptimizedImageUrl(firstAttachment.url)
+              : '';
+            const shouldPrioritizeImage = index < 2;
             const extraAttachmentCount = attachCount > 1 ? attachCount - 1 : 0;
             return (
               <button
@@ -394,9 +404,11 @@ const Facilities = ({ onNavigate }) => {
                   >
                     {firstAttachment.type === 'image' ? (
                       <img
-                        src={firstAttachment.url}
+                        src={optimizedImageUrl || firstAttachment.url}
                         alt={firstAttachment.label}
-                        loading="lazy"
+                        loading={shouldPrioritizeImage ? 'eager' : 'lazy'}
+                        fetchPriority={shouldPrioritizeImage ? 'high' : 'auto'}
+                        decoding="async"
                         className="w-full h-36 object-cover bg-slate-100"
                       />
                     ) : (
@@ -412,14 +424,7 @@ const Facilities = ({ onNavigate }) => {
                 )}
 
                 <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-3">
-                  <div className="flex items-center gap-1.5 text-xs font-medium text-slate-500">
-                    {attachCount > 0 && (
-                      <>
-                        <Paperclip className="h-3.5 w-3.5" />
-                        {attachCount} Attachment{attachCount === 1 ? '' : 's'}
-                      </>
-                    )}
-                  </div>
+                  <div />
                   <div className="inline-flex items-center gap-1 text-xs font-semibold" style={{ color: theme.primary }}>
                     Tap to view details
                     <ChevronRight className="h-3.5 w-3.5" />
@@ -439,18 +444,6 @@ const Facilities = ({ onNavigate }) => {
             </div>
           )}
 
-          {facilities.length > 0 && hasMoreFacilities && (
-            <div className="pt-2">
-              <button
-                onClick={handleLoadMore}
-                disabled={loadingMore}
-                className="w-full py-3 rounded-xl border border-gray-200 bg-white text-sm font-semibold disabled:opacity-60"
-                style={{ color: theme.primary }}
-              >
-                {loadingMore ? 'Loading more facilities...' : 'Load more facilities'}
-              </button>
-            </div>
-          )}
         </div>
       )}
     </div>
