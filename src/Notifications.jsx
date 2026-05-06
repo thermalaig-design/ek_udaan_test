@@ -34,6 +34,11 @@ const Notifications = ({ onNavigate }) => {
   const [selectedNotification, setSelectedNotification] = useState(null);
   const [showDetailModal, setShowDetailModal] = useState(false);
   const channelRef = useRef(null);
+  const pageBg = 'var(--page-bg, var(--app-page-bg))';
+  const surface = 'var(--surface-color)';
+  const heading = 'var(--heading-color)';
+  const bodyText = 'var(--body-text-color)';
+  const borderSoft = 'color-mix(in srgb, var(--brand-navy) 10%, transparent)';
 
   // Scroll locking only when sidebar is open (modal handles its own scroll)
   useEffect(() => {
@@ -261,19 +266,21 @@ const Notifications = ({ onNavigate }) => {
   const unreadCount = notifications.filter(n => !n.is_read).length;
 
   return (
-    <div className={`bg-gray-50 min-h-screen pb-10 relative${isMenuOpen ? ' overflow-hidden max-h-screen' : ''}`}>
+    <div className={`min-h-screen pb-10 relative${isMenuOpen ? ' overflow-hidden max-h-screen' : ''}`} style={{ background: pageBg }}>
       {/* Navbar */}
       <div className="theme-navbar border-b px-4 sm:px-6 py-5 flex items-center justify-between sticky top-0 z-50 transition-all duration-300 pointer-events-auto" style={{ paddingTop: 'max(env(safe-area-inset-top, 0px), 20px)' }}>
         <button
           onClick={() => setIsMenuOpen(!isMenuOpen)}
-          className="p-2 rounded-xl hover:bg-gray-100 transition-colors pointer-events-auto"
+          className="p-2 rounded-xl transition-colors pointer-events-auto"
+          style={{ background: 'transparent' }}
         >
           {isMenuOpen ? <X className="h-6 w-6" style={{ color: 'var(--navbar-text)' }} /> : <Menu className="h-6 w-6" style={{ color: 'var(--navbar-text)' }} />}
         </button>
         <h1 className="text-lg font-bold transition-colors" style={{ color: 'var(--navbar-text)' }}>Notifications</h1>
         <button
           onClick={() => onNavigate('home')}
-          className="p-2 rounded-xl transition-colors flex items-center justify-center hover:bg-gray-100" style={{ color: 'var(--navbar-text)' }}
+          className="p-2 rounded-xl transition-colors flex items-center justify-center"
+          style={{ color: 'var(--navbar-text)', background: 'transparent' }}
         >
           <HomeIcon className="h-5 w-5" />
         </button>
@@ -286,33 +293,16 @@ const Notifications = ({ onNavigate }) => {
         currentPage="notifications"
       />
 
-      {/* Header Section */}
-      <div className="bg-white px-6 pt-6 pb-4">
-        <div className="flex items-center gap-4">
-          <div className="bg-white p-3 rounded-2xl shadow-sm border border-gray-100">
-            <Bell className="h-12 w-12" style={{ color: theme.secondary }} />
-          </div>
-          <div>
-            <h1 className="text-2xl font-bold text-gray-800">Notifications</h1>
-            <p className="text-gray-500 text-sm font-medium">Stay updated with latest alerts</p>
-          </div>
-        </div>
-      </div>
-
       {/* Actions Bar */}
-      {notifications.length > 0 && (
-        <div className="bg-white px-6 py-3 border-b border-gray-100 flex items-center justify-between">
-          <div className="text-sm text-gray-600">
-            {unreadCount > 0 ? `${unreadCount} unread` : 'All caught up'}
-          </div>
-          {unreadCount > 0 && (
-            <button
-              onClick={handleMarkAllAsRead}
-              className="text-xs font-semibold" style={{ color: theme.primary }}
-            >
-              Mark all as read
-            </button>
-          )}
+      {notifications.length > 0 && unreadCount > 0 && (
+        <div className="px-6 py-3 border-b flex items-center justify-between" style={{ background: surface, borderColor: borderSoft }}>
+          <div className="text-sm" style={{ color: bodyText }}>{`${unreadCount} unread`}</div>
+          <button
+            onClick={handleMarkAllAsRead}
+            className="text-xs font-semibold" style={{ color: theme.primary }}
+          >
+            Mark all as read
+          </button>
         </div>
       )}
 
@@ -321,7 +311,7 @@ const Notifications = ({ onNavigate }) => {
         <div className="px-6 py-8">
           <div className="animate-pulse space-y-4">
             {[1, 2, 3, 4].map(i => (
-              <div key={i} className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
+              <div key={i} className="rounded-2xl p-4 shadow-sm border" style={{ background: surface, borderColor: borderSoft }}>
                 <div className="h-4 bg-gray-200 rounded w-3/4 mb-2"></div>
                 <div className="h-3 bg-gray-200 rounded w-full mb-2"></div>
                 <div className="h-3 bg-gray-200 rounded w-2/3"></div>
@@ -353,11 +343,11 @@ const Notifications = ({ onNavigate }) => {
       {/* No Notifications State */}
       {!loading && !error && notifications.length === 0 && (
         <div className="px-6 py-12">
-          <div className="bg-white rounded-2xl p-8 text-center border border-gray-100">
+          <div className="rounded-2xl p-8 text-center border" style={{ background: surface, borderColor: borderSoft }}>
             <div className="bg-gray-100 h-16 w-16 rounded-full flex items-center justify-center mx-auto mb-4">
               <Bell className="h-8 w-8 text-gray-400" />
             </div>
-            <h3 className="font-bold text-gray-800 mb-2">No notifications yet</h3>
+            <h3 className="font-bold mb-2" style={{ color: heading }}>No notifications yet</h3>
             <p className="text-gray-500 text-sm">
               You'll see important updates here when they arrive
             </p>
@@ -378,8 +368,14 @@ const Notifications = ({ onNavigate }) => {
             <div
               key={notification.id}
               onClick={() => handleNotificationClick(notification)}
-              className={`relative bg-white rounded-2xl p-5 shadow-sm border border-gray-100 hover:shadow-md hover:border-indigo-100 transition-all cursor-pointer ${!notification.is_read ? 'border-l-4 border-l-indigo-600 bg-indigo-50/30' : ''
+              className={`relative rounded-2xl p-5 shadow-sm border hover:shadow-md transition-all cursor-pointer ${!notification.is_read ? 'border-l-4 border-l-indigo-600' : ''
                 }`}
+              style={{
+                background: !notification.is_read
+                  ? `color-mix(in srgb, ${theme.primary} 8%, ${surface})`
+                  : surface,
+                borderColor: borderSoft
+              }}
             >
               {/* Dismiss (X) button */}
               <button
@@ -391,7 +387,7 @@ const Notifications = ({ onNavigate }) => {
               </button>
 
               <div className="flex items-start justify-between mb-2 pr-6">
-                <h4 className={`font-semibold text-gray-900 ${!notification.is_read ? 'font-bold' : ''}`}>
+                <h4 className={`font-semibold ${!notification.is_read ? 'font-bold' : ''}`} style={{ color: heading }}>
                   {notification.title}
                 </h4>
                 {!notification.is_read && (
@@ -401,7 +397,7 @@ const Notifications = ({ onNavigate }) => {
                 )}
               </div>
 
-              <p className="text-gray-600 text-sm leading-relaxed mb-3">
+              <p className="text-sm leading-relaxed mb-3" style={{ color: bodyText }}>
                 {notification.message}
               </p>
 
@@ -436,71 +432,80 @@ const Notifications = ({ onNavigate }) => {
         const patientName = extractPatientName(selectedNotification.message);
 
         return (
-          <div className="fixed inset-0 z-[999] bg-black/60 flex items-end sm:items-center justify-center" onClick={closeDetailModal}>
+          <div className="fixed inset-0 z-[999] bg-black/60 backdrop-blur-[2px] flex items-end sm:items-center justify-center" onClick={closeDetailModal}>
             <div
-              className="bg-white rounded-t-3xl sm:rounded-2xl w-full sm:max-w-md max-h-[80vh] flex flex-col"
+              className="rounded-t-3xl sm:rounded-3xl w-full sm:max-w-sm overflow-hidden"
+              style={{
+                background: surface,
+                border: `1px solid ${borderSoft}`,
+                boxShadow: '0 24px 60px rgba(15, 23, 42, 0.28)'
+              }}
               onClick={(e) => e.stopPropagation()}
             >
               {/* Header */}
-              <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
-                <h3 className="text-base font-bold text-gray-900">Notification Details</h3>
-                <button onClick={closeDetailModal} className="p-1 rounded-full hover:bg-gray-100">
-                  <X className="h-5 w-5 text-gray-500" />
+              <div className="flex items-center justify-between px-5 py-3 border-b" style={{ borderColor: 'var(--navbar-border)', background: 'var(--navbar-bg, var(--app-navbar-bg))' }}>
+                <h3 className="text-base font-extrabold tracking-tight" style={{ color: 'var(--navbar-text)' }}>Notification Details</h3>
+                <button
+                  onClick={closeDetailModal}
+                  className="p-2 rounded-full transition-colors"
+                  style={{ background: 'color-mix(in srgb, var(--navbar-bg) 78%, var(--surface-color))' }}
+                >
+                  <X className="h-5 w-5" style={{ color: 'var(--navbar-text)' }} />
                 </button>
               </div>
 
               {/* Scrollable body */}
-              <div className="overflow-y-auto flex-1 px-6 py-5 space-y-4">
-                {/* Title */}
-                <p className="text-sm font-semibold" style={{ color: theme.secondary }}>{selectedNotification.title}</p>
+              <div className="px-5 py-1.5 space-y-2" style={{ background: 'color-mix(in srgb, var(--surface-color) 95%, var(--app-page-bg))' }}>
 
                 {/* Patient Name */}
                 {patientName && (
-                  <div className="rounded-lg p-3" style={{ background: `color-mix(in srgb, ${theme.secondary} 8%, white)` }}>
-                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Patient</p>
-                    <p className="text-sm font-semibold text-gray-900">{patientName}</p>
+                  <div className="rounded-xl p-3.5 border" style={{ background: `color-mix(in srgb, ${theme.secondary} 7%, var(--surface-color))`, borderColor: borderSoft }}>
+                    <p className="text-xs font-semibold uppercase tracking-wide mb-1" style={{ color: bodyText }}>Patient</p>
+                    <p className="text-sm font-semibold" style={{ color: heading }}>{patientName}</p>
                   </div>
                 )}
 
                 {/* Doctor Details Card */}
                 {(doctorName || department) && (
-                  <div className="bg-blue-50 rounded-lg p-3 border-l-4 border-blue-500">
-                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Doctor</p>
+                  <div className="rounded-xl p-3.5 border-l-4" style={{ background: 'color-mix(in srgb, #3b82f6 7%, var(--surface-color))', borderLeftColor: '#3b82f6' }}>
+                    <p className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: bodyText }}>Doctor</p>
                     {doctorName && (
-                      <p className="text-sm font-semibold text-blue-900 mb-1">ðŸ‘¨â€âš•ï¸ {doctorName}</p>
+                      <p className="text-sm font-semibold mb-1" style={{ color: heading }}>Doctor: {doctorName}</p>
                     )}
                     {department && !department.includes('Not specified') && (
-                      <p className="text-xs text-blue-700">ðŸ¥ {department}</p>
+                      <p className="text-xs" style={{ color: bodyText }}>{department}</p>
                     )}
                   </div>
                 )}
 
                 {/* Date & Time Card */}
                 {dateTime && !dateTime.includes('Not specified') && (
-                  <div className="bg-green-50 rounded-lg p-3 border-l-4 border-green-500">
-                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Appointment</p>
-                    <p className="text-sm font-semibold text-green-900">ðŸ“… {dateTime}</p>
+                  <div className="rounded-xl p-3.5 border-l-4" style={{ background: 'color-mix(in srgb, #10b981 8%, var(--surface-color))', borderLeftColor: '#10b981' }}>
+                    <p className="text-xs font-semibold uppercase tracking-wide mb-1" style={{ color: bodyText }}>Appointment</p>
+                    <p className="text-sm font-semibold" style={{ color: heading }}>{dateTime}</p>
                   </div>
                 )}
 
                 {/* Full Message (for reference) */}
-                <div className="bg-gray-50 rounded-lg p-3">
-                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Details</p>
-                  <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-line text-justify">{selectedNotification.message}</p>
+                <div className="rounded-xl p-2.5 border" style={{ background: 'var(--surface-color)', borderColor: borderSoft }}>
+                  <p className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: bodyText }}>Details</p>
+                  <p className="text-sm leading-relaxed whitespace-pre-line text-justify" style={{ color: heading }}>{selectedNotification.message}</p>
                 </div>
 
                 {/* Timestamp */}
-                <p className="text-xs text-gray-400 text-center pt-2">
-                  {new Date(selectedNotification.created_at).toLocaleDateString()} at{' '}
-                  {new Date(selectedNotification.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                </p>
+                <div className="pt-1 text-center">
+                  <span className="inline-block text-xs font-semibold rounded-full px-3 py-1" style={{ color: bodyText, background: 'color-mix(in srgb, var(--surface-color) 86%, var(--app-accent-bg))' }}>
+                    {new Date(selectedNotification.created_at).toLocaleDateString()} at{' '}
+                    {new Date(selectedNotification.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  </span>
+                </div>
               </div>
 
               {/* Footer */}
-              <div className="px-6 py-4 border-t border-gray-100">
+              <div className="px-5 py-3 border-t" style={{ borderColor: borderSoft }}>
                 <button
                   onClick={closeDetailModal}
-                  className="w-full py-2.5 text-white rounded-xl font-semibold text-sm transition-colors btn-brand"
+                  className="w-full py-2 text-white rounded-xl font-semibold text-sm transition-colors btn-brand"
                 >
                   Close
                 </button>

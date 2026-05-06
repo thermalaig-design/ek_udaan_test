@@ -275,7 +275,7 @@ const Sidebar = ({ isOpen, onClose, onNavigate, currentPage, onLogout }) => {
     load();
   }, [isOpen]);
 
-  // No body scroll lock needed — the overlay (touchAction: none) already
+  // No body scroll lock needed — overlay + fixed panel already block background interaction.
   // prevents background scroll on mobile, and covers background on desktop.
 
   // Swipe left to close
@@ -390,16 +390,11 @@ const Sidebar = ({ isOpen, onClose, onNavigate, currentPage, onLogout }) => {
           e.stopPropagation();
           onClose();
         }}
-        onTouchStart={(e) => {
-          e.preventDefault();
-          e.stopPropagation();
-        }}
-        onTouchEnd={(e) => {
-          e.preventDefault();
+        onPointerDown={(e) => {
           e.stopPropagation();
         }}
         style={{
-          touchAction: 'none',
+          touchAction: 'auto',
           background: 'color-mix(in srgb, var(--app-page-bg) 60%, var(--surface-color))'
         }}
       />

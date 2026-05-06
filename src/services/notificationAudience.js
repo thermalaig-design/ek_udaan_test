@@ -81,6 +81,7 @@ export const getCurrentNotificationContext = () => {
   const audienceVariants = [...new Set(['all', 'All', 'both', 'Both', ...memberTypeVariants])];
   const audienceNormalizedSet = new Set(audienceVariants.map(normalizeAudience).filter(Boolean));
   const userIdSet = new Set(userIdVariants.map(normalizeIdentity).filter(Boolean));
+  const trustId = String(localStorage.getItem('selected_trust_id') || '').trim();
 
   return {
     userId,
@@ -88,11 +89,15 @@ export const getCurrentNotificationContext = () => {
     audienceVariants,
     audienceNormalizedSet,
     userIdSet,
+    trustId,
   };
 };
 
 export const matchesNotificationForContext = (notification, context) => {
   if (!notification || !context) return false;
+  const contextTrustId = String(context.trustId || '').trim();
+  const notificationTrustId = String(notification.trust_id || '').trim();
+  if (contextTrustId && notificationTrustId && notificationTrustId !== contextTrustId) return false;
 
   const notificationUserId = normalizeIdentity(notification.user_id);
   if (notificationUserId && context.userIdSet.has(notificationUserId)) return true;

@@ -42,7 +42,7 @@ export const getMarqueeUpdates = async (req, res) => {
       .select('id, trust_id, message, is_active, priority, created_at, updated_at')
       .eq('is_active', true)
       .eq('trust_id', resolvedTrustId)
-      .order('priority', { ascending: false })
+      .order('priority', { ascending: true })
       .order('created_at', { ascending: false });
 
     if (error) {

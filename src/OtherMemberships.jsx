@@ -1,9 +1,10 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  ArrowLeft, Users, RefreshCw, Plus, X, CheckCircle,
+  ArrowLeft, Users, Plus, X, CheckCircle, Menu, Home as HomeIcon,
   AlertCircle, Building2, Hash, Tag, FileText, Loader2, Save
 } from 'lucide-react';
+import Sidebar from './components/Sidebar';
 import { useAppTheme } from './context/ThemeContext';
 import { applyOpacity } from './utils/colorUtils';
 import { getNavbarThemeStyles, getThemeToken } from './utils/themeUtils';
@@ -263,6 +264,7 @@ const OtherMemberships = ({ onNavigate }) => {
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState('');
   const [submitSuccess, setSubmitSuccess] = useState('');
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
 
   // Delete state
   const [deletingId, setDeletingId] = useState(null);
@@ -328,13 +330,30 @@ const OtherMemberships = ({ onNavigate }) => {
     loadData({ silent: hasCachedTrustLinks });
   }, [loadData, initialTrustLinks.length]);
 
-  // ── handlers ──
-  const handleBack = () => {
-    if (window.history.length > 1) navigate(-1);
-    else if (onNavigate) onNavigate('home');
-    else navigate('/');
-  };
+  useEffect(() => {
+    if (isMenuOpen) {
+      const y = window.scrollY;
+      Object.assign(document.body.style, { overflow: 'hidden', position: 'fixed', width: '100%', top: `-${y}px` });
+    } else {
+      const y = parseInt(document.body.style.top || '0', 10) * -1;
+      Object.assign(document.body.style, { overflow: '', position: '', width: '', top: '' });
+      window.scrollTo(0, Number.isFinite(y) ? y : 0);
+    }
+    return () => Object.assign(document.body.style, { overflow: '', position: '', width: '', top: '' });
+  }, [isMenuOpen]);
 
+  useEffect(() => {
+    if (!isMenuOpen) return undefined;
+    const handleOutside = (event) => {
+      if (!event.target.closest('[data-sidebar="true"]') && !event.target.closest('[data-sidebar-overlay="true"]')) {
+        setIsMenuOpen(false);
+      }
+    };
+    document.addEventListener('click', handleOutside, true);
+    return () => document.removeEventListener('click', handleOutside, true);
+  }, [isMenuOpen]);
+
+  // ── handlers ──
   const handleFormChange = (field, value) => {
     setForm(prev => ({ ...prev, [field]: value }));
   };
@@ -503,38 +522,36 @@ const OtherMemberships = ({ onNavigate }) => {
     >
       {/* ── Header ── */}
       <div
-        className="theme-navbar"
+        className="px-4 py-4 flex items-center justify-between sticky top-0 z-50 shadow-md"
         style={{
-          background: navbarTheme.backgroundStyle,
-          paddingTop: 'max(52px, calc(env(safe-area-inset-top, 0px) + 52px))',
-          paddingBottom: '20px',
-          paddingLeft: '16px',
-          paddingRight: '16px',
-          position: 'sticky',
-          top: 0,
-          zIndex: 50,
-          boxShadow: `0 8px 24px ${applyOpacity(colors.secondary, 0.18)}`,
-          backdropFilter: `blur(${navbarTheme.blurPx})`,
-          WebkitBackdropFilter: `blur(${navbarTheme.blurPx})`,
-          borderBottom: `1px solid ${applyOpacity(colors.secondary, 0.12)}`,
+          background: navbarTheme?.backgroundStyle || 'var(--navbar-bg, var(--app-navbar-bg))',
+          backdropFilter: `blur(${navbarTheme?.blurPx || '12px'})`,
+          WebkitBackdropFilter: `blur(${navbarTheme?.blurPx || '12px'})`,
+          borderBottom: '1px solid var(--navbar-border)',
+          paddingTop: 'max(env(safe-area-inset-top, 0px), 16px)',
+          color: navbarTheme?.textColor || 'var(--navbar-text)',
         }}
       >
-        <div style={{ width: '100%', margin: '0 auto' }}>
-          <div style={{ height: '3px', background: `linear-gradient(90deg, ${colors.accent}, #fff4, ${colors.accent})`, borderRadius: '2px', marginBottom: '16px' }} />
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <button onClick={handleBack} style={{ width: 40, height: 40, borderRadius: '12px', border: 'none', background: applyOpacity(navbarTheme.textColor, 0.12), color: navbarTheme.textColor, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0, backdropFilter: 'blur(8px)' }}>
-              <ArrowLeft size={20} />
-            </button>
-            <div style={{ flex: 1 }}>
-              <h1 style={{ color: navbarTheme.textColor, fontSize: '18px', fontWeight: 800, margin: 0, letterSpacing: '-0.3px' }}>Other Memberships</h1>
-              <p style={{ color: applyOpacity(navbarTheme.textColor, 0.7), fontSize: '12px', margin: '2px 0 0' }}>Manage your trust memberships</p>
-            </div>
-            <button onClick={() => loadData()} style={{ width: 36, height: 36, borderRadius: '10px', border: 'none', background: applyOpacity(navbarTheme.textColor, 0.12), color: navbarTheme.textColor, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
-              <RefreshCw size={16} style={loading || isRefreshing ? { animation: 'spin 0.8s linear infinite' } : {}} />
-            </button>
-          </div>
-        </div>
+        <button
+          onClick={() => (showForm ? setShowForm(false) : setIsMenuOpen((prev) => !prev))}
+          className="p-2 rounded-xl transition-colors"
+          style={{ color: navbarTheme?.textColor || 'var(--navbar-text)', background: 'transparent' }}
+        >
+          {showForm ? <ArrowLeft className="h-6 w-6" /> : (isMenuOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />)}
+        </button>
+        <h1 className="text-base font-bold tracking-wide" style={{ color: navbarTheme?.textColor || 'var(--navbar-text)' }}>
+          Other Memberships
+        </h1>
+        <button
+          onClick={() => (onNavigate ? onNavigate('home') : navigate('/'))}
+          className="p-2 rounded-xl transition-colors"
+          style={{ color: navbarTheme?.textColor || 'var(--navbar-text)', background: 'transparent' }}
+        >
+          <HomeIcon className="h-5 w-5" />
+        </button>
       </div>
+
+      <Sidebar isOpen={isMenuOpen} onClose={() => setIsMenuOpen(false)} onNavigate={onNavigate} currentPage="other-memberships" />
 
       {/* ── Content ── */}
       <div style={{ width: '100%', margin: '0 auto', padding: '20px 16px 40px', boxSizing: 'border-box' }}>

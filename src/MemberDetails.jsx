@@ -2,9 +2,12 @@
 import React, { useState, useEffect } from 'react';
 import { User, Users, Stethoscope, Building2, Star, Award, ChevronLeft, Phone, Mail, MapPin, FileText, Clock } from 'lucide-react';
 import { getProfilePhotos } from './services/api';
+import { getNavbarThemeStyles } from './utils/themeUtils';
 
 const MemberDetails = ({ member, onNavigateBack, previousScreenName }) => {
   const theme = useAppTheme();
+  const navbarTheme = getNavbarThemeStyles(theme);
+  const navbarTextColor = navbarTheme?.textColor || 'var(--navbar-text)';
   const [profilePhoto, setProfilePhoto] = useState(null);
   const cleanValue = (value) => {
     if (value === null || value === undefined) return '';
@@ -99,22 +102,35 @@ const MemberDetails = ({ member, onNavigateBack, previousScreenName }) => {
   return (
     <div className="min-h-screen" style={{ background: 'var(--page-bg, var(--app-page-bg))' }}>
       {/* Header Section */}
-      <div className="px-6 pt-6 pb-4 shadow-sm" style={{ background: 'color-mix(in srgb, #ffffff 90%, var(--app-accent-bg))' }}>
-          <div className="flex items-center mb-4">
-            <button 
-              onClick={onNavigateBack}
-              className="p-2 rounded-xl hover:bg-gray-100 transition-colors flex items-center gap-1 text-[color:var(--brand-navy)]"
-            >
-              <ChevronLeft className="h-5 w-5" />
-              <span className="text-sm font-medium">Back</span>
-            </button>
-            <h1 className="text-2xl font-bold flex-1 text-center pr-16" style={{ color: 'var(--heading-color)' }}>Member Details</h1>
+      <div
+        className="theme-navbar sticky top-0 z-20"
+        style={{
+          background: navbarTheme?.backgroundStyle || 'var(--navbar-bg, var(--app-navbar-bg))',
+          backdropFilter: `blur(${navbarTheme?.blurPx || '12px'})`,
+          WebkitBackdropFilter: `blur(${navbarTheme?.blurPx || '12px'})`,
+          borderBottom: '1px solid var(--navbar-border)',
+          boxShadow: `0 2px 16px color-mix(in srgb, var(--brand-navy) 16%, transparent)`,
+        }}
+      >
+          <div className="h-[3px]" style={{ background: 'var(--navbar-accent)' }} />
+          <div className="px-6 pt-4 pb-4">
+            <div className="flex items-center">
+              <button
+                onClick={onNavigateBack}
+                className="p-2 rounded-xl transition-colors flex items-center gap-1"
+                style={{ color: navbarTextColor, background: 'transparent' }}
+              >
+                <ChevronLeft className="h-5 w-5" />
+                <span className="text-sm font-medium">Back</span>
+              </button>
+              <h1 className="text-2xl font-bold flex-1 text-center pr-16" style={{ color: navbarTextColor }}>Member Details</h1>
+            </div>
           </div>
       </div>
 
       {/* Member Details Card */}
       <div className="p-6">
-        <div className="rounded-2xl shadow-sm p-6" style={{ background: 'color-mix(in srgb, #ffffff 92%, var(--app-accent-bg))', border: '1px solid color-mix(in srgb, var(--brand-navy) 10%, transparent)' }}>
+        <div className="rounded-2xl shadow-sm p-6" style={{ background: 'color-mix(in srgb, var(--surface-color) 92%, var(--app-accent-bg))', border: '1px solid color-mix(in srgb, var(--brand-navy) 10%, transparent)' }}>
           <div className="flex items-center gap-4 mb-6">
             <div className="bg-indigo-100 h-20 w-20 rounded-2xl flex items-center justify-center text-indigo-600 overflow-hidden shadow-sm border border-indigo-200">
               {profilePhoto ? (

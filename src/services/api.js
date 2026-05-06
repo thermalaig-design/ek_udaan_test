@@ -788,7 +788,8 @@ export const getMarqueeUpdates = async (trustId = null, trustName = null) => {
       .from('marquee_updates')
       .select('id, trust_id, message, is_active, priority')
       .eq('is_active', true)
-      .order('priority', { ascending: false });
+      .order('priority', { ascending: true })
+      .order('created_at', { ascending: false });
 
     if (resolvedTrustId) {
       query = query.eq('trust_id', resolvedTrustId);
@@ -1196,9 +1197,13 @@ export const getUserNotifications = async () => {
   try {
     const { supabase } = await import('./supabaseClient.js');
     const { userId, userIdVariants, audienceVariants } = getCurrentNotificationContext();
+    const selectedTrustId = String(localStorage.getItem('selected_trust_id') || '').trim();
 
     if (!userId) {
       throw new Error('No user found in localStorage');
+    }
+    if (!selectedTrustId) {
+      return { success: true, data: [] };
     }
 
     // Fallback mapping:
@@ -1244,6 +1249,7 @@ export const getUserNotifications = async () => {
     const { data: directNotifications, error: userNotifError } = await supabase
       .from('notifications')
       .select('*')
+      .eq('trust_id', selectedTrustId)
       .in('user_id', notificationUserIds)
       .order('created_at', { ascending: false });
 
@@ -1260,6 +1266,7 @@ export const getUserNotifications = async () => {
     const { data: audienceNotifications, error: audienceError } = await supabase
       .from('notifications')
       .select('*')
+      .eq('trust_id', selectedTrustId)
       .in('target_audience', audienceVariants)
       .order('created_at', { ascending: false });
 
@@ -1289,10 +1296,13 @@ export const getUserNotifications = async () => {
 export const markNotificationAsRead = async (id) => {
   try {
     const { supabase } = await import('./supabaseClient.js');
-    const { error } = await supabase
+    const selectedTrustId = String(localStorage.getItem('selected_trust_id') || '').trim();
+    let query = supabase
       .from('notifications')
       .update({ is_read: true })
       .eq('id', id);
+    if (selectedTrustId) query = query.eq('trust_id', selectedTrustId);
+    const { error } = await query;
 
     if (error) throw error;
     return { success: true };
@@ -1307,10 +1317,12 @@ export const markAllNotificationsAsRead = async () => {
   try {
     const { supabase } = await import('./supabaseClient.js');
     const { userId, userIdVariants, audienceVariants } = getCurrentNotificationContext();
+    const selectedTrustId = String(localStorage.getItem('selected_trust_id') || '').trim();
 
     if (!userId) {
       throw new Error('No user found in localStorage');
     }
+    if (!selectedTrustId) return { success: true };
 
     const { data: linkedAppointments } = await supabase
       .from('appointments')
@@ -1350,6 +1362,7 @@ export const markAllNotificationsAsRead = async () => {
     const { error: userError } = await supabase
       .from('notifications')
       .update({ is_read: true })
+      .eq('trust_id', selectedTrustId)
       .eq('is_read', false)
       .in('user_id', notificationUserIds);
 
@@ -1363,6 +1376,7 @@ export const markAllNotificationsAsRead = async () => {
     const { error: audienceError } = await supabase
       .from('notifications')
       .update({ is_read: true })
+      .eq('trust_id', selectedTrustId)
       .eq('is_read', false)
       .in('target_audience', audienceVariants);
 
@@ -1431,10 +1445,13 @@ export const getMemberTrustLinks = async (memberId) => {
 export const deleteNotification = async (id) => {
   try {
     const { supabase } = await import('./supabaseClient.js');
-    const { error } = await supabase
+    const selectedTrustId = String(localStorage.getItem('selected_trust_id') || '').trim();
+    let query = supabase
       .from('notifications')
       .delete()
       .eq('id', id);
+    if (selectedTrustId) query = query.eq('trust_id', selectedTrustId);
+    const { error } = await query;
 
     if (error) throw error;
     return { success: true };
@@ -1511,6 +1528,7 @@ export const preloadCommonData = async () => {
     return {};
   }
 };
+
 
 
 

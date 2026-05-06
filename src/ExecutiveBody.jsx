@@ -1,8 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Mail, Phone, Search, Users } from 'lucide-react';
+import { ArrowLeft, Home as HomeIcon, Mail, Phone, Search, Users } from 'lucide-react';
 import { useAppTheme } from './context/ThemeContext';
 import { getExecutiveBodyMembers } from './services/supabaseService';
+import { getNavbarThemeStyles } from './utils/themeUtils';
 
 const TAB_OPTIONS = [
   { id: 'all', label: 'All' },
@@ -13,6 +14,8 @@ const TAB_OPTIONS = [
 const ExecutiveBody = ({ onNavigate }) => {
   const navigate = useNavigate();
   const theme = useAppTheme();
+  const navbarTheme = getNavbarThemeStyles(theme);
+  const navbarTextColor = navbarTheme?.textColor || 'var(--navbar-text)';
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [tab, setTab] = useState('all');
@@ -133,21 +136,44 @@ const ExecutiveBody = ({ onNavigate }) => {
   };
 
   return (
-    <div className="min-h-screen" style={{ background: 'var(--app-page-bg)' }}>
-      <div className="sticky top-0 z-20 px-4 pt-5 pb-4" style={{ background: 'var(--app-page-bg)', borderBottom: `1px solid color-mix(in srgb, ${theme.primary || 'var(--brand-red)'} 16%, transparent)` }}>
-        <button
-          type="button"
-          onClick={() => navigate('/')}
-          className="inline-flex items-center gap-2 text-sm font-bold mb-3"
-          style={{ color: theme.primary || 'var(--brand-red)' }}
-        >
-          <ArrowLeft className="h-4 w-4" />
-          Home
-        </button>
-        <h1 className="text-xl font-extrabold" style={{ color: 'var(--heading-color)' }}>Executive Body</h1>
-        <p className="text-xs mt-1" style={{ color: 'var(--body-text-color)' }}>
-          Member roles based listing
-        </p>
+    <div className="min-h-screen" style={{ background: 'var(--page-bg, var(--app-page-bg))' }}>
+      <div
+        className="theme-navbar sticky top-0 z-20"
+        style={{
+          background: navbarTheme?.backgroundStyle || 'var(--navbar-bg, var(--app-navbar-bg))',
+          backdropFilter: `blur(${navbarTheme?.blurPx || '12px'})`,
+          WebkitBackdropFilter: `blur(${navbarTheme?.blurPx || '12px'})`,
+          borderBottom: '1px solid var(--navbar-border)',
+          boxShadow: `0 2px 16px color-mix(in srgb, var(--brand-navy) 16%, transparent)`,
+        }}
+      >
+        <div className="h-[3px]" style={{ background: 'var(--navbar-accent)' }} />
+        <div className="px-4 pt-4 pb-4">
+          <div className="flex items-center justify-between">
+            <button
+              type="button"
+              onClick={() => navigate('/')}
+              className="p-2 rounded-xl transition-colors"
+              style={{ color: navbarTextColor, background: 'transparent' }}
+              aria-label="Go home"
+            >
+              <ArrowLeft className="h-5 w-5" />
+            </button>
+            <h1 className="text-lg font-extrabold tracking-wide" style={{ color: navbarTextColor }}>Executive Body</h1>
+            <button
+              type="button"
+              onClick={() => navigate('/')}
+              className="p-2 rounded-xl transition-colors"
+              style={{ color: navbarTextColor, background: 'transparent' }}
+              aria-label="Home"
+            >
+              <HomeIcon className="h-5 w-5" />
+            </button>
+          </div>
+          <p className="text-xs mt-1 text-center" style={{ color: 'color-mix(in srgb, var(--navbar-text) 78%, var(--surface-color))' }}>
+            Member roles based listing
+          </p>
+        </div>
       </div>
 
       <div className="px-4 pt-4">
@@ -174,8 +200,17 @@ const ExecutiveBody = ({ onNavigate }) => {
               onClick={() => setTab(item.id)}
               className="px-3 py-2 rounded-xl text-xs font-bold whitespace-nowrap"
               style={isActive
-                ? { background: `linear-gradient(135deg, ${theme.primary || 'var(--brand-red)'}, ${theme.secondary || 'var(--brand-navy)'})`, color: '#fff' }
-                : { background: 'var(--surface-color)', color: 'var(--brand-navy)', border: '1px solid color-mix(in srgb, var(--brand-navy) 14%, transparent)' }}
+                ? {
+                    background: `linear-gradient(135deg, ${theme.primary || 'var(--brand-red)'}, ${theme.secondary || 'var(--brand-navy)'})`,
+                    color: 'var(--surface-color)',
+                    border: '1px solid color-mix(in srgb, var(--brand-navy) 18%, transparent)',
+                    boxShadow: '0 4px 10px color-mix(in srgb, var(--brand-navy) 20%, transparent)'
+                  }
+                : {
+                    background: 'color-mix(in srgb, var(--surface-color) 82%, var(--app-accent-bg))',
+                    color: 'var(--heading-color)',
+                    border: '1px solid color-mix(in srgb, var(--brand-navy) 20%, transparent)'
+                  }}
             >
               {item.label} ({totalByTab[item.id] || 0})
             </button>
@@ -183,7 +218,7 @@ const ExecutiveBody = ({ onNavigate }) => {
         })}
       </div>
 
-      <div className="px-4 py-4 space-y-3">
+      <div className="px-4 py-4 space-y-2.5">
         {loading ? (
           <div className="rounded-2xl p-8 text-center" style={{ background: 'var(--surface-color)' }}>
             <p className="text-sm font-semibold" style={{ color: 'var(--body-text-color)' }}>Loading members...</p>
@@ -203,7 +238,7 @@ const ExecutiveBody = ({ onNavigate }) => {
               type="button"
               key={item?.id || item?.reg_id || item?.['S. No.']}
               onClick={() => openMemberDetails(item)}
-              className="w-full text-left rounded-2xl p-4"
+              className="w-full text-left rounded-2xl p-3.5"
               style={{ background: 'var(--surface-color)', border: '1px solid color-mix(in srgb, var(--brand-navy) 10%, transparent)' }}
             >
               <div className="flex items-start justify-between gap-2">
@@ -211,7 +246,7 @@ const ExecutiveBody = ({ onNavigate }) => {
                   <h3 className="text-sm font-extrabold truncate" style={{ color: 'var(--heading-color)' }}>
                     {item?.Name || item?.member_name_english || 'N/A'}
                   </h3>
-                  <p className="text-[11px] mt-0.5" style={{ color: 'var(--body-text-color)' }}>
+                  <p className="text-[11px] mt-0" style={{ color: 'var(--body-text-color)' }}>
                     {item?.member_role || item?.title || item?.type || 'N/A'}
                   </p>
                 </div>
@@ -225,20 +260,22 @@ const ExecutiveBody = ({ onNavigate }) => {
                 </span>
               </div>
 
-              <div className="mt-2 flex flex-wrap gap-2">
-                {item?.['Membership number'] ? (
-                  <span className="text-[10px] font-semibold px-2 py-1 rounded-full" style={{ background: 'color-mix(in srgb, var(--brand-navy-light) 55%, var(--surface-color))', color: 'var(--brand-navy)' }}>
-                    M No: {item['Membership number']}
-                  </span>
-                ) : null}
-                {item?.subtitle ? (
-                  <span className="text-[10px] font-semibold px-2 py-1 rounded-full" style={{ background: 'color-mix(in srgb, var(--brand-red-light) 50%, var(--surface-color))', color: 'var(--brand-red-dark)' }}>
-                    {item.subtitle}
-                  </span>
-                ) : null}
-              </div>
+              {(item?.['Membership number'] || item?.subtitle) && (
+                <div className="mt-1 flex flex-wrap gap-1">
+                  {item?.['Membership number'] ? (
+                    <span className="text-[10px] font-semibold px-2 py-1 rounded-full" style={{ background: 'color-mix(in srgb, var(--brand-navy-light) 55%, var(--surface-color))', color: 'var(--brand-navy)' }}>
+                      M No: {item['Membership number']}
+                    </span>
+                  ) : null}
+                  {item?.subtitle ? (
+                    <span className="text-[10px] font-semibold px-2 py-1 rounded-full" style={{ background: 'color-mix(in srgb, var(--brand-red-light) 50%, var(--surface-color))', color: 'var(--brand-red-dark)' }}>
+                      {item.subtitle}
+                    </span>
+                  ) : null}
+                </div>
+              )}
 
-              <div className="mt-3 flex items-center gap-3 text-[11px]">
+              <div className="mt-1 flex items-center gap-2 text-[11px]">
                 {item?.Mobile ? (
                   <span className="inline-flex items-center gap-1" style={{ color: 'var(--body-text-color)' }}>
                     <Phone className="h-3 w-3" />

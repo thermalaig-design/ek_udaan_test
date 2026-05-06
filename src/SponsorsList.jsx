@@ -79,7 +79,6 @@ const SponsorsList = ({ onNavigate, onBack }) => {
           <h1 className="text-lg font-extrabold" style={{ color: 'var(--navbar-text)' }}>Sponsors</h1>
           <p className="text-[11px] font-medium" style={{ color: 'var(--body-text-color)' }}>
             {trustName}{list.length > 0 ? ` · ${list.length} sponsors` : ''}
-            {isRefreshing ? ' · refreshing...' : ''}
           </p>
         </div>
       </div>
@@ -137,3 +136,4 @@ const SponsorsList = ({ onNavigate, onBack }) => {
 };
 
 export default SponsorsList;
+

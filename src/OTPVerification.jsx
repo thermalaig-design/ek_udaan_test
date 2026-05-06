@@ -6,7 +6,6 @@ import { fetchDirectoryData } from './services/directoryService';
 import { fetchMemberTrustMemberships, fetchTrustById } from './services/trustService';
 import { logUserSessionEvent } from './services/sessionAuditService';
 import { persistUserSession } from './utils/storageUtils';
-import setuLogo from './assets/setu-logo.png'; // 👈 apna logo path yahan set karo
 
 const TRUST_ID = import.meta.env.VITE_DEFAULT_TRUST_ID || '';
 const LOGIN_TRUST_CACHE_KEY = 'cached_base_trust_info';
@@ -399,30 +398,6 @@ function OTPVerification() {
         </div>
       </div>
 
-      {/* Powered by SETU */}
-      <div style={styles.poweredBy}>
-        {/* Elegant fading divider */}
-        <div style={styles.poweredDivider} />
-
-        <span style={styles.poweredLabel}>Powered by</span>
-
-        {/* Logo + wordmark row */}
-        <div style={styles.poweredRow}>
-          <div style={styles.poweredLogoRing}>
-            <img
-              src={setuLogo}
-              alt="SETU"
-              style={styles.poweredLogo}
-              onError={(e) => { e.currentTarget.style.display = 'none'; }}
-            />
-          </div>
-          <div style={styles.poweredTextGroup}>
-            <span style={styles.poweredBrand}>S&nbsp;E&nbsp;T&nbsp;U</span>
-            <span style={styles.poweredTagline}>Where AI connections create power</span>
-          </div>
-        </div>
-      </div>
-
       <style>{`
         @keyframes spin {
           to { transform: rotate(360deg); }
@@ -442,7 +417,7 @@ const styles = {
     justifyContent: 'center',
     padding: '16px',
     fontFamily: "'Inter', 'Helvetica Neue', sans-serif",
-    gap: '20px',
+    gap: '0',
   },
   card: {
     width: '100%',
@@ -678,73 +653,7 @@ const styles = {
     fontSize: '12px',
     borderBottom: '1px solid #5a4010',
   },
-  poweredBy: {
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    gap: '10px',
-    padding: '4px 0 12px',
-  },
-  poweredDivider: {
-    width: '180px',
-    height: '1px',
-    background: 'linear-gradient(90deg, transparent, #5c4a1e 30%, #d4af37 50%, #5c4a1e 70%, transparent)',
-    marginBottom: '2px',
-  },
-  poweredLabel: {
-    fontSize: '8px',
-    color: '#5a5040',
-    letterSpacing: '3px',
-    textTransform: 'uppercase',
-    fontWeight: 600,
-    fontFamily: "'Inter', sans-serif",
-  },
-  poweredRow: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '14px',
-  },
-  poweredLogoRing: {
-    width: '64px',
-    height: '64px',
-    borderRadius: '50%',
-    background: '#1a1a1a',
-    border: '1.5px solid #5c4a1e',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexShrink: 0,
-  },
-  poweredLogo: {
-    width: '52px',
-    height: '52px',
-    objectFit: 'contain',
-    borderRadius: '50%',
-    filter: 'brightness(2.2) contrast(1.1) saturate(1.3)',
-  },
-  poweredTextGroup: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '4px',
-  },
-  poweredBrand: {
-    fontSize: '16px',
-    fontWeight: 700,
-    color: '#d4af37',
-    letterSpacing: '3px',
-    fontFamily: "'Palatino Linotype', Georgia, serif",
-    lineHeight: 1,
-    textShadow: '0 0 12px rgba(212,175,55,0.4)',
-  },
-  poweredTagline: {
-    fontSize: '8.5px',
-    color: '#7a6a4a',
-    letterSpacing: '0.2px',
-    fontStyle: 'italic',
-    lineHeight: 1.4,
-    maxWidth: '150px',
-    fontFamily: "'Inter', sans-serif",
-  },
 };
 
 export default OTPVerification;
+

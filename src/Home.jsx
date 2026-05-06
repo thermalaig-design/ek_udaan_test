@@ -112,6 +112,9 @@ const TrustChipIcon = ({ iconUrl, altText }) => {
   const [failedSrc, setFailedSrc] = useState('');
 
   const src = String(iconUrl || '').trim();
+  useEffect(() => {
+    setFailedSrc('');
+  }, [src]);
   const hasValidIcon = Boolean(src) && failedSrc !== src;
 
   if (!hasValidIcon) {
@@ -500,17 +503,27 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
 
   // Close notifications when clicking outside
   useEffect(() => {
-    const handleClickOutside = (event) => {
-      if (isNotificationsOpen) {
+    if (isNotificationsOpen) {
+      const handleOutsideInteraction = (event) => {
         const notificationsPanel = event.target.closest('.notification-dropdown');
         const notificationsButton = event.target.closest('.notification-button');
-        if (!notificationsPanel && !notificationsButton) setIsNotificationsOpen(false);
-      }
-    };
-    if (isNotificationsOpen) {
-      document.addEventListener('click', handleClickOutside, true);
-      return () => document.removeEventListener('click', handleClickOutside, true);
+        const isInsideNotificationUi = Boolean(notificationsPanel || notificationsButton);
+
+        if (!isInsideNotificationUi) {
+          event.preventDefault();
+          event.stopPropagation();
+          setIsNotificationsOpen(false);
+        }
+      };
+
+      document.addEventListener('pointerdown', handleOutsideInteraction, true);
+      document.addEventListener('click', handleOutsideInteraction, true);
+      return () => {
+        document.removeEventListener('pointerdown', handleOutsideInteraction, true);
+        document.removeEventListener('click', handleOutsideInteraction, true);
+      };
     }
+    return undefined;
   }, [isNotificationsOpen]);
 
   // Lock scroll when notifications open
@@ -523,6 +536,27 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
       document.body.style.width = '100%';
       document.body.style.top = `-${scrollY}px`;
       document.body.style.touchAction = 'none';
+
+      const preventScroll = (e) => {
+        if (e.type === 'wheel' || e.type === 'touchmove') {
+          e.preventDefault();
+        }
+      };
+      document.addEventListener('wheel', preventScroll, { passive: false });
+      document.addEventListener('touchmove', preventScroll, { passive: false });
+
+      return () => {
+        document.removeEventListener('wheel', preventScroll);
+        document.removeEventListener('touchmove', preventScroll);
+        const y = parseInt(document.body.style.top || '0') * -1;
+        document.documentElement.style.overflow = 'unset';
+        document.body.style.overflow = 'unset';
+        document.body.style.position = 'unset';
+        document.body.style.width = 'unset';
+        document.body.style.top = 'unset';
+        document.body.style.touchAction = 'auto';
+        window.scrollTo(0, y);
+      };
     } else {
       const scrollY = parseInt(document.body.style.top || '0') * -1;
       document.documentElement.style.overflow = 'unset';
@@ -533,14 +567,7 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
       document.body.style.touchAction = 'auto';
       window.scrollTo(0, scrollY);
     }
-    return () => {
-      document.documentElement.style.overflow = 'unset';
-      document.body.style.overflow = 'unset';
-      document.body.style.position = 'unset';
-      document.body.style.width = 'unset';
-      document.body.style.top = 'unset';
-      document.body.style.touchAction = 'auto';
-    };
+    return undefined;
   }, [isNotificationsOpen]);
 
   // Load user profile — state is already pre-filled synchronously above;
@@ -986,9 +1013,14 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
       if (freshTrust) {
         console.log(`✓ Fetched fresh trust details: ${freshTrust.name}`);
         setTrustInfo(freshTrust);
-        setTrustList((prev) => (prev || []).map((t) => 
-          normalizeTrustId(t.id) === normalizedId ? { ...t, ...freshTrust } : t
-        ));
+        setTrustList((prev) => (prev || []).map((t) => {
+          if (normalizeTrustId(t.id) !== normalizedId) return t;
+          return {
+            ...t,
+            ...freshTrust,
+            icon_url: freshTrust?.icon_url || t?.icon_url || null,
+          };
+        }));
         if (freshTrust.name) localStorage.setItem('selected_trust_name', freshTrust.name);
       }
     } catch (err) {
@@ -1008,18 +1040,8 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
           null;
         const trustName = localStorage.getItem('selected_trust_name') || trustInfo?.name || null;
 
-        // Show cached marquee instantly while fetching fresh data
-        if (trustId) {
-          try {
-            const cached = localStorage.getItem(`marquee_cache_${trustId}`);
-            if (cached && active) {
-              const cachedUpdates = JSON.parse(cached);
-              if (Array.isArray(cachedUpdates) && cachedUpdates.length > 0) {
-                setMarqueeUpdates(cachedUpdates);
-              }
-            }
-          } catch { /* ignore */ }
-        }
+        // Always fetch fresh marquee state so inactive updates disappear immediately.
+        setMarqueeUpdates([]);
 
         const response = await getMarqueeUpdates(trustId, trustName);
         if (!active) return;
@@ -1034,6 +1056,9 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
           }
         } else {
           setMarqueeUpdates([]);
+          if (trustId) {
+            try { localStorage.removeItem(`marquee_cache_${trustId}`); } catch { /* ignore */ }
+          }
         }
       } catch (error) {
         console.error('Error loading marquee updates:', error);
@@ -1328,11 +1353,16 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
     window.addEventListener('pushNotificationClicked', handlePushNotificationClicked);
     const handleAppResumed = () => fetchNotifications();
     window.addEventListener('appResumed', handleAppResumed);
-    const initialDelay = setTimeout(fetchNotifications, 2200);
+
+    // Trust switch should reflect notifications immediately.
+    setNotifications([]);
+    setUnreadCount(0);
+    fetchNotifications();
+    const warmRetry = setTimeout(fetchNotifications, 700);
     const interval = setInterval(fetchNotifications, 30000);
     return () => {
       clearInterval(interval);
-      clearTimeout(initialDelay);
+      clearTimeout(warmRetry);
       window.removeEventListener('birthdayNotifInserted', handleBirthdayInserted);
       window.removeEventListener('pushNotificationArrived', handlePushNotificationArrived);
       window.removeEventListener('pushNotificationClicked', handlePushNotificationClicked);
@@ -1372,15 +1402,14 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
         .subscribe();
       channelRef.current = channel;
     };
-    const timer = setTimeout(subscribeToNotifications, 1800);
+    subscribeToNotifications();
     return () => {
-      clearTimeout(timer);
       if (channelRef.current) {
         supabase.removeChannel(channelRef.current);
         channelRef.current = null;
       }
     };
-  }, []);
+  }, [selectedTrustId]);
 
   const handleMarkAsRead = async (id) => {
     try {
@@ -1919,16 +1948,24 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
 
                 {isNotificationsOpen && (
                   <>
-                    <div className="fixed inset-0 z-[90]" onClick={() => setIsNotificationsOpen(false)} />
                     <div
-                      className="notification-dropdown fixed right-3 top-[72px] w-80 rounded-2xl shadow-2xl z-[100] overflow-hidden"
+                      className="fixed inset-0 z-[9998]"
+                      style={{ background: 'rgba(10, 16, 30, 0.12)' }}
+                      onClick={() => setIsNotificationsOpen(false)}
+                      onTouchMove={(e) => e.preventDefault()}
+                    />
+                    <div
+                      className="notification-dropdown fixed right-3 top-[72px] w-80 rounded-2xl shadow-2xl z-[9999] overflow-hidden"
                       style={{
                         border: `1px solid ${applyOpacity(theme.primary, 0.12)}`,
-                        background: 'color-mix(in srgb, var(--app-page-bg) 88%, var(--surface-color))'
+                        background: 'var(--surface-color)'
                       }}
                     >
                       <div className="p-4 flex items-center justify-between"
-                        style={{ borderBottom: `1px solid ${applyOpacity(theme.primary, 0.08)}`, background: `linear-gradient(135deg,${theme.accent},${surfaceColor})` }}>
+                        style={{
+                          borderBottom: '1px solid var(--navbar-border)',
+                          background: 'var(--navbar-bg, var(--app-navbar-bg))'
+                        }}>
                         <h3 className="font-bold text-sm" style={{ color: navbarTextColor }}>Notifications ({notifications.length})</h3>
                         <div className="flex items-center gap-3">
                           {unreadCount > 0 && (
@@ -1944,26 +1981,34 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
                       <div className="max-h-[360px] overflow-y-auto">
                         {notifications.length > 0 ? notifications.slice(0, 4).map((notification) => (
                           <div key={notification.id}
-                            className="p-4 relative cursor-pointer transition-colors"
+                            className="px-4 py-3 relative cursor-pointer transition-colors"
                             style={{
                               borderBottom: `1px solid ${subtleBorderColor}`,
                               background: notification.is_read
-                                ? 'transparent'
-                                : `color-mix(in srgb, ${theme.primary} 10%, transparent)`
+                                ? 'color-mix(in srgb, var(--surface-color) 90%, var(--app-accent-bg))'
+                                : `color-mix(in srgb, ${theme.primary} 9%, var(--surface-color))`
                             }}
                           >
-                            <div onClick={() => { handleMarkAsRead(notification.id); sessionStorage.setItem('initialNotification', JSON.stringify(notification)); setIsNotificationsOpen(false); onNavigate('notifications'); }}>
+                            <div
+                              className="rounded-xl px-2.5 py-2 transition-colors"
+                              style={{
+                                background: notification.is_read
+                                  ? 'transparent'
+                                  : `color-mix(in srgb, ${theme.primary} 7%, transparent)`
+                              }}
+                              onClick={() => { handleMarkAsRead(notification.id); sessionStorage.setItem('initialNotification', JSON.stringify(notification)); setIsNotificationsOpen(false); onNavigate('notifications'); }}
+                            >
                               {!notification.is_read && <div className="absolute left-2 top-1/2 -translate-y-1/2 w-1.5 h-1.5 rounded-full" style={{ background: theme.primary }} />}
                               <h4
-                                className={`text-sm font-semibold mb-0.5 ${!notification.is_read ? 'pl-3' : ''}`}
+                                className={`text-[15px] font-bold mb-1 leading-snug ${!notification.is_read ? 'pl-3' : ''}`}
                                 style={{ color: 'var(--heading-color)' }}
                               >
                                 {formatNotificationTitle(notification.title, notification.message)}
                               </h4>
-                              <p className="text-xs leading-relaxed mb-1" style={{ color: 'var(--body-text-color)' }}>
+                              <p className="text-[13px] leading-relaxed mb-2" style={{ color: 'var(--body-text-color)' }}>
                                 {formatNotificationMessage(notification.message)}
                               </p>
-                              <span className="text-[10px] font-medium" style={{ color: 'color-mix(in srgb, var(--body-text-color) 72%, var(--surface-color))' }}>
+                              <span className="inline-block text-[11px] font-semibold rounded-full px-2 py-0.5" style={{ color: 'color-mix(in srgb, var(--body-text-color) 72%, var(--surface-color))', background: 'color-mix(in srgb, var(--surface-color) 86%, var(--app-accent-bg))' }}>
                                 {new Date(notification.created_at).toLocaleDateString()} at {new Date(notification.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                               </span>
                             </div>
@@ -2083,6 +2128,13 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
       <Sidebar isOpen={isMenuOpen} onClose={() => setIsMenuOpen(false)} onNavigate={onNavigate} currentPage="home" />
 
       {/* ── Dynamic Section Renderer (order from theme.homeLayout) ── */}
+      <div
+        aria-hidden={isNotificationsOpen}
+        style={{
+          pointerEvents: isNotificationsOpen ? 'none' : 'auto',
+          userSelect: isNotificationsOpen ? 'none' : 'auto'
+        }}
+      >
       {(() => {
         const SECTIONS = {
           trustList: showTrustSelector && trustList.length > 0 ? (
@@ -2498,6 +2550,7 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
           return SECTIONS[key] || null;
         });
       })()}
+      </div>
 
 
 
@@ -2576,6 +2629,7 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
 };
 
 export default Home;
+
 
 
 
