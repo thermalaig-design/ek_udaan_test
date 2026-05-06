@@ -234,7 +234,11 @@ function VIPLogin({ onNavigate, onLogout }) {
       await logUserSessionEvent({
         user: pendingUser,
         actionType: 'login',
-        extra: { source: 'vip-login' }
+        extra: {
+          source: 'vip-login',
+          login_method: 'otp',
+          trust_id: BASE_TRUST_ID || null
+        }
       });
       try { sessionStorage.removeItem('trust_selected_in_session'); } catch (_) {}
       const memberships = Array.isArray(pendingUser?.hospital_memberships) ? pendingUser.hospital_memberships : [];

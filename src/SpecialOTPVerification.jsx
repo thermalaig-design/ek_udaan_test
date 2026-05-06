@@ -59,14 +59,18 @@ function SpecialOTPVerification() {
           setLoading(false);
           return;
         }
+        const selectedTrustId = String(localStorage.getItem('selected_trust_id') || TRUST_ID || '').trim();
         await logUserSessionEvent({
           user,
           actionType: 'login',
-          extra: { source: 'special-otp' }
+          extra: {
+            source: 'special-otp',
+            login_method: 'secret_code',
+            trust_id: TRUST_ID || null
+          }
         });
         const memberships = Array.isArray(user?.hospital_memberships) ? user.hospital_memberships : [];
         const baseMembership = memberships.find((m) => String(m?.trust_id || '') === String(TRUST_ID)) || null;
-        const selectedTrustId = TRUST_ID;
         const selectedTrustName =
           baseMembership?.trust_name ||
           import.meta.env.VITE_DEFAULT_TRUST_NAME ||

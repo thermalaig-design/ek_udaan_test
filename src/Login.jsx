@@ -450,8 +450,8 @@ const styles = {
     display: 'flex',
     flexDirection: 'column',
     alignItems: 'center',
-    gap: '10px',
-    padding: '4px 0 12px',
+    gap: '6px',
+    padding: '2px 0 8px',
   },
   poweredDivider: {
     width: '180px',
@@ -470,11 +470,11 @@ const styles = {
   poweredRow: {
     display: 'flex',
     alignItems: 'center',
-    gap: '14px',
+    gap: '8px',
   },
   poweredLogoRing: {
-    width: '64px',
-    height: '64px',
+    width: '44px',
+    height: '44px',
     borderRadius: '50%',
     background: '#1a1a1a',
     border: '1.5px solid #5c4a1e',
@@ -484,8 +484,8 @@ const styles = {
     flexShrink: 0,
   },
   poweredLogo: {
-    width: '52px',
-    height: '52px',
+    width: '34px',
+    height: '34px',
     objectFit: 'contain',
     borderRadius: '50%',
     filter: 'brightness(2.2) contrast(1.1) saturate(1.3)',
@@ -493,10 +493,10 @@ const styles = {
   poweredTextGroup: {
     display: 'flex',
     flexDirection: 'column',
-    gap: '4px',
+    gap: '2px',
   },
   poweredBrand: {
-    fontSize: '16px',
+    fontSize: '11px',
     fontWeight: 700,
     color: '#d4af37',
     letterSpacing: '3px',
@@ -505,12 +505,12 @@ const styles = {
     textShadow: '0 0 12px rgba(212,175,55,0.4)',
   },
   poweredTagline: {
-    fontSize: '8.5px',
+    fontSize: '6.5px',
     color: '#7a6a4a',
     letterSpacing: '0.2px',
     fontStyle: 'italic',
     lineHeight: 1.4,
-    maxWidth: '150px',
+    maxWidth: '112px',
     fontFamily: "'Inter', sans-serif",
   },
 };

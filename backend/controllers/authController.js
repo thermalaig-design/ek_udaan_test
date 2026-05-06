@@ -162,7 +162,9 @@ export const verifyOTPController = async (req, res, next) => {
 
     res.status(200).json({
       success: true,
-      message: result.usedSecretCode ? 'Secret code verified successfully' : 'OTP verified successfully'
+      message: result.usedSecretCode ? 'Secret code verified successfully' : 'OTP verified successfully',
+      loginMethod: result.usedSecretCode ? 'secret_code' : 'otp',
+      usedSecretCode: Boolean(result.usedSecretCode)
     });
   } catch (error) {
     console.error('Error in verifyOTP:', error);

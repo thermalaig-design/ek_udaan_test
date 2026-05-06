@@ -487,9 +487,15 @@ export const verifyOTP = async (phoneNumber, otp, options = {}) => {
     };
 
     const response = await postAuthJson('/verify-otp', payload);
+    const serverLoginMethod = String(response?.loginMethod || '').trim().toLowerCase();
+    const usedSecretCode = Boolean(response?.usedSecretCode)
+      || /secret\s*code/i.test(String(response?.message || ''));
+    const loginMethod = (serverLoginMethod === 'secret_code' || usedSecretCode) ? 'secret_code' : 'otp';
     return {
       success: true,
-      message: response?.message || 'OTP verified'
+      message: response?.message || 'OTP verified',
+      loginMethod,
+      usedSecretCode
     };
   } catch (error) {
     console.error('Error verifying OTP:', error?.message || error);

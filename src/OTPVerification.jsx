@@ -12,6 +12,7 @@ const LOGIN_TRUST_CACHE_KEY = 'cached_base_trust_info';
 const TRUST_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 const OTP_FLOW_KEY = 'otp_flow_allowed';
 const LAST_SELECTED_TRUST_ID_KEY = 'last_selected_trust_id';
+const SETU_POWERED_LOGO = '/assets/setu-logo.png';
 const normalizeText = (value) => String(value || '').trim();
 
 const resolveAuthDefaultTrust = () => {
@@ -81,6 +82,7 @@ function OTPVerification() {
     ? location.state.accounts
     : (user ? [user] : []);
   const [otpVerified, setOtpVerified] = useState(false);
+  const [verifiedLoginMethod, setVerifiedLoginMethod] = useState('otp');
   const [selectedAccountId, setSelectedAccountId] = useState(accountCandidates[0]?.members_id || accountCandidates[0]?.id || '');
   const phoneNumber = location.state?.phoneNumber || '';
   const isOtpFlowAllowed = sessionStorage.getItem(OTP_FLOW_KEY) === 'normal';
@@ -123,7 +125,7 @@ function OTPVerification() {
     return accountCandidates.find((account) => String(account?.members_id || account?.id || '') === selectedId) || accountCandidates[0];
   };
 
-  const completeLogin = async (selectedUser) => {
+  const completeLogin = async (selectedUser, loginMethod = 'otp') => {
     const allAccountMemberIds = Array.from(new Set(
       (Array.isArray(accountCandidates) ? accountCandidates : [])
         .map((account) => account?.members_id || account?.id || null)
@@ -178,7 +180,15 @@ function OTPVerification() {
       return false;
     }
 
-    await logUserSessionEvent({ user: enrichedUser, actionType: 'login', extra: { source: 'otp' } });
+    await logUserSessionEvent({
+      user: enrichedUser,
+      actionType: 'login',
+      extra: {
+        source: 'otp',
+        login_method: loginMethod,
+        trust_id: normalizeText(TRUST_ID || authDefaultTrust.id) || null
+      }
+    });
 
     const selectedMemberships = Array.isArray(enrichedUser?.hospital_memberships) ? enrichedUser.hospital_memberships : [];
     const baseTrustId = normalizeText(TRUST_ID || authDefaultTrust.id);
@@ -214,13 +224,14 @@ function OTPVerification() {
 
     try {
       if (otpVerified) {
+        setError('');
         const selectedUser = resolveSelectedAccount();
         if (!selectedUser) {
           setError('Please select an account to continue.');
           setLoading(false);
           return;
         }
-        await completeLogin(selectedUser);
+        await completeLogin(selectedUser, verifiedLoginMethod);
         setLoading(false);
         return;
       }
@@ -234,6 +245,7 @@ function OTPVerification() {
         setLoading(false);
         return;
       }
+      setVerifiedLoginMethod(result?.loginMethod === 'secret_code' ? 'secret_code' : 'otp');
 
       if (!user) {
         setError('User data not found. Please go back and try again.');
@@ -242,6 +254,7 @@ function OTPVerification() {
       }
 
       if (accountCandidates.length > 1) {
+        setError('');
         setOtpVerified(true);
         const nextId = accountCandidates[0]?.members_id || accountCandidates[0]?.id || '';
         setSelectedAccountId(nextId);
@@ -249,10 +262,14 @@ function OTPVerification() {
         return;
       }
 
-      await completeLogin(accountCandidates[0] || user);
+      await completeLogin(accountCandidates[0] || user, result?.loginMethod === 'secret_code' ? 'secret_code' : 'otp');
     } catch (err) {
       console.error('[OTP] Verify error:', err);
-      setError('Failed to verify OTP. Please try again.');
+      setError(
+        otpVerified
+          ? 'Failed to continue with selected account. Please try again.'
+          : 'Failed to verify OTP. Please try again.'
+      );
     } finally {
       setLoading(false);
     }
@@ -395,6 +412,25 @@ function OTPVerification() {
             </p>
           )}
 
+        </div>
+      </div>
+
+      <div style={styles.poweredBy}>
+        <div style={styles.poweredDivider} />
+        <span style={styles.poweredLabel}>Powered by</span>
+        <div style={styles.poweredRow}>
+          <div style={styles.poweredLogoRing}>
+            <img
+              src={SETU_POWERED_LOGO}
+              alt="SETU"
+              style={styles.poweredLogo}
+              onError={(e) => { e.currentTarget.style.display = 'none'; }}
+            />
+          </div>
+          <div style={styles.poweredTextGroup}>
+            <span style={styles.poweredBrand}>S&nbsp;E&nbsp;T&nbsp;U</span>
+            <span style={styles.poweredTagline}>Where AI connections create power</span>
+          </div>
         </div>
       </div>
 
@@ -652,6 +688,73 @@ const styles = {
     fontFamily: "'Inter', sans-serif",
     fontSize: '12px',
     borderBottom: '1px solid #5a4010',
+  },
+  poweredBy: {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    gap: '6px',
+    padding: '2px 0 8px',
+  },
+  poweredDivider: {
+    width: '180px',
+    height: '1px',
+    background: 'linear-gradient(90deg, transparent, #5c4a1e 30%, #d4af37 50%, #5c4a1e 70%, transparent)',
+    marginBottom: '2px',
+  },
+  poweredLabel: {
+    fontSize: '8px',
+    color: '#5a5040',
+    letterSpacing: '3px',
+    textTransform: 'uppercase',
+    fontWeight: 600,
+    fontFamily: "'Inter', sans-serif",
+  },
+  poweredRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+  },
+  poweredLogoRing: {
+    width: '44px',
+    height: '44px',
+    borderRadius: '50%',
+    background: '#1a1a1a',
+    border: '1.5px solid #5c4a1e',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+  },
+  poweredLogo: {
+    width: '34px',
+    height: '34px',
+    objectFit: 'contain',
+    borderRadius: '50%',
+    filter: 'brightness(2.2) contrast(1.1) saturate(1.3)',
+  },
+  poweredTextGroup: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '2px',
+  },
+  poweredBrand: {
+    fontSize: '11px',
+    fontWeight: 700,
+    color: '#d4af37',
+    letterSpacing: '3px',
+    fontFamily: "'Palatino Linotype', Georgia, serif",
+    lineHeight: 1,
+    textShadow: '0 0 12px rgba(212,175,55,0.4)',
+  },
+  poweredTagline: {
+    fontSize: '6.5px',
+    color: '#7a6a4a',
+    letterSpacing: '0.2px',
+    fontStyle: 'italic',
+    lineHeight: 1.4,
+    maxWidth: '112px',
+    fontFamily: "'Inter', sans-serif",
   },
 };
 
