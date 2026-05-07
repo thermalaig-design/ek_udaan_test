@@ -50,8 +50,6 @@ const sanitizeMemberName = (value) => {
     'aaaaa',
     'gau grass',
     'guest user',
-    'test',
-    'test user',
     'null',
     'undefined',
     'n/a',
@@ -63,6 +61,28 @@ const sanitizeMemberName = (value) => {
   return raw;
 };
 
+const resolveNameValue = (...candidates) => {
+  for (const candidate of candidates) {
+    const cleaned = sanitizeMemberName(candidate);
+    if (cleaned) return cleaned;
+  }
+  return '';
+};
+
+const resolvePhotoUrl = (...candidates) => {
+  for (const candidate of candidates) {
+    const value = String(candidate || '').trim();
+    if (value) return value;
+  }
+  return '';
+};
+
+const parseTimestamp = (value) => {
+  if (!value) return 0;
+  const ts = Date.parse(value);
+  return Number.isNaN(ts) ? 0 : ts;
+};
+
 const getCachedSidebarProfile = () => {
   try {
     const user = localStorage.getItem('user');
@@ -72,8 +92,9 @@ const getCachedSidebarProfile = () => {
     const saved = localStorage.getItem(key);
     const parsedProfile = saved ? JSON.parse(saved) : null;
     return {
-      name: sanitizeMemberName(parsedProfile?.name || parsedUser?.Name || parsedUser?.name || ''),
-      profilePhotoUrl: parsedProfile?.profile_photo_url || parsedProfile?.profilePhotoUrl || '',
+      ...parsedProfile,
+      name: resolveNameValue(parsedProfile?.name, parsedUser?.Name, parsedUser?.name),
+      profilePhotoUrl: resolvePhotoUrl(parsedProfile?.profile_photo_url, parsedProfile?.profilePhotoUrl),
     };
   } catch {
     return null;
@@ -159,9 +180,22 @@ const Sidebar = ({ isOpen, onClose, onNavigate, currentPage, onLogout }) => {
 
         const response = await getProfile();
         if (response.success && response.profile) {
-          const resolvedName = sanitizeMemberName(response.profile.name || parsedUser?.Name || parsedUser?.name || '');
-          const profilePhotoUrl = response.profile.profile_photo_url || '';
+          const responseProfile = response.profile || {};
+          const profileIsStaleComparedToCache =
+            parseTimestamp(cachedProfile?.updated_at || cachedProfile?.client_saved_at) >
+            parseTimestamp(responseProfile?.updated_at);
+          const effectiveProfile = profileIsStaleComparedToCache
+            ? { ...responseProfile, ...cachedProfile }
+            : responseProfile;
+          const resolvedName = resolveNameValue(effectiveProfile?.name, parsedUser?.Name, parsedUser?.name);
+          const profilePhotoUrl = resolvePhotoUrl(
+            effectiveProfile?.profile_photo_url,
+            effectiveProfile?.profilePhotoUrl,
+            cachedProfile?.profile_photo_url,
+            cachedProfile?.profilePhotoUrl
+          );
           setProfile({
+            ...effectiveProfile,
             name: resolvedName,
             profilePhotoUrl,
           });
@@ -169,7 +203,7 @@ const Sidebar = ({ isOpen, onClose, onNavigate, currentPage, onLogout }) => {
             const key = `userProfile_${parsedUser.Mobile || parsedUser.mobile || parsedUser.id || 'default'}`;
             const nextSnapshot = {
               ...(cachedProfile || {}),
-              ...(response.profile || {}),
+              ...(effectiveProfile || {}),
               name: resolvedName,
               profile_photo_url: profilePhotoUrl,
               profilePhotoUrl
@@ -187,10 +221,11 @@ const Sidebar = ({ isOpen, onClose, onNavigate, currentPage, onLogout }) => {
             const parsedProfile = JSON.parse(saved);
             setProfile({
               ...parsedProfile,
-              name: sanitizeMemberName(parsedProfile?.name || parsedUser?.Name || parsedUser?.name || '')
+              name: resolveNameValue(parsedProfile?.name, parsedUser?.Name, parsedUser?.name),
+              profilePhotoUrl: resolvePhotoUrl(parsedProfile?.profile_photo_url, parsedProfile?.profilePhotoUrl),
             });
           } else {
-            setProfile({ name: sanitizeMemberName(parsedUser.Name || parsedUser.name || ''), profilePhotoUrl: '' });
+            setProfile({ name: resolveNameValue(parsedUser?.Name, parsedUser?.name), profilePhotoUrl: '' });
           }
         }
       } catch {
@@ -198,7 +233,7 @@ const Sidebar = ({ isOpen, onClose, onNavigate, currentPage, onLogout }) => {
         if (user) {
           const parsedUser = JSON.parse(user);
           setUserData(parsedUser);
-          setProfile({ name: sanitizeMemberName(parsedUser?.Name || parsedUser?.name || ''), profilePhotoUrl: '' });
+          setProfile({ name: resolveNameValue(parsedUser?.Name, parsedUser?.name), profilePhotoUrl: '' });
         }
       }
     };
@@ -330,7 +365,7 @@ const Sidebar = ({ isOpen, onClose, onNavigate, currentPage, onLogout }) => {
 
   if (!isOpen) return null;
 
-  const displayName = profile?.name || userData?.Name || userData?.name || 'User';
+  const displayName = resolveNameValue(profile?.name, userData?.Name, userData?.name) || 'User';
   const initials = displayName.charAt(0).toUpperCase();
   const completion = calcCompletion(profile, userData);
   const completionColor = primary;

@@ -436,8 +436,20 @@ const saveProfileDirectToSupabase = async (profileData, parsedUser, trustId = nu
     throw new Error('Member not found');
   }
 
+  const { data: existingMember, error: existingMemberError } = await supabase
+    .from('Members')
+    .select('members_id, "Name"')
+    .eq('members_id', membersId)
+    .maybeSingle();
+  if (existingMemberError) throw existingMemberError;
+
+  const existingName = sanitizeMemberUpdateValue(existingMember?.Name);
+  const incomingName = sanitizeMemberUpdateValue(profileData.name);
+  const fallbackName = sanitizeMemberUpdateValue(parsedUser?.Name || parsedUser?.name);
+  const resolvedNameForMember = incomingName || existingName || fallbackName;
+
   const memberPatch = {
-    Name: sanitizeMemberUpdateValue(profileData.name),
+    Name: resolvedNameForMember,
     Email: sanitizeMemberUpdateValue(profileData.email),
     'Address Home': sanitizeMemberUpdateValue(profileData.address_home),
     'Address Office': sanitizeMemberUpdateValue(profileData.address_office),
@@ -530,61 +542,52 @@ const resolveAuthHeaders = (fallbackMembersId = null) => {
 // Preload commonly used data
 // Get user profile
 export const getProfile = async () => {
+  const user = localStorage.getItem('user');
+  const parsedUser = user ? JSON.parse(user) : null;
+  if (!parsedUser) {
+    throw new Error('No user found in localStorage');
+  }
   try {
-    const headers = resolveAuthHeaders();
-
-    const response = await api.get('/profile', {
-      headers
-    });
-    return response.data;
-  } catch (error) {
-    console.error('Error fetching profile:', error);
-    const status = error?.response?.status;
-    if (status === 404 || status === 500) {
-      const user = localStorage.getItem('user');
-      const parsedUser = user ? JSON.parse(user) : null;
-      if (parsedUser) {
-        return await fetchProfileDirectFromSupabase(parsedUser, localStorage.getItem('selected_trust_id') || null);
-      }
+    return await fetchProfileDirectFromSupabase(parsedUser, localStorage.getItem('selected_trust_id') || null);
+  } catch (supabaseError) {
+    console.error('Error fetching profile directly from Supabase:', supabaseError);
+    try {
+      const headers = resolveAuthHeaders();
+      const response = await api.get('/profile', { headers });
+      return response.data;
+    } catch (error) {
+      console.error('Error fetching profile from backend fallback:', error);
+      throw error;
     }
-    throw error;
   }
 };
 
 // Save user profile
 export const saveProfile = async (profileData, profilePhotoFile) => {
+  const user = localStorage.getItem('user');
+  const parsedUser = user ? JSON.parse(user) : null;
+  if (!parsedUser) {
+    throw new Error('No user found in localStorage');
+  }
   try {
-    const headers = resolveAuthHeaders(profileData?.members_id || null);
-
-    const formData = new FormData();
-    formData.append('profileData', JSON.stringify(profileData));
-    if (profilePhotoFile) {
-      formData.append('profilePhoto', profilePhotoFile);
-    }
-
-    const response = await api.post('/profile/save', formData, {
-      headers
-    });
-    return response.data;
-  } catch (error) {
-    console.error('Error saving profile:', error);
-    const status = error?.response?.status;
-    const serverMessage = error?.response?.data?.message || error?.response?.data?.error || error?.message || '';
-    const shouldFallback =
-      status === 404 ||
-      /member not found/i.test(String(serverMessage)) ||
-      /not found/i.test(String(serverMessage));
-
-    if (shouldFallback) {
-      const user = localStorage.getItem('user');
-      const parsedUser = user ? JSON.parse(user) : null;
-      if (parsedUser) {
-        return await saveProfileDirectToSupabase(profileData, parsedUser, localStorage.getItem('selected_trust_id') || null, profilePhotoFile);
+    return await saveProfileDirectToSupabase(profileData, parsedUser, localStorage.getItem('selected_trust_id') || null, profilePhotoFile);
+  } catch (supabaseError) {
+    console.error('Error saving profile directly to Supabase:', supabaseError);
+    try {
+      const headers = resolveAuthHeaders(profileData?.members_id || null);
+      const formData = new FormData();
+      formData.append('profileData', JSON.stringify(profileData));
+      if (profilePhotoFile) {
+        formData.append('profilePhoto', profilePhotoFile);
       }
+      const response = await api.post('/profile/save', formData, { headers });
+      return response.data;
+    } catch (error) {
+      console.error('Error saving profile via backend fallback:', error);
+      const serverMessage = error?.response?.data?.message || error?.response?.data?.error || error?.message || '';
+      if (serverMessage) throw new Error(serverMessage);
+      throw error;
     }
-
-    if (serverMessage) throw new Error(serverMessage);
-    throw error;
   }
 };
 // Get marquee updates Ã¢â‚¬â€ direct Supabase (no backend needed)

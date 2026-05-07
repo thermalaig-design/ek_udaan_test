@@ -1,48 +1,11 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Home as HomeIcon, IndianRupee, Menu, X } from 'lucide-react';
+import { Crown, HandHeart, Home as HomeIcon, IndianRupee, Menu, ShieldCheck, X } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAppTheme } from './context/ThemeContext';
 import { applyOpacity } from './utils/colorUtils';
 import { fetchDonationsByTrust, getDonationFormPrefill } from './services/donationService';
 import { TRUST_VERSION_UPDATED_EVENT } from './services/trustVersionService';
 import Sidebar from './components/Sidebar';
-
-const DONATION_CACHE_KEY_PREFIX = 'donation_cache_v1';
-
-const getDonationCacheKey = (trustId) => `${DONATION_CACHE_KEY_PREFIX}:${String(trustId || '').trim()}`;
-
-const sortDonationsNewestFirst = (rows = []) => (
-  [...rows].sort((a, b) => {
-    const aTs = new Date(a?.updated_at || a?.created_at || 0).getTime();
-    const bTs = new Date(b?.updated_at || b?.created_at || 0).getTime();
-    return bTs - aTs;
-  })
-);
-
-const readDonationCache = (trustId) => {
-  try {
-    const key = getDonationCacheKey(trustId);
-    const raw = localStorage.getItem(key);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed?.rows)) return [];
-    return sortDonationsNewestFirst(parsed.rows);
-  } catch {
-    return [];
-  }
-};
-
-const writeDonationCache = (trustId, rows) => {
-  try {
-    const key = getDonationCacheKey(trustId);
-    localStorage.setItem(key, JSON.stringify({
-      updatedAt: new Date().toISOString(),
-      rows: Array.isArray(rows) ? rows : [],
-    }));
-  } catch {
-    // ignore cache write failures
-  }
-};
 
 const formatCurrency = (amount) => {
   const numeric = Number(amount);
@@ -103,38 +66,6 @@ const normalizeAttachments = (attachments) => {
   return [];
 };
 
-const getOptimizedImageUrl = (url, width = 900) => {
-  const source = String(url || '').trim();
-  if (!source) return '';
-  try {
-    const parsed = new URL(source);
-    const host = parsed.hostname.toLowerCase();
-
-    // Supabase storage transform endpoint support
-    if (host.includes('supabase')) {
-      const marker = '/storage/v1/object/public/';
-      if (parsed.pathname.includes(marker)) {
-        parsed.pathname = parsed.pathname.replace(marker, '/storage/v1/render/image/public/');
-      }
-      if (!parsed.searchParams.has('width')) parsed.searchParams.set('width', String(width));
-      if (!parsed.searchParams.has('quality')) parsed.searchParams.set('quality', '72');
-      if (!parsed.searchParams.has('resize')) parsed.searchParams.set('resize', 'cover');
-      return parsed.toString();
-    }
-
-    // Common CDN params for better mobile payloads
-    if (host.includes('cloudinary.com') || host.includes('res.cloudinary.com')) {
-      parsed.searchParams.set('w', String(width));
-      parsed.searchParams.set('q', 'auto');
-      parsed.searchParams.set('f', 'auto');
-      return parsed.toString();
-    }
-  } catch {
-    return source;
-  }
-  return source;
-};
-
 const Donation = ({ onNavigate }) => {
   const theme = useAppTheme();
   const navigate = useNavigate();
@@ -155,24 +86,13 @@ const Donation = ({ onNavigate }) => {
       return;
     }
 
+    setLoading(true);
     setError('');
-    const cachedRows = readDonationCache(nextPrefill.trustId);
-    if (cachedRows.length > 0) {
-      setDonations(cachedRows);
-      setLoading(false);
-    } else {
-      setLoading(true);
-    }
-
     try {
       const rows = await fetchDonationsByTrust(nextPrefill.trustId);
-      const sortedRows = sortDonationsNewestFirst(rows);
-      setDonations(sortedRows);
-      writeDonationCache(nextPrefill.trustId, sortedRows);
+      setDonations(rows);
     } catch (err) {
-      if (cachedRows.length === 0) {
-        setDonations([]);
-      }
+      setDonations([]);
       setError(err?.message || 'Unable to load donations.');
     } finally {
       setLoading(false);
@@ -229,7 +149,6 @@ const Donation = ({ onNavigate }) => {
         color: 'var(--body-text-color)',
       }}
     >
-      {/* ── Navbar ── */}
       <div
         className="theme-navbar border-b px-6 py-5 flex items-center justify-between sticky top-0 z-40 shadow-sm"
         style={{ paddingTop: 'max(env(safe-area-inset-top, 0px), 20px)' }}
@@ -237,37 +156,35 @@ const Donation = ({ onNavigate }) => {
         <button
           onClick={() => setIsMenuOpen(!isMenuOpen)}
           className="w-10 h-10 rounded-2xl flex items-center justify-center active:scale-95 transition-all"
-          style={{ background: 'color-mix(in srgb, var(--navbar-bg) 72%, var(--surface-color))' }}
+          style={{
+            background: 'color-mix(in srgb, var(--navbar-bg) 72%, var(--surface-color))',
+          }}
         >
-          {isMenuOpen
-            ? <X className="h-[22px] w-[22px]" style={{ color: 'var(--navbar-text)' }} />
-            : <Menu className="h-[22px] w-[22px]" style={{ color: 'var(--navbar-text)' }} />}
+          {isMenuOpen ? <X className="h-[22px] w-[22px]" style={{ color: 'var(--navbar-text)' }} /> : <Menu className="h-[22px] w-[22px]" style={{ color: 'var(--navbar-text)' }} />}
         </button>
-
-        <h1 className="text-lg font-extrabold" style={{ color: 'var(--navbar-text)' }}>
-          Donation
-        </h1>
-
+        <div className="min-w-0 text-center flex-1 px-3">
+          {/* <p className="text-[11px] font-bold uppercase tracking-[0.24em]" style={{ color: 'color-mix(in srgb, var(--navbar-text) 82%, var(--surface-color))' }}>
+            Donation
+          </p> */}
+          <h1 className="text-lg font-extrabold truncate" style={{ color: 'var(--navbar-text)' }}>
+            Donation
+          </h1>
+        </div>
         <button
           onClick={() => onNavigate?.('home')}
           className="w-10 h-10 rounded-2xl flex items-center justify-center active:scale-95 transition-all"
-          style={{ background: 'color-mix(in srgb, var(--navbar-bg) 72%, var(--surface-color))' }}
+          style={{
+            background: 'color-mix(in srgb, var(--navbar-bg) 72%, var(--surface-color))',
+          }}
         >
           <HomeIcon className="h-[22px] w-[22px]" style={{ color: 'var(--navbar-text)' }} />
         </button>
       </div>
 
-      {isMenuOpen && (
-        <div
-          className="fixed inset-0 z-25"
-          style={{ background: applyOpacity('var(--brand-navy-dark)', 0.12) }}
-          onClick={() => setIsMenuOpen(false)}
-        />
-      )}
+      {isMenuOpen && <div className="fixed inset-0 z-25" style={{ background: applyOpacity('var(--brand-navy-dark)', 0.12) }} onClick={() => setIsMenuOpen(false)} />}
       <Sidebar isOpen={isMenuOpen} onClose={() => setIsMenuOpen(false)} onNavigate={onNavigate} currentPage="donation" />
 
       <div className="px-5 pt-5 space-y-5">
-        {/* ── Banner ── */}
         <section
           className="rounded-[22px] p-4"
           style={{
@@ -292,7 +209,6 @@ const Donation = ({ onNavigate }) => {
           </button>
         </section>
 
-        {/* ── Donation List ── */}
         <section className="space-y-3">
           <div className="flex items-center justify-between gap-3">
             <div>
@@ -324,127 +240,81 @@ const Donation = ({ onNavigate }) => {
               No donations found for this trust.
             </div>
           ) : (
-            donations.map((row, index) => {
+            donations.map((row) => {
               const isVip = String(row?.type || '').trim().toLowerCase() === 'vip';
               const attachmentPreview = normalizeAttachments(row?.attachments).slice(0, 1);
-              const heroImageUrl = attachmentPreview[0] ? getOptimizedImageUrl(attachmentPreview[0]) : '';
-              const shouldPrioritizeImage = index < 2;
 
               return (
                 <div
                   key={row.id}
-                  className="rounded-[22px] overflow-hidden transition-all active:scale-[0.985] cursor-pointer"
-                  role="button"
-                  tabIndex={0}
-                  onClick={() => openDonationFormPage(row)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' || e.key === ' ') {
-                      e.preventDefault();
-                      openDonationFormPage(row);
-                    }
-                  }}
+                  className="rounded-[26px] overflow-hidden"
                   style={{
-                    background: 'var(--surface-color)',
-                    border: `1.5px solid ${isVip ? '#E0A11B' : applyOpacity(theme.primary, 0.16)}`,
-                    boxShadow: `0 8px 24px ${applyOpacity(theme.secondary, 0.10)}`,
+                    background: 'color-mix(in srgb, var(--surface-color) 93%, var(--app-accent-bg))',
+                    border: `1px solid ${isVip ? '#E0A11B' : applyOpacity(theme.primary, 0.14)}`,
+                    boxShadow: `0 14px 30px ${applyOpacity(theme.secondary, 0.12)}`,
                   }}
                 >
-                  {/* Image Hero — top, full width */}
-                  {attachmentPreview.length > 0 && (
-                    <div
-                      className="relative w-full h-[220px] overflow-hidden"
-                      style={{
-                        background: isVip
-                          ? 'linear-gradient(160deg, #fff8e1 0%, #fff3cd 100%)'
-                          : `color-mix(in srgb, ${theme.primary} 5%, var(--surface-color))`,
-                        borderBottom: `2px solid ${isVip ? '#F5B700' : theme.primary}`,
-                      }}
-                    >
-                      <img
-                        src={heroImageUrl || attachmentPreview[0]}
-                        alt={row.name}
-                        loading={shouldPrioritizeImage ? 'eager' : 'lazy'}
-                        fetchPriority={shouldPrioritizeImage ? 'high' : 'auto'}
-                        decoding="async"
-                        onError={(e) => { e.currentTarget.parentElement.style.display = 'none'; }}
-                        style={{
-                          width: '100%',
-                          height: '100%',
-                          objectFit: 'cover',
-                          display: 'block',
-                          background: `linear-gradient(120deg, ${applyOpacity(theme.secondary, 0.16)} 0%, ${applyOpacity(theme.primary, 0.12)} 100%)`,
-                        }}
-                      />
-                      {/* Badge overlaid on image */}
-                      <span
-                        className="absolute top-2.5 right-2.5 px-2.5 py-1 rounded-full text-[10px] font-extrabold uppercase tracking-[0.1em] backdrop-blur-sm"
-                        style={{
-                          color: isVip ? '#7A4F00' : '#fff',
-                          background: isVip ? 'rgba(255,227,100,0.92)' : `${theme.primary}dd`,
-                          border: isVip ? '1px solid #E0A11B' : '1px solid rgba(255,255,255,0.25)',
-                          boxShadow: '0 2px 8px rgba(0,0,0,0.18)',
-                        }}
-                      >
-                        {isVip ? '★ VIP' : (row.type || 'General')}
-                      </span>
-                    </div>
-                  )}
-
-                  {/* Card Content */}
+                  <div style={{ height: '4px', background: isVip ? 'linear-gradient(90deg, #FFE7A3 0%, #F5B700 100%)' : `linear-gradient(90deg, ${theme.primary} 0%, ${theme.secondary} 100%)` }} />
                   <div className="p-4">
-                    {/* Title + badge (only when no image) */}
-                    <div className="flex items-start justify-between gap-3 mb-1">
-                      <h3 className="text-[15px] font-extrabold leading-snug flex-1" style={{ color: 'var(--heading-color)' }}>
-                        {row.name}
-                      </h3>
-                      {attachmentPreview.length === 0 && (
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <h3 className="text-base font-extrabold" style={{ color: 'var(--heading-color)' }}>
+                          {row.name}
+                        </h3>
+                        <p className="text-xs mt-1 leading-5" style={{ color: 'var(--body-text-color)' }}>
+                          {row.description || 'Donation support entry'}
+                        </p>
+                      </div>
+                      <div className="flex flex-col items-end gap-2">
                         <span
-                          className="px-2.5 py-1 rounded-full text-[10px] font-extrabold uppercase tracking-[0.1em] shrink-0"
+                          className="px-2.5 py-1 rounded-full text-[10px] font-extrabold uppercase tracking-[0.12em]"
                           style={{
                             color: isVip ? '#8A5A00' : theme.primary,
-                            background: isVip ? 'linear-gradient(135deg, #FFE7A3 0%, #FFD36A 100%)' : applyOpacity(theme.primary, 0.1),
-                            border: `1px solid ${isVip ? '#E0A11B' : applyOpacity(theme.primary, 0.18)}`,
+                            background: isVip ? 'linear-gradient(135deg, #FFE7A3 0%, #FFD36A 52%, #F5B700 100%)' : applyOpacity(theme.primary, 0.1),
+                            border: `1px solid ${isVip ? '#E0A11B' : applyOpacity(theme.primary, 0.15)}`,
                           }}
                         >
-                          {isVip ? '★ VIP' : (row.type || 'General')}
+                          {isVip ? 'VIP' : (row.type || 'General')}
                         </span>
-                      )}
-                    </div>
-
-                    <p className="text-xs leading-5 mb-3" style={{ color: 'var(--body-text-color)' }}>
-                      {row.description || 'Donation support entry'}
-                    </p>
-
-                    <div style={{ height: '1px', background: 'color-mix(in srgb, var(--brand-navy) 8%, transparent)', marginBottom: '12px' }} />
-
-                    {/* Footer */}
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="flex flex-col gap-0.5">
-                        <div className="flex items-center gap-1.5">
-                          <IndianRupee style={{ width: 14, height: 14, color: theme.primary, flexShrink: 0 }} />
-                          <span className="text-sm font-extrabold" style={{ color: 'var(--heading-color)' }}>
-                            {donationSummary(row)}
-                          </span>
-                        </div>
-                        <span className="text-[10px] font-semibold" style={{ color: 'color-mix(in srgb, var(--body-text-color) 65%, var(--surface-color))' }}>
+                        <span className="text-[11px] font-bold" style={{ color: theme.primary }}>
                           {formatDate(row.updated_at || row.created_at)}
                         </span>
                       </div>
+                    </div>
+
+                    {attachmentPreview.length > 0 ? (
+                      <div
+                        className="w-full mt-3 rounded-[20px] overflow-hidden aspect-[16/9]"
+                        style={{ background: 'color-mix(in srgb, var(--brand-navy) 10%, var(--surface-color))' }}
+                      >
+                        <img
+                          src={attachmentPreview[0]}
+                          alt={row.name}
+                          className="w-full h-full object-cover object-center"
+                          onError={(e) => {
+                            e.currentTarget.style.display = 'none';
+                          }}
+                        />
+                      </div>
+                    ) : null}
+
+                    <div className="flex items-center justify-between gap-3 mt-4">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <IndianRupee className="h-4 w-4 flex-shrink-0" style={{ color: theme.primary }} />
+                        <p className="text-sm font-bold truncate" style={{ color: 'var(--heading-color)' }}>
+                          {donationSummary(row)}
+                        </p>
+                      </div>
                       <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          openDonationFormPage(row);
-                        }}
-                        className="px-5 py-2.5 rounded-2xl text-xs font-extrabold active:scale-95 transition-all"
+                        onClick={() => openDonationFormPage(row)}
+                        className="px-4 py-2 rounded-2xl text-xs font-extrabold active:scale-95 transition-all"
                         style={{
-                          background: isVip
-                            ? 'linear-gradient(135deg, #F5B700 0%, #E0A11B 100%)'
-                            : `linear-gradient(135deg, ${theme.primary} 0%, ${theme.secondary} 100%)`,
-                          color: isVip ? '#5A3A00' : '#fff',
-                          boxShadow: `0 6px 16px ${applyOpacity(theme.primary, 0.28)}`,
+                          background: `linear-gradient(135deg, ${applyOpacity(theme.primary, 0.88)} 0%, ${applyOpacity(theme.secondary, 0.82)} 100%)`,
+                          color: '#fff',
+                          boxShadow: `0 8px 18px ${applyOpacity(theme.primary, 0.25)}`,
                         }}
                       >
-                        Donate Now
+                        Select
                       </button>
                     </div>
                   </div>

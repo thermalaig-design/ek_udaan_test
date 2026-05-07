@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   User, Mail, Calendar, MapPin, Briefcase, Pencil, Save,
   Shield, BadgeCheck, Phone, Droplet, UserCircle,
@@ -137,6 +137,21 @@ const getScopedProfilePhoto = (user = {}) => {
   return '';
 };
 
+const parseTimestamp = (value) => {
+  if (!value) return 0;
+  const ts = Date.parse(value);
+  return Number.isNaN(ts) ? 0 : ts;
+};
+
+const getUserProfileSnapshot = (user = {}) => {
+  try {
+    const key = `userProfile_${user?.Mobile || user?.mobile || user?.id || 'default'}`;
+    return JSON.parse(localStorage.getItem(key) || '{}');
+  } catch {
+    return {};
+  }
+};
+
 const removeLocalStorageByPrefix = (prefixes = []) => {
   try {
     const keysToRemove = [];
@@ -221,7 +236,7 @@ const buildInitialProfileData = () => {
     return base;
   }
 };
-const SectionCard = ({ title, subtitle, isOpen, onToggle = () => {}, children }) => (
+const SectionCard = ({ title, subtitle, isOpen, onToggle = () => { }, children }) => (
   <div className="rounded-2xl border overflow-hidden" style={{ borderColor: 'color-mix(in srgb, var(--brand-navy) 12%, transparent)', background: 'var(--surface-color)' }}>
     <button type="button" onClick={onToggle} className="w-full px-4 py-3.5 flex items-center justify-between text-left">
       <div>
@@ -231,6 +246,46 @@ const SectionCard = ({ title, subtitle, isOpen, onToggle = () => {}, children })
       <span className="text-lg font-bold" style={{ color: 'var(--brand-navy)' }}>{isOpen ? '−' : '+'}</span>
     </button>
     {isOpen && <div className="px-4 pb-4 space-y-3">{children}</div>}
+  </div>
+);
+
+const DetailRow = ({ label, value, icon: Icon }) => (
+  <div className="flex items-start gap-2.5 py-2.5">
+    {Icon ? (
+      <span className="mt-0.5 p-1.5 rounded-lg" style={{ background: 'color-mix(in srgb, var(--surface-color) 72%, var(--app-accent-bg))' }}>
+        <Icon className="h-3.5 w-3.5" style={{ color: 'var(--brand-red)' }} />
+      </span>
+    ) : null}
+    <div className="min-w-0">
+      <p className="text-[11px] font-extrabold uppercase tracking-wider" style={{ color: 'color-mix(in srgb, var(--body-text-color) 55%, var(--surface-color))' }}>
+        {label}
+      </p>
+      <p className="text-[15px] font-semibold break-words" style={{ color: 'var(--heading-color)' }}>
+        {value}
+      </p>
+    </div>
+  </div>
+);
+
+const DetailSummaryCard = ({ title, subtitle, children }) => (
+  <div
+    className="rounded-3xl p-4 border shadow-sm"
+    style={{
+      borderColor: 'color-mix(in srgb, var(--brand-navy) 10%, transparent)',
+      background: 'linear-gradient(165deg, color-mix(in srgb, var(--surface-color) 93%, var(--app-accent-bg)) 0%, var(--surface-color) 70%, color-mix(in srgb, var(--brand-navy-light) 60%, var(--surface-color)) 100%)'
+    }}
+  >
+    <div className="mb-2.5">
+      <p className="text-xs font-extrabold uppercase tracking-wider" style={{ color: 'var(--brand-red)' }}>{title}</p>
+      {subtitle ? (
+        <p className="text-[11px] mt-0.5" style={{ color: 'color-mix(in srgb, var(--body-text-color) 52%, var(--surface-color))' }}>
+          {subtitle}
+        </p>
+      ) : null}
+    </div>
+    <div className="divide-y" style={{ borderColor: 'color-mix(in srgb, var(--brand-navy) 10%, transparent)' }}>
+      {children}
+    </div>
   </div>
 );
 
@@ -255,8 +310,6 @@ const Profile = ({ onNavigate, onProfileUpdate }) => {
   const [originalData, setOriginalData] = useState(null);
   const [activeTab, setActiveTab] = useState('Details');
   const [isEditMode, setIsEditMode] = useState(false);
-  const [currentEditStep, setCurrentEditStep] = useState(0);
-  const [editStepKeys, setEditStepKeys] = useState([]);
   const [allowManualNameEntry, setAllowManualNameEntry] = useState(false);
   const [selectedTrustId, setSelectedTrustId] = useState(() => localStorage.getItem('selected_trust_id') || '');
 
@@ -269,19 +322,6 @@ const Profile = ({ onNavigate, onProfileUpdate }) => {
   });
 
   const set = (field) => (val) => setProfileData(prev => ({ ...prev, [field]: val }));
-  const isBlank = (value) => value === undefined || value === null || String(value).trim() === '';
-  const getMissingSectionKeys = (data) => {
-    const next = [];
-    if (isBlank(data.name)) next.push('name');
-    if (isBlank(data.email) || isBlank(data.gender) || isBlank(data.dob) || isBlank(data.blood_group) || isBlank(data.marital_status) || isBlank(data.nationality)) next.push('personal');
-    if (isBlank(data.address_home) || isBlank(data.address_office)) next.push('address');
-    if (isBlank(data.company_name) || isBlank(data.resident_landline) || isBlank(data.office_landline)) next.push('work');
-    if (isBlank(data.aadhaar_id)) next.push('identity');
-    if (isBlank(data.emergency_contact_name) || isBlank(data.emergency_contact_number)) next.push('emergency');
-    if (isBlank(data.spouse_name) || isBlank(data.spouse_contact_number) || isBlank(data.children_count)) next.push('family');
-    if (isBlank(data.facebook) || isBlank(data.twitter) || isBlank(data.instagram) || isBlank(data.linkedin) || isBlank(data.whatsapp)) next.push('social');
-    return next;
-  };
 
   useEffect(() => {
     if (!import.meta.env.DEV) return;
@@ -387,30 +427,35 @@ const Profile = ({ onNavigate, onProfileUpdate }) => {
       const response = await getProfile();
       const p = response?.profile;
       const user = JSON.parse(localStorage.getItem('user') || '{}');
+      const localSnapshot = getUserProfileSnapshot(user);
       const selectedMembership = getSelectedMembershipFromUser(user);
       if (response?.success && p) {
+        const profileIsStaleComparedToLocal =
+          parseTimestamp(localSnapshot?.updated_at || localSnapshot?.client_saved_at) >
+          parseTimestamp(p?.updated_at);
+        const effectiveProfile = profileIsStaleComparedToLocal ? { ...p, ...localSnapshot } : p;
         const resolvedName = resolveNameValue(
-          p.name,
-          p.full_name,
-          p['Full Name'],
+          effectiveProfile.name,
+          effectiveProfile.full_name,
+          effectiveProfile['Full Name'],
           user.name,
           user.Name,
           user.full_name,
           user['Full Name']
         );
-        const nameLocked = Boolean(p.name_locked ?? String(p.name || '').trim());
+        const nameLocked = Boolean(effectiveProfile.name_locked ?? String(effectiveProfile.name || '').trim());
         const trustRole = selectedMembership?.role || '';
         const selectedMember = JSON.parse(sessionStorage.getItem('selectedMember') || '{}');
-        const trustMemberId = resolveMembershipNo(selectedMembership, selectedMember, p, user) || '';
+        const trustMemberId = resolveMembershipNo(selectedMembership, selectedMember, effectiveProfile, user) || '';
         setAllowManualNameEntry(!nameLocked);
         let resolvedPhotoUrl = resolvePhotoUrl(
-          p.profile_photo_url,
-          p.profilePhotoUrl,
-          p.photo_url
+          effectiveProfile.profile_photo_url,
+          effectiveProfile.profilePhotoUrl,
+          effectiveProfile.photo_url
         );
         if (!resolvedPhotoUrl) {
           try {
-            const membersIdForPhoto = p.members_id || user.members_id || user.member_id || user.id || '';
+            const membersIdForPhoto = effectiveProfile.members_id || user.members_id || user.member_id || user.id || '';
             if (membersIdForPhoto) {
               const { supabase } = await import('./services/supabaseClient.js');
               const { data: directPhotoRow } = await supabase
@@ -431,22 +476,22 @@ const Profile = ({ onNavigate, onProfileUpdate }) => {
           name: resolvedName,
           role: trustRole || '',
           memberId: trustMemberId || '',
-          members_id: p.members_id || user.members_id || user.member_id || user.id || '',
-          mobile: p.mobile || user.mobile || user.Mobile || '', email: p.email || user.email || user.Email || '',
-          address_home: p.address_home || '', address_office: p.address_office || '',
-          company_name: p.company_name || '', resident_landline: p.resident_landline || '',
-          office_landline: p.office_landline || '', gender: p.gender || '',
-          marital_status: p.marital_status || '', nationality: p.nationality || '',
-          aadhaar_id: p.aadhaar_id || '', blood_group: p.blood_group || '',
-          dob: p.dob || '', emergency_contact_name: p.emergency_contact_name || '',
-          emergency_contact_number: p.emergency_contact_number || '',
+          members_id: effectiveProfile.members_id || user.members_id || user.member_id || user.id || '',
+          mobile: effectiveProfile.mobile || user.mobile || user.Mobile || '', email: effectiveProfile.email || user.email || user.Email || '',
+          address_home: effectiveProfile.address_home || '', address_office: effectiveProfile.address_office || '',
+          company_name: effectiveProfile.company_name || '', resident_landline: effectiveProfile.resident_landline || '',
+          office_landline: effectiveProfile.office_landline || '', gender: effectiveProfile.gender || '',
+          marital_status: effectiveProfile.marital_status || '', nationality: effectiveProfile.nationality || '',
+          aadhaar_id: effectiveProfile.aadhaar_id || '', blood_group: effectiveProfile.blood_group || '',
+          dob: effectiveProfile.dob || '', emergency_contact_name: effectiveProfile.emergency_contact_name || '',
+          emergency_contact_number: effectiveProfile.emergency_contact_number || '',
           profile_photo_url: resolvedPhotoUrl || '',
-          spouse_name: p.spouse_name || '', spouse_contact_number: p.spouse_contact_number || '',
-          children_count: p.children_count ?? '',
-          facebook: p.facebook || '', twitter: p.twitter || '', instagram: p.instagram || '',
-          linkedin: p.linkedin || '', whatsapp: p.whatsapp || '',
-          position: p.position || '', location: p.location || '',
-          isElectedMember: p.isElectedMember || false,
+          spouse_name: effectiveProfile.spouse_name || '', spouse_contact_number: effectiveProfile.spouse_contact_number || '',
+          children_count: effectiveProfile.children_count ?? '',
+          facebook: effectiveProfile.facebook || '', twitter: effectiveProfile.twitter || '', instagram: effectiveProfile.instagram || '',
+          linkedin: effectiveProfile.linkedin || '', whatsapp: effectiveProfile.whatsapp || '',
+          position: effectiveProfile.position || '', location: effectiveProfile.location || '',
+          isElectedMember: effectiveProfile.isElectedMember || false,
           name_locked: nameLocked
         });
         if (resolvedPhotoUrl) {
@@ -572,15 +617,12 @@ const Profile = ({ onNavigate, onProfileUpdate }) => {
       const userId = user['Mobile'] || user.mobile || user.id || user['Membership number'] || '';
       const key = `userProfile_${userId || 'default'}`;
       const profileSnapshot = {
-        name: mergedProfile.name || '',
-        role: mergedProfile.role || '',
-        memberId: mergedProfile.memberId || '',
-        mobile: mergedProfile.mobile || '',
-        email: mergedProfile.email || '',
+        ...mergedProfile,
         bloodGroup: mergedProfile.bloodGroup || mergedProfile.blood_group || '',
         profile_photo_url: mergedProfile.profile_photo_url || mergedProfile.profilePhotoUrl || '',
         profilePhotoUrl: mergedProfile.profilePhotoUrl || mergedProfile.profile_photo_url || '',
         name_locked: Boolean(mergedProfile.name_locked),
+        client_saved_at: new Date().toISOString()
       };
       setLocalStorageWithQuotaRecovery(key, JSON.stringify(profileSnapshot));
 
@@ -600,8 +642,6 @@ const Profile = ({ onNavigate, onProfileUpdate }) => {
       setOriginalData(JSON.parse(JSON.stringify(mergedProfile)));
       setHasUnsavedChanges(false); setPhotoFile(null);
       setIsEditMode(false);
-      setEditStepKeys([]);
-      setCurrentEditStep(0);
       if (response?.profile?.profile_photo_url) {
         setPhotoPreview(response.profile.profile_photo_url);
         localStorage.setItem(getCurrentUserPhotoCacheKey(user), response.profile.profile_photo_url);
@@ -632,18 +672,6 @@ const Profile = ({ onNavigate, onProfileUpdate }) => {
     if (hasUnsavedChanges) { setNavTarget(target); setShowNavWarning(true); }
     else { onNavigate(target); }
   };
-
-  const missingFields = useMemo(() => ({
-    personal: isBlank(profileData.email) || isBlank(profileData.gender) || isBlank(profileData.dob) || isBlank(profileData.blood_group) || isBlank(profileData.marital_status) || isBlank(profileData.nationality),
-    address: isBlank(profileData.address_home) || isBlank(profileData.address_office),
-    work: isBlank(profileData.company_name) || isBlank(profileData.resident_landline) || isBlank(profileData.office_landline),
-    identity: isBlank(profileData.aadhaar_id),
-    emergency: isBlank(profileData.emergency_contact_name) || isBlank(profileData.emergency_contact_number),
-    family: isBlank(profileData.spouse_name) || isBlank(profileData.spouse_contact_number) || isBlank(profileData.children_count),
-    social: isBlank(profileData.facebook) || isBlank(profileData.twitter) || isBlank(profileData.instagram) || isBlank(profileData.linkedin) || isBlank(profileData.whatsapp),
-  }), [profileData]);
-  const activeEditKey = editStepKeys[currentEditStep] || '';
-  const isLastEditStep = currentEditStep >= Math.max(0, editStepKeys.length - 1);
 
   return (
     <div ref={mainContainerRef} className="min-h-screen font-sans" style={{ background: 'linear-gradient(135deg, color-mix(in srgb, var(--surface-color) 88%, var(--app-accent-bg)) 0%, var(--surface-color) 40%, color-mix(in srgb, var(--brand-navy-light) 55%, var(--surface-color)) 100%)' }}>
@@ -716,17 +744,7 @@ const Profile = ({ onNavigate, onProfileUpdate }) => {
               </div>
               <button
                 onClick={() => {
-                  setIsEditMode((prev) => {
-                    const next = !prev;
-                    if (next) {
-                      const steps = getMissingSectionKeys(profileData);
-                      setEditStepKeys(steps);
-                      setCurrentEditStep(0);
-                    } else {
-                      setEditStepKeys([]);
-                    }
-                    return next;
-                  });
+                  setIsEditMode((prev) => !prev);
                   if (isEditMode) setMessage({ type: '', text: '' });
                 }}
                 className="mt-4 w-full max-w-[240px] mx-auto flex items-center justify-center gap-2 px-5 py-3 rounded-2xl text-base font-extrabold transition-all active:scale-[0.98] border"
@@ -766,112 +784,92 @@ const Profile = ({ onNavigate, onProfileUpdate }) => {
         <div className="px-4 pb-32">
           {!isEditMode ? (
             <div className="space-y-4 pt-4">
-              <div className="rounded-2xl p-4 border" style={{ borderColor: 'color-mix(in srgb, var(--brand-navy) 10%, transparent)', background: 'var(--surface-color)' }}>
-                <p className="text-xs font-bold uppercase tracking-wider mb-3" style={{ color: 'var(--brand-red)' }}>Basic Info</p>
-                <div className="space-y-2 text-sm">
-                  {String(profileData.name || '').trim() && (
-                    <p><span className="font-semibold">Name:</span> {profileData.name}</p>
-                  )}
-                  {String(profileData.mobile || '').trim() && (
-                    <p><span className="font-semibold">Mobile:</span> {profileData.mobile}</p>
-                  )}
-                  {String(profileData.email || '').trim() && (
-                    <p><span className="font-semibold">Email:</span> {profileData.email}</p>
-                  )}
-                  {!String(profileData.name || '').trim() && !String(profileData.mobile || '').trim() && !String(profileData.email || '').trim() && (
-                    <p style={{ color: 'color-mix(in srgb, var(--body-text-color) 55%, var(--surface-color))' }}>Abhi koi basic info add nahi ki gayi.</p>
-                  )}
-                </div>
-              </div>
+              <DetailSummaryCard title="Basic Info" subtitle="Primary account information">
+                {String(profileData.name || '').trim() && <DetailRow label="Name" value={profileData.name} icon={User} />}
+                {String(profileData.mobile || '').trim() && <DetailRow label="Mobile" value={profileData.mobile} icon={Phone} />}
+                {String(profileData.email || '').trim() && <DetailRow label="Email" value={profileData.email} icon={Mail} />}
+                {!String(profileData.name || '').trim() && !String(profileData.mobile || '').trim() && !String(profileData.email || '').trim() && (
+                  <p className="py-2 text-sm" style={{ color: 'color-mix(in srgb, var(--body-text-color) 55%, var(--surface-color))' }}>Abhi koi basic info add nahi ki gayi.</p>
+                )}
+              </DetailSummaryCard>
+
+              <DetailSummaryCard title="Personal" subtitle="Identity and personal details">
+                {String(profileData.gender || '').trim() && <DetailRow label="Gender" value={profileData.gender} icon={UserCircle} />}
+                {String(profileData.dob || '').trim() && <DetailRow label="Date of Birth" value={profileData.dob} icon={Calendar} />}
+                {String(profileData.blood_group || '').trim() && <DetailRow label="Blood Group" value={profileData.blood_group} icon={Droplet} />}
+                {String(profileData.marital_status || '').trim() && <DetailRow label="Marital Status" value={profileData.marital_status} icon={BadgeCheck} />}
+                {String(profileData.nationality || '').trim() && <DetailRow label="Nationality" value={profileData.nationality} icon={Shield} />}
+                {String(profileData.aadhaar_id || '').trim() && <DetailRow label="Aadhaar" value={profileData.aadhaar_id} icon={Award} />}
+                {String(profileData.emergency_contact_name || '').trim() && <DetailRow label="Emergency Contact Name" value={profileData.emergency_contact_name} icon={User} />}
+                {String(profileData.emergency_contact_number || '').trim() && <DetailRow label="Emergency Contact Number" value={profileData.emergency_contact_number} icon={Phone} />}
+              </DetailSummaryCard>
+
+              <DetailSummaryCard title="Address & Work" subtitle="Home, office and company">
+                {String(profileData.address_home || '').trim() && <DetailRow label="Home Address" value={profileData.address_home} icon={HomeIcon} />}
+                {String(profileData.address_office || '').trim() && <DetailRow label="Office Address" value={profileData.address_office} icon={MapPin} />}
+                {String(profileData.company_name || '').trim() && <DetailRow label="Company" value={profileData.company_name} icon={Briefcase} />}
+                {String(profileData.resident_landline || '').trim() && <DetailRow label="Resident Landline" value={profileData.resident_landline} icon={Phone} />}
+                {String(profileData.office_landline || '').trim() && <DetailRow label="Office Landline" value={profileData.office_landline} icon={Phone} />}
+              </DetailSummaryCard>
+
+              <DetailSummaryCard title="Family & Social" subtitle="Family and social presence">
+                {String(profileData.spouse_name || '').trim() && <DetailRow label="Spouse Name" value={profileData.spouse_name} icon={User} />}
+                {String(profileData.spouse_contact_number || '').trim() && <DetailRow label="Spouse Contact" value={profileData.spouse_contact_number} icon={Phone} />}
+                {(profileData.children_count !== '' && profileData.children_count !== null && profileData.children_count !== undefined) && (
+                  <DetailRow label="No. of Children" value={profileData.children_count} icon={UserCircle} />
+                )}
+                {String(profileData.facebook || '').trim() && <DetailRow label="Facebook" value={profileData.facebook} icon={Mail} />}
+                {String(profileData.instagram || '').trim() && <DetailRow label="Instagram" value={profileData.instagram} icon={Mail} />}
+                {String(profileData.linkedin || '').trim() && <DetailRow label="LinkedIn" value={profileData.linkedin} icon={Mail} />}
+                {String(profileData.twitter || '').trim() && <DetailRow label="Twitter" value={profileData.twitter} icon={Mail} />}
+                {String(profileData.whatsapp || '').trim() && <DetailRow label="WhatsApp" value={profileData.whatsapp} icon={Phone} />}
+              </DetailSummaryCard>
             </div>
           ) : (
             <div className="space-y-3">
-              {editStepKeys.length === 0 && (
-                <div className="rounded-2xl p-4 border text-sm font-semibold" style={{ borderColor: 'color-mix(in srgb, var(--brand-navy) 12%, transparent)', background: 'var(--surface-color)', color: 'var(--brand-navy)' }}>
-                  Sab required fields fill ho chuke hain. Aap direct save kar sakte ho.
-                </div>
-              )}
-              {activeEditKey === 'name' && (
-                <SectionCard title="Name Form" subtitle={`Step ${currentEditStep + 1} of ${editStepKeys.length}`} isOpen={true}>
-                  <RowField
-                    label="Full Name"
-                    value={profileData.name}
-                    onChange={set('name')}
-                    placeholder="Enter your full name"
-                    disabled={!allowManualNameEntry}
-                    icon={User}
-                  />
-                </SectionCard>
-              )}
-              {activeEditKey === 'personal' && (
-                <SectionCard title="Personal Form" subtitle={`Step ${currentEditStep + 1} of ${editStepKeys.length}`} isOpen={true}>
-                  <RowField label="Email Address" type="email" value={profileData.email} onChange={set('email')} placeholder="Add your email" />
-                  <RowSelect label="Gender" value={profileData.gender} onChange={set('gender')} placeholder="Select gender" options={[{ value: 'Male', label: 'Male' }, { value: 'Female', label: 'Female' }, { value: 'Other', label: 'Other' }]} />
-                  <RowDate label="Date of Birth" value={profileData.dob} onChange={set('dob')} />
-                  <RowSelect label="Blood Group" value={profileData.blood_group} onChange={set('blood_group')} placeholder="Select blood group" options={['A+', 'A-', 'B+', 'B-', 'O+', 'O-', 'AB+', 'AB-'].map(v => ({ value: v, label: v }))} />
-                </SectionCard>
-              )}
-              {activeEditKey === 'address' && (
-                <SectionCard title="Address Form" subtitle={`Step ${currentEditStep + 1} of ${editStepKeys.length}`} isOpen={true}>
-                  <RowField label="Home Address" value={profileData.address_home} onChange={set('address_home')} placeholder="Enter home address" />
-                  <RowField label="Office Address" value={profileData.address_office} onChange={set('address_office')} placeholder="Enter office address" />
-                </SectionCard>
-              )}
-              {activeEditKey === 'work' && (
-                <SectionCard title="Work Form" subtitle={`Step ${currentEditStep + 1} of ${editStepKeys.length}`} isOpen={true}>
-                  <RowField label="Company Name" value={profileData.company_name} onChange={set('company_name')} placeholder="Enter company name" />
-                </SectionCard>
-              )}
-              {activeEditKey === 'identity' && (
-                <SectionCard title="Identity Form" subtitle={`Step ${currentEditStep + 1} of ${editStepKeys.length}`} isOpen={true}>
-                  <RowField label="Aadhaar ID" value={profileData.aadhaar_id} onChange={(val) => {
-                    const d = val.replace(/\D/g, '').slice(0, 16);
-                    set('aadhaar_id')(d.replace(/(\d{4})(?=\d)/g, '$1 '));
-                  }} placeholder="0000 0000 0000 0000" />
-                </SectionCard>
-              )}
-              {activeEditKey === 'emergency' && (
-                <SectionCard title="Emergency Form" subtitle={`Step ${currentEditStep + 1} of ${editStepKeys.length}`} isOpen={true}>
-                  <RowField label="Contact Name" value={profileData.emergency_contact_name} onChange={set('emergency_contact_name')} placeholder="Full name" />
-                  <RowField label="Contact Number" value={profileData.emergency_contact_number} onChange={set('emergency_contact_number')} placeholder="Phone number" />
-                </SectionCard>
-              )}
-              {activeEditKey === 'family' && (
-                <SectionCard title="Family Form" subtitle={`Step ${currentEditStep + 1} of ${editStepKeys.length}`} isOpen={true}>
-                  <RowField label="Spouse Name" value={profileData.spouse_name} onChange={set('spouse_name')} placeholder="Enter spouse name" />
-                  <RowField label="Spouse Contact" value={profileData.spouse_contact_number} onChange={set('spouse_contact_number')} placeholder="Enter contact number" />
-                  <RowField label="No. of Children" type="number" value={profileData.children_count} onChange={set('children_count')} placeholder="0" />
-                </SectionCard>
-              )}
-              {activeEditKey === 'social' && (
-                <SectionCard title="Social Form" subtitle={`Step ${currentEditStep + 1} of ${editStepKeys.length}`} isOpen={true}>
-                  <RowField label="Facebook" value={profileData.facebook} onChange={set('facebook')} placeholder="Facebook URL or username" />
-                  <RowField label="Instagram" value={profileData.instagram} onChange={set('instagram')} placeholder="Instagram handle" />
-                  <RowField label="LinkedIn" value={profileData.linkedin} onChange={set('linkedin')} placeholder="LinkedIn URL" />
-                </SectionCard>
-              )}
-              {editStepKeys.length > 0 && (
-                <div className="flex gap-2 pt-1">
-                  <button
-                    type="button"
-                    disabled={currentEditStep === 0}
-                    onClick={() => setCurrentEditStep((prev) => Math.max(0, prev - 1))}
-                    className="flex-1 py-2.5 rounded-xl text-sm font-semibold disabled:opacity-45"
-                    style={{ background: 'color-mix(in srgb, var(--surface-color) 80%, var(--app-accent-bg))', color: 'var(--brand-navy)' }}
-                  >
-                    Back
-                  </button>
-                  <button
-                    type="button"
-                    disabled={isLastEditStep}
-                    onClick={() => setCurrentEditStep((prev) => Math.min(editStepKeys.length - 1, prev + 1))}
-                    className="flex-1 py-2.5 rounded-xl text-sm font-semibold disabled:opacity-45"
-                    style={{ background: 'linear-gradient(135deg, var(--brand-red) 0%, var(--brand-navy) 100%)', color: 'var(--surface-color)' }}
-                  >
-                    Next
-                  </button>
-                </div>
-              )}
+              <SectionCard title="Name" subtitle="Basic profile identity" isOpen={true}>
+                <RowField
+                  label="Full Name"
+                  value={profileData.name}
+                  onChange={set('name')}
+                  placeholder="Enter your full name"
+                  disabled={!allowManualNameEntry}
+                  icon={User}
+                />
+              </SectionCard>
+              <SectionCard title="Personal" subtitle="Contact and personal details" isOpen={true}>
+                <RowField label="Email Address" type="email" value={profileData.email} onChange={set('email')} placeholder="Add your email" />
+                <RowSelect label="Gender" value={profileData.gender} onChange={set('gender')} placeholder="Select gender" options={[{ value: 'Male', label: 'Male' }, { value: 'Female', label: 'Female' }, { value: 'Other', label: 'Other' }]} />
+                <RowDate label="Date of Birth" value={profileData.dob} onChange={set('dob')} />
+                <RowSelect label="Blood Group" value={profileData.blood_group} onChange={set('blood_group')} placeholder="Select blood group" options={['A+', 'A-', 'B+', 'B-', 'O+', 'O-', 'AB+', 'AB-'].map(v => ({ value: v, label: v }))} />
+              </SectionCard>
+              <SectionCard title="Address" subtitle="Home and office location" isOpen={true}>
+                <RowField label="Home Address" value={profileData.address_home} onChange={set('address_home')} placeholder="Enter home address" />
+                <RowField label="Office Address" value={profileData.address_office} onChange={set('address_office')} placeholder="Enter office address" />
+              </SectionCard>
+              <SectionCard title="Work" subtitle="Professional information" isOpen={true}>
+                <RowField label="Company Name" value={profileData.company_name} onChange={set('company_name')} placeholder="Enter company name" />
+              </SectionCard>
+              <SectionCard title="Identity" subtitle="KYC and verification" isOpen={true}>
+                <RowField label="Aadhaar ID" value={profileData.aadhaar_id} onChange={(val) => {
+                  const d = val.replace(/\D/g, '').slice(0, 16);
+                  set('aadhaar_id')(d.replace(/(\d{4})(?=\d)/g, '$1 '));
+                }} placeholder="0000 0000 0000 0000" />
+              </SectionCard>
+              <SectionCard title="Emergency" subtitle="Emergency contact details" isOpen={true}>
+                <RowField label="Contact Name" value={profileData.emergency_contact_name} onChange={set('emergency_contact_name')} placeholder="Full name" />
+                <RowField label="Contact Number" value={profileData.emergency_contact_number} onChange={set('emergency_contact_number')} placeholder="Phone number" />
+              </SectionCard>
+              <SectionCard title="Family" subtitle="Spouse and children details" isOpen={true}>
+                <RowField label="Spouse Name" value={profileData.spouse_name} onChange={set('spouse_name')} placeholder="Enter spouse name" />
+                <RowField label="Spouse Contact" value={profileData.spouse_contact_number} onChange={set('spouse_contact_number')} placeholder="Enter contact number" />
+                <RowField label="No. of Children" type="number" value={profileData.children_count} onChange={set('children_count')} placeholder="0" />
+              </SectionCard>
+              <SectionCard title="Social" subtitle="Social media links" isOpen={true}>
+                <RowField label="Facebook" value={profileData.facebook} onChange={set('facebook')} placeholder="Facebook URL or username" />
+                <RowField label="Instagram" value={profileData.instagram} onChange={set('instagram')} placeholder="Instagram handle" />
+                <RowField label="LinkedIn" value={profileData.linkedin} onChange={set('linkedin')} placeholder="LinkedIn URL" />
+              </SectionCard>
             </div>
           )}
 
@@ -1065,13 +1063,13 @@ const Profile = ({ onNavigate, onProfileUpdate }) => {
 
       {/* Sticky Save Button */}
       {isEditMode && (
-      <div className="fixed bottom-0 left-0 right-0 z-40 px-4 pb-5 pt-4 max-w-full md:max-w-[430px] md:mx-auto pointer-events-none" style={{ background: 'linear-gradient(to top, var(--surface-color), color-mix(in srgb, var(--surface-color) 82%, transparent), transparent)' }}>
-        <button onClick={handleSave} disabled={saving}
-          className="pointer-events-auto w-full py-4 rounded-2xl font-bold text-base active:scale-[0.98] transition-all flex items-center justify-center gap-2 disabled:opacity-50"
-          style={{ color: 'var(--surface-color)', background: 'linear-gradient(135deg, var(--brand-red) 0%, var(--brand-red-dark) 40%, var(--brand-navy) 100%)', boxShadow: '0 8px 24px color-mix(in srgb, var(--brand-red) 30%, transparent)' }}>
-          {saving ? <><div className="animate-spin rounded-full h-5 w-5 border-2 border-white border-t-transparent" /> Saving...</> : <><Save className="h-5 w-5" /> Save Profile</>}
-        </button>
-      </div>
+        <div className="fixed bottom-0 left-0 right-0 z-40 px-4 pb-5 pt-4 max-w-full md:max-w-[430px] md:mx-auto pointer-events-none" style={{ background: 'linear-gradient(to top, var(--surface-color), color-mix(in srgb, var(--surface-color) 82%, transparent), transparent)' }}>
+          <button onClick={handleSave} disabled={saving}
+            className="pointer-events-auto w-full py-4 rounded-2xl font-bold text-base active:scale-[0.98] transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+            style={{ color: 'var(--surface-color)', background: 'linear-gradient(135deg, var(--brand-red) 0%, var(--brand-red-dark) 40%, var(--brand-navy) 100%)', boxShadow: '0 8px 24px color-mix(in srgb, var(--brand-red) 30%, transparent)' }}>
+            {saving ? <><div className="animate-spin rounded-full h-5 w-5 border-2 border-white border-t-transparent" /> Saving...</> : <><Save className="h-5 w-5" /> Save Profile</>}
+          </button>
+        </div>
       )}
 
       {/* Success Popup */}
