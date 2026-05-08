@@ -1,6 +1,6 @@
 {
-  "appId": "com.maharajaagarsen.app",
-  "appName": "Ek Udaan",
+  "appId": "com.ekudaan.app",
+  "appName": "Pankhuri Ek Udaan",
   "webDir": "dist",
   "bundledWebRuntime": false,
   "plugins": {

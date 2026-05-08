@@ -21,7 +21,7 @@ export const fetchMemberTrusts = async (membersId) => {
   // Fetch trust details for all trust IDs
   const { data: trusts, error: trustError } = await supabase
     .from('Trust')
-    .select('id,name,icon_url,remark')
+    .select('id,name,icon_url,remark,updated_at')
     .in('id', trustIds);
 
   if (trustError) {
@@ -126,7 +126,7 @@ export const fetchMemberTrustMemberships = async ({ membersId = null, membership
 
   const { data: trusts, error: trustError } = await supabase
     .from('Trust')
-    .select('id,name,icon_url,remark')
+    .select('id,name,icon_url,remark,updated_at')
     .in('id', trustIds);
 
   if (trustError) {
@@ -166,7 +166,7 @@ export const fetchMemberTrustMemberships = async ({ membersId = null, membership
 export const fetchAllTrusts = async () => {
   const { data, error } = await supabase
     .from('Trust')
-    .select('id,name,icon_url,remark,template_id,created_at')
+    .select('id,name,icon_url,remark,template_id,created_at,updated_at')
     .order('created_at', { ascending: false });
 
   if (error) {
@@ -179,7 +179,7 @@ export const fetchAllTrusts = async () => {
 export const fetchDefaultTrust = async (preferredTrustId) => {
   let query = supabase
     .from('Trust')
-    .select('id,name,icon_url,remark,legal_name,terms_content,privacy_content,template_id,created_at')
+    .select('id,name,icon_url,remark,legal_name,terms_content,privacy_content,template_id,created_at,updated_at')
     .limit(1);
 
   if (preferredTrustId) {
@@ -204,7 +204,7 @@ export const fetchTrustByName = async (name) => {
   if (!name) return null;
   const { data, error } = await supabase
     .from('Trust')
-    .select('id,name,icon_url,remark,legal_name,terms_content,privacy_content,template_id,created_at')
+    .select('id,name,icon_url,remark,legal_name,terms_content,privacy_content,template_id,created_at,updated_at')
     .eq('name', name)
     .limit(1);
 
@@ -223,7 +223,7 @@ export const fetchTrustById = async (id) => {
   if (!id) return null;
   const { data, error } = await supabase
     .from('Trust')
-    .select('id,name,icon_url,remark,legal_name,terms_content,privacy_content,template_id,created_at')
+    .select('id,name,icon_url,remark,legal_name,terms_content,privacy_content,template_id,created_at,updated_at')
     .eq('id', id)
     .limit(1);
 

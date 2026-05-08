@@ -68,3 +68,21 @@ export const fetchDonationsByTrust = async (trustId) => {
     return true;
   });
 };
+
+export const fetchDonationMembersByTrust = async (trustId) => {
+  const normalizedTrustId = normalizeText(trustId);
+  if (!normalizedTrustId) return [];
+
+  const { data, error } = await supabase
+    .from('donation_members')
+    .select('id, trust_id, name, mobile, email_id, qr, created_at')
+    .eq('trust_id', normalizedTrustId)
+    .order('created_at', { ascending: false, nullsFirst: false });
+
+  if (error) {
+    console.error('[Donation] Failed to fetch donation members:', error);
+    throw error;
+  }
+
+  return data || [];
+};

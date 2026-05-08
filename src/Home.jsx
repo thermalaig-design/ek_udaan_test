@@ -86,6 +86,25 @@ const readCachedTrustList = () => {
   }
 };
 
+const FEATURE_FLAGS_CACHE_PREFIX = 'feature_flags_cache_v3:';
+const readInitialFeatureFlagsCache = (trustId) => {
+  try {
+    const normalizedTrustId = String(trustId || '').trim();
+    if (!normalizedTrustId) return { flags: {}, flagsData: {} };
+    const raw = sessionStorage.getItem(`${FEATURE_FLAGS_CACHE_PREFIX}${normalizedTrustId}:general`);
+    if (!raw) return { flags: {}, flagsData: {} };
+    const parsed = JSON.parse(raw);
+    const isFresh = Number(parsed?.ts) > 0 && (Date.now() - Number(parsed.ts)) <= (5 * 60 * 1000);
+    if (!isFresh) return { flags: {}, flagsData: {} };
+    return {
+      flags: parsed?.flags && typeof parsed.flags === 'object' ? parsed.flags : {},
+      flagsData: parsed?.flagsData && typeof parsed.flagsData === 'object' ? parsed.flagsData : {}
+    };
+  } catch {
+    return { flags: {}, flagsData: {} };
+  }
+};
+
 const mergeTrustsWithExistingVisuals = (incomingTrusts = [], existingTrusts = []) => {
   const byId = new Map(
     (existingTrusts || [])
@@ -101,17 +120,47 @@ const mergeTrustsWithExistingVisuals = (incomingTrusts = [], existingTrusts = []
     if (!existing) return trust;
     return {
       ...trust,
-      name: trust?.name || existing?.name || null,
-      icon_url: trust?.icon_url || existing?.icon_url || null,
-      remark: trust?.remark || existing?.remark || null,
+      // Keep latest known visual data from cache to avoid old membership payload
+      // overriding trust visuals on every refresh.
+      name: existing?.name || trust?.name || null,
+      icon_url: existing?.icon_url || trust?.icon_url || null,
+      remark: existing?.remark || trust?.remark || null,
     };
   });
 };
 
-const TrustChipIcon = ({ iconUrl, altText }) => {
+const TRUST_ICON_CACHE_KEY = 'trust_icon_url_cache_v1';
+const readTrustIconUrlCache = () => {
+  try {
+    const raw = localStorage.getItem(TRUST_ICON_CACHE_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+};
+
+const buildCacheBustedIconUrl = (iconUrl, versionToken) => {
+  const src = String(iconUrl || '').trim();
+  if (!src) return '';
+  if (!versionToken) return src;
+  const separator = src.includes('?') ? '&' : '?';
+  return `${src}${separator}v=${encodeURIComponent(String(versionToken))}`;
+};
+
+const resolveTrustIconToken = (trust, fallback = '1') =>
+  String(
+    trust?.updated_at ||
+    trust?.created_at ||
+    trust?.icon_url ||
+    fallback
+  );
+
+const TrustChipIcon = ({ iconUrl, altText, versionToken }) => {
   const [failedSrc, setFailedSrc] = useState('');
 
-  const src = String(iconUrl || '').trim();
+  const src = buildCacheBustedIconUrl(iconUrl, versionToken);
   useEffect(() => {
     setFailedSrc('');
   }, [src]);
@@ -314,8 +363,15 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
     () => sponsorOrder.map((id) => sponsorsById[id]).filter(Boolean),
     [sponsorOrder, sponsorsById]
   );
-  const [featureFlags, setFeatureFlags] = useState({});
-  const [flagsData, setFlagsData] = useState({}); // full metadata: { feature_key: { display_name, tagline, icon_url } }
+  const initialFlagsCacheRef = useRef(
+    readInitialFeatureFlagsCache(
+      selectedTrustId || localStorage.getItem('selected_trust_id') || trustInfo?.id || ''
+    )
+  );
+  const [featureFlags, setFeatureFlags] = useState(() => initialFlagsCacheRef.current.flags || {});
+  const [flagsData, setFlagsData] = useState(() => initialFlagsCacheRef.current.flagsData || {}); // full metadata: { feature_key: { display_name, tagline, icon_url } }
+  const [trustIconVersionById, setTrustIconVersionById] = useState({});
+  const [trustIconUrlById, setTrustIconUrlById] = useState(() => readTrustIconUrlCache());
   const hasLoadedMemberTrusts = useRef(false);
   const {
     carouselImages,
@@ -820,6 +876,89 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
     return () => { active = false; };
   }, [trustList]);
 
+  // Always refresh selected trust visual fields from DB (icon/name/remark)
+  // so updated logos are reflected even when cache has a non-empty stale icon.
+  useEffect(() => {
+    const normalizedSelectedTrustId = normalizeTrustId(
+      selectedTrustId || localStorage.getItem('selected_trust_id') || ''
+    );
+    if (!normalizedSelectedTrustId) return undefined;
+
+    let active = true;
+
+    const syncSelectedTrustVisuals = async () => {
+      try {
+        const freshTrust = await fetchTrustById(normalizedSelectedTrustId);
+        if (!active || !freshTrust) return;
+
+        const normalizedFreshId = normalizeTrustId(freshTrust.id);
+        if (!normalizedFreshId) return;
+
+        setTrustInfo((prev) => {
+          if (normalizeTrustId(prev?.id) !== normalizedFreshId) return prev;
+          return {
+            ...prev,
+            ...freshTrust,
+            icon_url: freshTrust?.icon_url || prev?.icon_url || null,
+          };
+        });
+
+        setTrustList((prev) => {
+          const list = Array.isArray(prev) ? prev : [];
+          let found = false;
+          const next = list.map((trust) => {
+            if (normalizeTrustId(trust?.id) !== normalizedFreshId) return trust;
+            found = true;
+            return {
+              ...trust,
+              ...freshTrust,
+              icon_url: freshTrust?.icon_url || trust?.icon_url || null,
+            };
+          });
+          const finalList = found ? next : [...next, freshTrust];
+          try { localStorage.setItem('trust_list_cache', JSON.stringify(finalList)); } catch { /* ignore */ }
+          return finalList;
+        });
+        setTrustIconVersionById((prev) => ({
+          ...prev,
+          [normalizedFreshId]: prev[normalizedFreshId] || resolveTrustIconToken(freshTrust),
+        }));
+        if (freshTrust?.icon_url) {
+          setTrustIconUrlById((prev) => {
+            const next = { ...prev, [normalizedFreshId]: freshTrust.icon_url };
+            try { localStorage.setItem(TRUST_ICON_CACHE_KEY, JSON.stringify(next)); } catch { /* ignore */ }
+            return next;
+          });
+        }
+
+        if (normalizeTrustId(defaultTrust?.id) === normalizedFreshId) {
+          setDefaultTrust((prev) => {
+            const nextDefault = {
+              ...(prev || {}),
+              ...freshTrust,
+              icon_url: freshTrust?.icon_url || prev?.icon_url || null,
+            };
+            try {
+              localStorage.setItem('default_trust_cache', JSON.stringify(nextDefault));
+            } catch {
+              // ignore cache write failure
+            }
+            return nextDefault;
+          });
+        }
+      } catch (err) {
+        console.warn('Failed to refresh selected trust visuals:', err?.message || err);
+      }
+    };
+
+    syncSelectedTrustVisuals();
+    window.addEventListener('focus', syncSelectedTrustVisuals);
+    return () => {
+      active = false;
+      window.removeEventListener('focus', syncSelectedTrustVisuals);
+    };
+  }, [selectedTrustId, defaultTrust?.id]);
+
   // Load member trusts from API
   useEffect(() => {
     if (hasLoadedMemberTrusts.current) return;
@@ -976,8 +1115,17 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
     const normalizedId = normalizeTrustId(trustId);
     console.log(`🔄 Switching trust from "${selectedTrustId}" to "${normalizedId}"`);
     
-    // Force reload by resetting all cached data states
-    setMarqueeUpdates([]);
+    // Force reload by resetting heavy modules; keep marquee visible from cache
+    // so trust switch does not blank the updates strip.
+    try {
+      const cachedMarquee = localStorage.getItem(`marquee_cache_${normalizedId}`);
+      if (cachedMarquee) {
+        const parsed = JSON.parse(cachedMarquee);
+        if (Array.isArray(parsed)) setMarqueeUpdates(parsed);
+      }
+    } catch {
+      // ignore malformed marquee cache
+    }
     setSponsorsById({});
     setSponsorOrder([]);
     setSponsorIndex(0);
@@ -1021,6 +1169,17 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
             icon_url: freshTrust?.icon_url || t?.icon_url || null,
           };
         }));
+        setTrustIconVersionById((prev) => ({
+          ...prev,
+          [normalizedId]: prev[normalizedId] || resolveTrustIconToken(freshTrust),
+        }));
+        if (freshTrust?.icon_url) {
+          setTrustIconUrlById((prev) => {
+            const next = { ...prev, [normalizedId]: freshTrust.icon_url };
+            try { localStorage.setItem(TRUST_ICON_CACHE_KEY, JSON.stringify(next)); } catch { /* ignore */ }
+            return next;
+          });
+        }
         if (freshTrust.name) localStorage.setItem('selected_trust_name', freshTrust.name);
       }
     } catch (err) {
@@ -1040,8 +1199,7 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
           null;
         const trustName = localStorage.getItem('selected_trust_name') || trustInfo?.name || null;
 
-        // Always fetch fresh marquee state so inactive updates disappear immediately.
-        setMarqueeUpdates([]);
+        // Keep existing/cached marquee visible while fresh data loads (SWR-style).
 
         const response = await getMarqueeUpdates(trustId, trustName);
         if (!active) return;
@@ -1062,7 +1220,7 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
         }
       } catch (error) {
         console.error('Error loading marquee updates:', error);
-        setMarqueeUpdates([]);
+        // Keep last known marquee on fetch error to avoid refresh flicker.
       }
     };
     // No artificial delay — cached data shows in <1ms
@@ -1670,6 +1828,17 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
     trustInfo ||
     defaultTrust ||
     null;
+  const activeTrustId = normalizeTrustId(activeTrust?.id);
+  const activeTrustIconToken = trustIconVersionById[activeTrustId] || resolveTrustIconToken(activeTrust, '');
+  const activeTrustIconUrl = trustIconUrlById[activeTrustId]
+    || activeTrust?.icon_url
+    || defaultTrust?.icon_url
+    || trustInfo?.icon_url
+    || DEFAULT_TRUST_LOGO;
+  const activeTrustIconSrc = buildCacheBustedIconUrl(
+    activeTrustIconUrl,
+    activeTrustIconToken
+  );
 
   const currentUser = useMemo(() => {
     try {
@@ -1861,8 +2030,7 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
           backdropFilter: 'blur(var(--navbar-blur, 12px))',
           WebkitBackdropFilter: 'blur(var(--navbar-blur, 12px))',
           boxShadow: `0 2px 16px ${applyOpacity(theme.secondary, 0.13)}`,
-          borderBottom: '1px solid var(--navbar-border)',
-          animation: resolveAnimation('navbar', 'fadeSlideDown')
+          borderBottom: '1px solid var(--navbar-border)'
         }}
       >
         {/* Thin top accent bar */}
@@ -1904,11 +2072,15 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
                 background: surfaceColor,
               }}
             >
-              <img
-                src={activeTrust?.icon_url || defaultTrust?.icon_url || trustInfo?.icon_url || DEFAULT_TRUST_LOGO}
-                alt={activeTrust?.name || defaultTrust?.name || trustInfo?.name || DEFAULT_TRUST_NAME}
-                className="w-full h-full object-contain rounded-full"
-              />
+              {activeTrustIconSrc ? (
+                <img
+                  src={activeTrustIconSrc}
+                  alt={activeTrust?.name || defaultTrust?.name || trustInfo?.name || DEFAULT_TRUST_NAME}
+                  className="w-full h-full object-contain rounded-full"
+                />
+              ) : (
+                <Building2 className="h-5 w-5" style={{ color: 'var(--body-text-color)' }} />
+              )}
             </div>
             <h1
               className="font-extrabold text-[15px] truncate max-w-[130px]"
@@ -2168,8 +2340,9 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
                     title={trust.name || 'Hospital'}
                   >
                     <TrustChipIcon
-                      iconUrl={trust?.icon_url}
+                      iconUrl={trustIconUrlById[normalizeTrustId(trust?.id)] || trust?.icon_url}
                       altText={trust?.name || 'Hospital'}
+                      versionToken={trustIconVersionById[normalizeTrustId(trust?.id)] || resolveTrustIconToken(trust, '')}
                     />
                   </button>
                 );
@@ -2629,6 +2802,7 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
 };
 
 export default Home;
+
 
 
 

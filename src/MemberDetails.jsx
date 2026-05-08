@@ -1,4 +1,4 @@
-﻿import { useAppTheme } from './context/ThemeContext';
+import { useAppTheme } from './context/ThemeContext';
 import React, { useState, useEffect } from 'react';
 import { User, Users, Stethoscope, Building2, Star, Award, ChevronLeft, Phone, Mail, MapPin, FileText, Clock } from 'lucide-react';
 import { getProfilePhotos } from './services/api';
@@ -8,7 +8,7 @@ const MemberDetails = ({ member, onNavigateBack, previousScreenName }) => {
   const theme = useAppTheme();
   const navbarTheme = getNavbarThemeStyles(theme);
   const navbarTextColor = navbarTheme?.textColor || 'var(--navbar-text)';
-  const [profilePhoto, setProfilePhoto] = useState(null);
+  const [profilePhoto, setProfilePhoto] = useState(member?.profile_photo_url || null);
   const cleanValue = (value) => {
     if (value === null || value === undefined) return '';
     const text = String(value).trim();
@@ -48,6 +48,11 @@ const MemberDetails = ({ member, onNavigateBack, previousScreenName }) => {
   const displayRole = cleanValue(member.member_role) || cleanValue(member.type);
 
   useEffect(() => {
+    if (member?.profile_photo_url) {
+      setProfilePhoto(member.profile_photo_url);
+      return undefined;
+    }
+
     const fetchPhoto = async () => {
       const memberIds = [];
       if (member['Membership number']) memberIds.push(member['Membership number']);
@@ -56,11 +61,12 @@ const MemberDetails = ({ member, onNavigateBack, previousScreenName }) => {
       if (member.mobile) memberIds.push(member.mobile);
       if (member.phone1) memberIds.push(member.phone1);
       if (member.phone2) memberIds.push(member.phone2);
+      if (member.members_id) memberIds.push(member.members_id);
       if (member.member_id) memberIds.push(member.member_id);
-      
+
       const idsToFetch = memberIds.filter(id => id && id !== 'N/A');
-      if (idsToFetch.length === 0) return;
-      
+      if (idsToFetch.length === 0) return undefined;
+
       try {
         const response = await getProfilePhotos(idsToFetch);
         if (response.success && response.photos) {
@@ -71,17 +77,18 @@ const MemberDetails = ({ member, onNavigateBack, previousScreenName }) => {
         console.error('Error fetching member photo:', err);
       }
     };
-    
+
     fetchPhoto();
+    return undefined;
   }, [member]);
 
   // Get screen name for back button
   const getScreenName = () => {
     if (!previousScreenName) return 'Directory';
-    
+
     // Handle both route paths and screen names
     const screenName = previousScreenName.replace(/^\//, ''); // Remove leading slash if present
-    
+
     const screenNames = {
       'directory': 'Directory',
       '/directory': 'Directory',
@@ -95,7 +102,7 @@ const MemberDetails = ({ member, onNavigateBack, previousScreenName }) => {
       'hospitals': 'Hospitals',
       '/': 'Home'
     };
-    
+
     return screenNames[previousScreenName] || screenNames[screenName] || 'Directory';
   };
 
@@ -112,20 +119,20 @@ const MemberDetails = ({ member, onNavigateBack, previousScreenName }) => {
           boxShadow: `0 2px 16px color-mix(in srgb, var(--brand-navy) 16%, transparent)`,
         }}
       >
-          <div className="h-[3px]" style={{ background: 'var(--navbar-accent)' }} />
-          <div className="px-6 pt-4 pb-4">
-            <div className="flex items-center">
-              <button
-                onClick={onNavigateBack}
-                className="p-2 rounded-xl transition-colors flex items-center gap-1"
-                style={{ color: navbarTextColor, background: 'transparent' }}
-              >
-                <ChevronLeft className="h-5 w-5" />
-                <span className="text-sm font-medium">Back</span>
-              </button>
-              <h1 className="text-2xl font-bold flex-1 text-center pr-16" style={{ color: navbarTextColor }}>Member Details</h1>
-            </div>
+        <div className="h-[3px]" style={{ background: 'var(--navbar-accent)' }} />
+        <div className="px-6 pt-4 pb-4">
+          <div className="flex items-center">
+            <button
+              onClick={onNavigateBack}
+              className="p-2 rounded-xl transition-colors flex items-center gap-1"
+              style={{ color: navbarTextColor, background: 'transparent' }}
+            >
+              <ChevronLeft className="h-5 w-5" />
+              <span className="text-sm font-medium">Back</span>
+            </button>
+            <h1 className="text-2xl font-bold flex-1 text-center pr-16" style={{ color: navbarTextColor }}>Member Details</h1>
           </div>
+        </div>
       </div>
 
       {/* Member Details Card */}
@@ -134,9 +141,9 @@ const MemberDetails = ({ member, onNavigateBack, previousScreenName }) => {
           <div className="flex items-center gap-4 mb-6">
             <div className="bg-indigo-100 h-20 w-20 rounded-2xl flex items-center justify-center text-indigo-600 overflow-hidden shadow-sm border border-indigo-200">
               {profilePhoto ? (
-                <img 
-                  src={profilePhoto} 
-                  alt={displayName} 
+                <img
+                  src={profilePhoto}
+                  alt={displayName}
                   className="w-full h-full object-cover"
                   onError={(e) => {
                     e.target.onerror = null;
@@ -154,50 +161,50 @@ const MemberDetails = ({ member, onNavigateBack, previousScreenName }) => {
                   }}
                 />
               ) : (
-                member.type && member.type.toLowerCase().includes('doctor') ? <Stethoscope className="h-8 w-8 text-[color:var(--brand-navy)]" /> : 
-                member.type && member.type.toLowerCase().includes('committee') ? <Users className="h-8 w-8 text-[color:var(--brand-navy)]" /> : 
-                member.type && (member.type.toLowerCase().includes('trustee') || member.type.toLowerCase().includes('patron')) ? <Star className="h-8 w-8 text-[color:var(--brand-navy)]" /> : 
-                <User className="h-8 w-8 text-[color:var(--brand-navy)]" />
+                member.type && member.type.toLowerCase().includes('doctor') ? <Stethoscope className="h-8 w-8 text-[color:var(--brand-navy)]" /> :
+                  member.type && member.type.toLowerCase().includes('committee') ? <Users className="h-8 w-8 text-[color:var(--brand-navy)]" /> :
+                    member.type && (member.type.toLowerCase().includes('trustee') || member.type.toLowerCase().includes('patron')) ? <Star className="h-8 w-8 text-[color:var(--brand-navy)]" /> :
+                      <User className="h-8 w-8 text-[color:var(--brand-navy)]" />
               )}
             </div>
             <div>
               <h2 className="text-xl font-bold text-gray-800">{displayName}</h2>
-                {!member.isHospitalMember && displayRole && (
-                  <p className="text-sm font-medium" style={{ color: theme.primary }}>{displayRole}</p>
-                )}
+              {!member.isHospitalMember && displayRole && (
+                <p className="text-sm font-medium" style={{ color: theme.primary }}>{displayRole}</p>
+              )}
             </div>
           </div>
 
           <div className="grid grid-cols-1 gap-4">
             {/* Determine if this is a healthcare member (from opd_schedule) or committee member */}
             {(() => {
-              const isHealthcareMember = member.isHealthcareMember || 
-                                        !!member.consultant_name || 
-                                        (member.original_id && member.original_id.toString().startsWith('DOC')) ||
-                                        (member['S. No.'] && member['S. No.'].toString().startsWith('DOC'));
-              const isCommitteeMember = member.isCommitteeMember || 
-                                       (member.original_id && member.original_id.toString().startsWith('CM')) ||
-                                       (member['S. No.'] && member['S. No.'].toString().startsWith('CM'));
-              const isElectedMember = member.isElectedMember || 
-                                     (member.elected_id !== undefined && member.elected_id !== null) ||
-                                     (member.original_id && member.original_id.toString().startsWith('ELECT')) ||
-                                     (member['S. No.'] && member['S. No.'].toString().startsWith('ELECT'));
-              
+              const isHealthcareMember = member.isHealthcareMember ||
+                !!member.consultant_name ||
+                (member.original_id && member.original_id.toString().startsWith('DOC')) ||
+                (member['S. No.'] && member['S. No.'].toString().startsWith('DOC'));
+              const isCommitteeMember = member.isCommitteeMember ||
+                (member.original_id && member.original_id.toString().startsWith('CM')) ||
+                (member['S. No.'] && member['S. No.'].toString().startsWith('CM'));
+              const isElectedMember = member.isElectedMember ||
+                (member.elected_id !== undefined && member.elected_id !== null) ||
+                (member.original_id && member.original_id.toString().startsWith('ELECT')) ||
+                (member['S. No.'] && member['S. No.'].toString().startsWith('ELECT'));
+
               // Show elected member fields (merged with Members Table) - Show ALL fields from both tables
-	              if (isElectedMember) {
-	                const electedName =
-	                  member['Name'] ||
-	                  member.member_name_english ||
-	                  member.member_name_hindi ||
-	                  'N/A';
-	                const electedRoleType = cleanValue(member.role_type);
-	                const electedCommitteeName = cleanValue(member.title);
-	                const electedPosition = cleanValue(member.subtitle);
-	                const electedPhone =
-	                  toPhoneText(member['Mobile']) ||
-	                  toPhoneText(member.phone1) ||
-	                  toPhoneText(member.phone2) ||
-	                  '';
+              if (isElectedMember) {
+                const electedName =
+                  member['Name'] ||
+                  member.member_name_english ||
+                  member.member_name_hindi ||
+                  'N/A';
+                const electedRoleType = cleanValue(member.role_type);
+                const electedCommitteeName = cleanValue(member.title);
+                const electedPosition = cleanValue(member.subtitle);
+                const electedPhone =
+                  toPhoneText(member['Mobile']) ||
+                  toPhoneText(member.phone1) ||
+                  toPhoneText(member.phone2) ||
+                  '';
                 const electedAddress =
                   member['Address Home'] ||
                   member.address ||
@@ -216,35 +223,35 @@ const MemberDetails = ({ member, onNavigateBack, previousScreenName }) => {
                       </div>
                     )}
 
-	                    {electedRoleType && (
-	                      <div className="flex items-start gap-3 p-4 bg-gray-50 rounded-2xl">
-	                        <Users className="h-5 w-5 text-gray-500 mt-0.5 flex-shrink-0" />
-	                        <div>
-	                          <p className="text-xs text-gray-500 font-medium uppercase tracking-wider">Role Type</p>
-	                          <p className="font-medium text-gray-800">{String(electedRoleType).toUpperCase()}</p>
-	                        </div>
-	                      </div>
-	                    )}
+                    {electedRoleType && (
+                      <div className="flex items-start gap-3 p-4 bg-gray-50 rounded-2xl">
+                        <Users className="h-5 w-5 text-gray-500 mt-0.5 flex-shrink-0" />
+                        <div>
+                          <p className="text-xs text-gray-500 font-medium uppercase tracking-wider">Role Type</p>
+                          <p className="font-medium text-gray-800">{String(electedRoleType).toUpperCase()}</p>
+                        </div>
+                      </div>
+                    )}
 
-	                    {electedCommitteeName && (
-	                      <div className="flex items-start gap-3 p-4 bg-gray-50 rounded-2xl">
-	                        <FileText className="h-5 w-5 text-gray-500 mt-0.5 flex-shrink-0" />
-	                        <div>
-	                          <p className="text-xs text-gray-500 font-medium uppercase tracking-wider">Committee Name</p>
-	                          <p className="font-medium text-gray-800">{electedCommitteeName}</p>
-	                        </div>
-	                      </div>
-	                    )}
+                    {electedCommitteeName && (
+                      <div className="flex items-start gap-3 p-4 bg-gray-50 rounded-2xl">
+                        <FileText className="h-5 w-5 text-gray-500 mt-0.5 flex-shrink-0" />
+                        <div>
+                          <p className="text-xs text-gray-500 font-medium uppercase tracking-wider">Committee Name</p>
+                          <p className="font-medium text-gray-800">{electedCommitteeName}</p>
+                        </div>
+                      </div>
+                    )}
 
-	                    {electedPosition && (
-	                      <div className="flex items-start gap-3 p-4 bg-gray-50 rounded-2xl">
-	                        <Award className="h-5 w-5 text-gray-500 mt-0.5 flex-shrink-0" />
-	                        <div>
-	                          <p className="text-xs text-gray-500 font-medium uppercase tracking-wider">Position</p>
-	                          <p className="font-medium text-gray-800">{electedPosition}</p>
-	                        </div>
-	                      </div>
-	                    )}
+                    {electedPosition && (
+                      <div className="flex items-start gap-3 p-4 bg-gray-50 rounded-2xl">
+                        <Award className="h-5 w-5 text-gray-500 mt-0.5 flex-shrink-0" />
+                        <div>
+                          <p className="text-xs text-gray-500 font-medium uppercase tracking-wider">Position</p>
+                          <p className="font-medium text-gray-800">{electedPosition}</p>
+                        </div>
+                      </div>
+                    )}
 
                     {electedPhone && electedPhone !== 'N/A' && (
                       <div className="flex items-start gap-3 p-4 bg-gray-50 rounded-2xl">
@@ -270,22 +277,22 @@ const MemberDetails = ({ member, onNavigateBack, previousScreenName }) => {
                   </>
                 );
               }
-              
+
               // Show committee-specific fields if it's a committee member - Show ALL Supabase fields
-	              if (isCommitteeMember) {
-	                const committeeName =
-	                  member.member_name_english ||
-	                  member['Name'] ||
-	                  member.member_name_hindi ||
-	                  'N/A';
-	                const committeeRoleType = cleanValue(member.role_type);
-	                const committeeTitle = cleanValue(member.title);
-	                const committeePosition = cleanValue(member.subtitle);
-	                const committeePhone =
-	                  toPhoneText(member.Mobile) ||
-	                  toPhoneText(member.phone1) ||
-	                  toPhoneText(member.phone2) ||
-	                  '';
+              if (isCommitteeMember) {
+                const committeeName =
+                  member.member_name_english ||
+                  member['Name'] ||
+                  member.member_name_hindi ||
+                  'N/A';
+                const committeeRoleType = cleanValue(member.role_type);
+                const committeeTitle = cleanValue(member.title);
+                const committeePosition = cleanValue(member.subtitle);
+                const committeePhone =
+                  toPhoneText(member.Mobile) ||
+                  toPhoneText(member.phone1) ||
+                  toPhoneText(member.phone2) ||
+                  '';
                 const committeeAddress =
                   member['Address Home'] ||
                   member.address ||
@@ -304,35 +311,35 @@ const MemberDetails = ({ member, onNavigateBack, previousScreenName }) => {
                       </div>
                     )}
 
-	                    {committeeRoleType && (
-	                      <div className="flex items-start gap-3 p-4 bg-gray-50 rounded-2xl">
-	                        <Users className="h-5 w-5 text-gray-500 mt-0.5 flex-shrink-0" />
-	                        <div>
-	                          <p className="text-xs text-gray-500 font-medium uppercase tracking-wider">Role Type</p>
-	                          <p className="font-medium text-gray-800">{String(committeeRoleType).toUpperCase()}</p>
-	                        </div>
-	                      </div>
-	                    )}
+                    {committeeRoleType && (
+                      <div className="flex items-start gap-3 p-4 bg-gray-50 rounded-2xl">
+                        <Users className="h-5 w-5 text-gray-500 mt-0.5 flex-shrink-0" />
+                        <div>
+                          <p className="text-xs text-gray-500 font-medium uppercase tracking-wider">Role Type</p>
+                          <p className="font-medium text-gray-800">{String(committeeRoleType).toUpperCase()}</p>
+                        </div>
+                      </div>
+                    )}
 
-	                    {committeeTitle && (
-	                      <div className="flex items-start gap-3 p-4 bg-gray-50 rounded-2xl">
-	                        <FileText className="h-5 w-5 text-gray-500 mt-0.5 flex-shrink-0" />
-	                        <div>
-	                          <p className="text-xs text-gray-500 font-medium uppercase tracking-wider">Committee Name</p>
-	                          <p className="font-medium text-gray-800">{committeeTitle}</p>
-	                        </div>
-	                      </div>
-	                    )}
+                    {committeeTitle && (
+                      <div className="flex items-start gap-3 p-4 bg-gray-50 rounded-2xl">
+                        <FileText className="h-5 w-5 text-gray-500 mt-0.5 flex-shrink-0" />
+                        <div>
+                          <p className="text-xs text-gray-500 font-medium uppercase tracking-wider">Committee Name</p>
+                          <p className="font-medium text-gray-800">{committeeTitle}</p>
+                        </div>
+                      </div>
+                    )}
 
-	                    {committeePosition && (
-	                      <div className="flex items-start gap-3 p-4 bg-gray-50 rounded-2xl">
-	                        <Award className="h-5 w-5 text-gray-500 mt-0.5 flex-shrink-0" />
-	                        <div>
-	                          <p className="text-xs text-gray-500 font-medium uppercase tracking-wider">Position</p>
-	                          <p className="font-medium text-gray-800">{committeePosition}</p>
-	                        </div>
-	                      </div>
-	                    )}
+                    {committeePosition && (
+                      <div className="flex items-start gap-3 p-4 bg-gray-50 rounded-2xl">
+                        <Award className="h-5 w-5 text-gray-500 mt-0.5 flex-shrink-0" />
+                        <div>
+                          <p className="text-xs text-gray-500 font-medium uppercase tracking-wider">Position</p>
+                          <p className="font-medium text-gray-800">{committeePosition}</p>
+                        </div>
+                      </div>
+                    )}
 
                     {committeePhone && committeePhone !== 'N/A' && (
                       <div className="flex items-start gap-3 p-4 bg-gray-50 rounded-2xl">
@@ -358,7 +365,7 @@ const MemberDetails = ({ member, onNavigateBack, previousScreenName }) => {
                   </>
                 );
               }
-              
+
               // Show Members Table fields only if NOT a healthcare member, NOT a committee member, and NOT an elected member
               if (!isHealthcareMember && !isElectedMember) {
                 return (
@@ -372,7 +379,7 @@ const MemberDetails = ({ member, onNavigateBack, previousScreenName }) => {
                         </div>
                       </div>
                     )}
-                    
+
                     {member['Name'] && (
                       <div className="flex items-start gap-3 p-4 bg-gray-50 rounded-2xl">
                         <User className="h-5 w-5 text-gray-500 mt-0.5 flex-shrink-0" />
@@ -382,7 +389,7 @@ const MemberDetails = ({ member, onNavigateBack, previousScreenName }) => {
                         </div>
                       </div>
                     )}
-                    
+
                     {member['Company Name'] && (
                       <div className="flex items-start gap-3 p-4 bg-gray-50 rounded-2xl">
                         <Building2 className="h-5 w-5 text-gray-500 mt-0.5 flex-shrink-0" />
@@ -392,7 +399,7 @@ const MemberDetails = ({ member, onNavigateBack, previousScreenName }) => {
                         </div>
                       </div>
                     )}
-                    
+
                     {member['Address Home'] && (
                       <div className="flex items-start gap-3 p-4 bg-gray-50 rounded-2xl">
                         <MapPin className="h-5 w-5 text-gray-500 mt-0.5 flex-shrink-0" />
@@ -402,7 +409,7 @@ const MemberDetails = ({ member, onNavigateBack, previousScreenName }) => {
                         </div>
                       </div>
                     )}
-                    
+
                     {member['Address Office'] && (
                       <div className="flex items-start gap-3 p-4 bg-gray-50 rounded-2xl">
                         <MapPin className="h-5 w-5 text-gray-500 mt-0.5 flex-shrink-0" />
@@ -412,7 +419,7 @@ const MemberDetails = ({ member, onNavigateBack, previousScreenName }) => {
                         </div>
                       </div>
                     )}
-                    
+
                     {toPhoneText(member['Mobile']) && (
                       <div className="flex items-start gap-3 p-4 bg-gray-50 rounded-2xl">
                         <Phone className="h-5 w-5 text-gray-500 mt-0.5 flex-shrink-0" />
@@ -424,7 +431,7 @@ const MemberDetails = ({ member, onNavigateBack, previousScreenName }) => {
                         </div>
                       </div>
                     )}
-                    
+
                     {toPhoneText(member['Resident Landline']) && (
                       <div className="flex items-start gap-3 p-4 bg-gray-50 rounded-2xl">
                         <Phone className="h-5 w-5 text-gray-500 mt-0.5 flex-shrink-0" />
@@ -436,7 +443,7 @@ const MemberDetails = ({ member, onNavigateBack, previousScreenName }) => {
                         </div>
                       </div>
                     )}
-                    
+
                     {toPhoneText(member['Office Landline']) && (
                       <div className="flex items-start gap-3 p-4 bg-gray-50 rounded-2xl">
                         <Phone className="h-5 w-5 text-gray-500 mt-0.5 flex-shrink-0" />
@@ -448,7 +455,7 @@ const MemberDetails = ({ member, onNavigateBack, previousScreenName }) => {
                         </div>
                       </div>
                     )}
-                    
+
                     {member['Email'] && member['Email'] !== 'N/A' && (
                       <div className="flex items-start gap-3 p-4 bg-gray-50 rounded-2xl">
                         <Mail className="h-5 w-5 text-gray-500 mt-0.5 flex-shrink-0" />
@@ -460,12 +467,12 @@ const MemberDetails = ({ member, onNavigateBack, previousScreenName }) => {
                         </div>
                       </div>
                     )}
-                    
-                    </>
-                  );
-                }
-                
-                // Show healthcare-specific fields (from opd_schedule) only if this is a healthcare member
+
+                  </>
+                );
+              }
+
+              // Show healthcare-specific fields (from opd_schedule) only if this is a healthcare member
               return (
                 <>
                   {member.consultant_name && member.consultant_name !== 'N/A' && (
@@ -477,7 +484,7 @@ const MemberDetails = ({ member, onNavigateBack, previousScreenName }) => {
                       </div>
                     </div>
                   )}
-                  
+
                   {member.department && member.department !== 'N/A' && (
                     <div className="flex items-start gap-3 p-4 bg-gray-50 rounded-2xl">
                       <Building2 className="h-5 w-5 text-gray-500 mt-0.5 flex-shrink-0" />
@@ -487,7 +494,7 @@ const MemberDetails = ({ member, onNavigateBack, previousScreenName }) => {
                       </div>
                     </div>
                   )}
-                  
+
                   {member.designation && member.designation !== 'N/A' && (
                     <div className="flex items-start gap-3 p-4 bg-gray-50 rounded-2xl">
                       <User className="h-5 w-5 text-gray-500 mt-0.5 flex-shrink-0" />
@@ -497,7 +504,7 @@ const MemberDetails = ({ member, onNavigateBack, previousScreenName }) => {
                       </div>
                     </div>
                   )}
-                  
+
                   {member.qualification && member.qualification !== 'N/A' && (
                     <div className="flex items-start gap-3 p-4 bg-gray-50 rounded-2xl">
                       <Award className="h-5 w-5 text-gray-500 mt-0.5 flex-shrink-0" />
@@ -507,7 +514,7 @@ const MemberDetails = ({ member, onNavigateBack, previousScreenName }) => {
                       </div>
                     </div>
                   )}
-                  
+
                   {member.unit && member.unit !== 'N/A' && (
                     <div className="flex items-start gap-3 p-4 bg-gray-50 rounded-2xl">
                       <Building2 className="h-5 w-5 text-gray-500 mt-0.5 flex-shrink-0" />
@@ -517,7 +524,7 @@ const MemberDetails = ({ member, onNavigateBack, previousScreenName }) => {
                       </div>
                     </div>
                   )}
-                  
+
                   {member.general_opd_days && member.general_opd_days !== 'N/A' && (
                     <div className="flex items-start gap-3 p-4 bg-gray-50 rounded-2xl">
                       <Clock className="h-5 w-5 text-gray-500 mt-0.5 flex-shrink-0" />
@@ -527,7 +534,7 @@ const MemberDetails = ({ member, onNavigateBack, previousScreenName }) => {
                       </div>
                     </div>
                   )}
-                  
+
                   {member.private_opd_days && member.private_opd_days !== 'N/A' && (
                     <div className="flex items-start gap-3 p-4 bg-gray-50 rounded-2xl">
                       <Clock className="h-5 w-5 text-gray-500 mt-0.5 flex-shrink-0" />
@@ -537,7 +544,7 @@ const MemberDetails = ({ member, onNavigateBack, previousScreenName }) => {
                       </div>
                     </div>
                   )}
-                  
+
                   {toPhoneText(member['Mobile']) && (
                     <div className="flex items-start gap-3 p-4 bg-gray-50 rounded-2xl">
                       <Phone className="h-5 w-5 text-gray-500 mt-0.5 flex-shrink-0" />
@@ -549,10 +556,10 @@ const MemberDetails = ({ member, onNavigateBack, previousScreenName }) => {
                       </div>
                     </div>
                   )}
-                  
-                  </>
-                );
-              })()}
+
+                </>
+              );
+            })()}
           </div>
         </div>
       </div>

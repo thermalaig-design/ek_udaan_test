@@ -1,5 +1,37 @@
 import { supabase } from './supabaseClient';
 
+const attachProfilePhotosByMembersId = async (items = []) => {
+  const membersIds = Array.from(new Set((items || []).map((item) => item?.members_id).filter(Boolean)));
+  if (membersIds.length === 0) return items;
+
+  try {
+    const { data: profileRows, error } = await supabase
+      .from('member_profiles')
+      .select('members_id, profile_photo_url')
+      .in('members_id', membersIds)
+      .not('profile_photo_url', 'is', null);
+
+    if (error) {
+      console.warn('Failed to fetch profile photo URLs:', error?.message || error);
+      return items;
+    }
+
+    const photoByMemberId = new Map(
+      (profileRows || [])
+        .filter((row) => row?.members_id && row?.profile_photo_url)
+        .map((row) => [String(row.members_id), row.profile_photo_url])
+    );
+
+    return (items || []).map((item) => ({
+      ...item,
+      profile_photo_url: item?.profile_photo_url || (item?.members_id ? photoByMemberId.get(String(item.members_id)) || null : null),
+    }));
+  } catch (err) {
+    console.warn('attachProfilePhotosByMembersId failed:', err?.message || err);
+    return items;
+  }
+};
+
 // Fetch trustees and patrons directly from Supabase using reg_members + Members tables
 export const getTrusteesAndPatrons = async (trustId = null, trustName = null) => {
   try {
@@ -393,8 +425,9 @@ export const getExecutiveBodyMembers = async (trustId = null, trustName = null) 
       return String(a?.Name || '').localeCompare(String(b?.Name || ''));
     };
 
-    const committee = mapped.filter((item) => item.role_type === 'committee').sort(byMembershipThenName);
-    const elected = mapped.filter((item) => item.role_type === 'elected').sort(byMembershipThenName);
+    const withPhotos = await attachProfilePhotosByMembersId(mapped);
+    const committee = withPhotos.filter((item) => item.role_type === 'committee').sort(byMembershipThenName);
+    const elected = withPhotos.filter((item) => item.role_type === 'elected').sort(byMembershipThenName);
 
     return {
       success: true,
@@ -411,6 +444,104 @@ export const getExecutiveBodyMembers = async (trustId = null, trustName = null) 
       data: { committee: [], elected: [], all: [] },
       error: err?.message || 'Failed to fetch executive body members',
     };
+  }
+};
+
+// Fetch directory members from reg_members + Members
+export const getDirectoryMembers = async (trustId = null, trustName = null, opts = {}) => {
+  try {
+    let resolvedTrustId = trustId;
+    const normalizeMembershipNumber = (value) => String(value || '').trim();
+    const page = Math.max(1, Number(opts?.page) || 1);
+    const limit = Math.max(1, Math.min(100, Number(opts?.limit) || 20));
+    const from = (page - 1) * limit;
+    const to = from + limit - 1;
+
+    if (!resolvedTrustId && trustName) {
+      const { data: trustData } = await supabase
+        .from('Trust')
+        .select('id')
+        .ilike('name', String(trustName).trim())
+        .limit(1);
+      resolvedTrustId = trustData?.[0]?.id || null;
+    }
+
+    let query = supabase
+      .from('reg_members')
+      .select(`
+        id,
+        trust_id,
+        role,
+        joined_date,
+        is_active,
+        members_id,
+        "Membership number",
+        "Mobile",
+        "Name",
+        Members:members_id (
+          "S.No.",
+          "Name",
+          "Mobile",
+          "Email",
+          "Address Home",
+          "Company Name",
+          "Address Office",
+          "Resident Landline",
+          "Office Landline",
+          members_id
+        )
+      `, { count: 'exact' })
+      .or('is_active.is.null,is_active.eq.true');
+
+    if (resolvedTrustId) {
+      query = query.eq('trust_id', resolvedTrustId);
+    }
+
+    const { data: rows, error, count } = await query
+      .order('joined_date', { ascending: false })
+      .range(from, to);
+    if (error) throw error;
+
+    const mapped = (rows || []).map((row) => {
+      const joined = Array.isArray(row?.Members) ? row.Members[0] : row?.Members;
+      const membershipNumber = normalizeMembershipNumber(row?.['Membership number']) || null;
+      const displayName = joined?.Name || row?.Name || null;
+      const displayMobile = joined?.Mobile || row?.Mobile || null;
+
+      return {
+        id: row?.id || null,
+        reg_id: row?.id || null,
+        trust_id: row?.trust_id || null,
+        members_id: row?.members_id || joined?.members_id || null,
+        Name: displayName,
+        Mobile: displayMobile,
+        Email: joined?.Email || null,
+        role: row?.role || null,
+        type: row?.role || null,
+        'Membership number': membershipNumber,
+        'S. No.': joined?.['S.No.'] ?? joined?.['S. No.'] ?? `REG-${String(row?.id || '').slice(0, 8)}`,
+        'Company Name': joined?.['Company Name'] || null,
+        'Address Home': joined?.['Address Home'] || null,
+        'Address Office': joined?.['Address Office'] || null,
+        'Resident Landline': joined?.['Resident Landline'] || null,
+        'Office Landline': joined?.['Office Landline'] || null,
+        joined_date: row?.joined_date || null,
+      };
+    });
+
+    const withPhotos = await attachProfilePhotosByMembersId(mapped);
+
+    return {
+      success: true,
+      data: withPhotos,
+      page,
+      limit,
+      totalCount: Number(count || 0),
+      hasMore: to + 1 < Number(count || 0)
+    };
+  } catch (err) {
+    console.error('Error fetching directory members from reg_members:', err);
+    return { success: false, data: [], error: err?.message || 'Failed to fetch directory members' };
   }
 };
 

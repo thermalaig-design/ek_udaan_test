@@ -1,8 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Home as HomeIcon, Mail, Menu, Phone, Search, Users, X } from 'lucide-react';
+import { Home as HomeIcon, Mail, Menu, Phone, Search, User, Users, X } from 'lucide-react';
 import { useAppTheme } from './context/ThemeContext';
 import { getExecutiveBodyMembers } from './services/supabaseService';
+import { getProfilePhotos } from './services/api';
 import { getNavbarThemeStyles } from './utils/themeUtils';
 import { applyOpacity } from './utils/colorUtils';
 import Sidebar from './components/Sidebar';
@@ -29,6 +30,7 @@ const ExecutiveBody = ({ onNavigate }) => {
   const [query, setQuery] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [data, setData] = useState({ all: [], committee: [], elected: [] });
+  const [profilePhotos, setProfilePhotos] = useState({});
   const [isMenuOpen, setIsMenuOpen] = useState(false);
 
   useEffect(() => {
@@ -119,6 +121,52 @@ const ExecutiveBody = ({ onNavigate }) => {
   useEffect(() => {
     setCurrentPage(1);
   }, [tab, query]);
+
+  useEffect(() => {
+    let active = true;
+
+    const loadPhotos = async () => {
+      try {
+        const allMembers = data?.all || [];
+        if (!allMembers.length) {
+          if (active) setProfilePhotos({});
+          return;
+        }
+
+        const memberIds = allMembers
+          .flatMap((item) => [
+            item?.['Membership number'],
+            item?.Mobile,
+            item?.members_id,
+            item?.['S. No.'],
+          ])
+          .filter(Boolean);
+
+        if (memberIds.length === 0) {
+          if (active) setProfilePhotos({});
+          return;
+        }
+
+        const response = await getProfilePhotos(memberIds);
+        if (!active) return;
+
+        if (response?.success && response?.photos) {
+          setProfilePhotos(response.photos);
+        } else {
+          setProfilePhotos({});
+        }
+      } catch (err) {
+        if (!active) return;
+        console.error('Failed to load executive profile photos:', err);
+        setProfilePhotos({});
+      }
+    };
+
+    loadPhotos();
+    return () => {
+      active = false;
+    };
+  }, [data]);
 
   const totalPages = Math.max(1, Math.ceil(activeMembers.length / MEMBERS_PER_PAGE));
 
@@ -285,53 +333,83 @@ const ExecutiveBody = ({ onNavigate }) => {
                   boxShadow: `0 8px 18px ${applyOpacity(theme.secondary, 0.12)}`
                 }}
               >
-                <div className="flex flex-col gap-2">
-                  <div className="flex items-start justify-between gap-2">
-                    <h3 className="text-sm font-extrabold truncate min-w-0" style={{ color: 'var(--heading-color)' }}>
-                      {item?.Name || item?.member_name_english || 'N/A'}
-                    </h3>
-                  <span
-                    className="text-[10px] font-bold uppercase px-2 py-1 rounded-full shrink-0"
-                    style={item?.role_type === 'committee'
-                      ? { background: applyOpacity(theme.secondary, 0.18), color: 'var(--heading-color)' }
-                      : { background: applyOpacity(theme.primary, 0.2), color: 'var(--heading-color)' }}
+                <div className="flex items-start gap-3">
+                  <div
+                    className="h-[72px] w-[72px] rounded-2xl overflow-hidden shrink-0 flex items-center justify-center"
+                    style={{ background: applyOpacity(theme.secondary, 0.16), border: `1px solid ${applyOpacity(theme.secondary, 0.22)}` }}
                   >
-                    {item?.role_type || 'role'}
-                  </span>
+                    {(() => {
+                      const candidateKeys = [
+                        item?.['Membership number'],
+                        item?.Mobile,
+                        item?.members_id,
+                        item?.['S. No.'],
+                      ].filter(Boolean);
+                      const photoUrl = item?.profile_photo_url || candidateKeys.map((key) => profilePhotos[key]).find(Boolean);
+                      if (photoUrl) {
+                        return (
+                          <img
+                            src={photoUrl}
+                            alt={item?.Name || item?.member_name_english || 'Member'}
+                            className="h-full w-full object-cover"
+                            onError={(e) => {
+                              e.currentTarget.style.display = 'none';
+                            }}
+                          />
+                        );
+                      }
+                      return <User className="h-7 w-7" style={{ color: 'var(--body-text-color)' }} />;
+                    })()}
                   </div>
 
-                  <p className="text-[11px] leading-[1.2]" style={{ color: 'var(--body-text-color)' }}>
-                    {item?.member_role || item?.title || item?.type || 'N/A'}
-                  </p>
+                  <div className="flex-1 min-w-0 flex flex-col gap-2">
+                    <div className="flex items-start justify-between gap-2">
+                      <h3 className="text-sm font-extrabold truncate min-w-0" style={{ color: 'var(--heading-color)' }}>
+                        {item?.Name || item?.member_name_english || 'N/A'}
+                      </h3>
+                      <span
+                        className="text-[10px] font-bold uppercase px-2 py-1 rounded-full shrink-0"
+                        style={item?.role_type === 'committee'
+                          ? { background: applyOpacity(theme.secondary, 0.18), color: 'var(--heading-color)' }
+                          : { background: applyOpacity(theme.primary, 0.2), color: 'var(--heading-color)' }}
+                      >
+                        {item?.role_type || 'role'}
+                      </span>
+                    </div>
 
-                  {(item?.['Membership number'] || item?.subtitle) && (
-                    <div className="flex flex-wrap gap-1 justify-start">
-                      {item?.['Membership number'] ? (
-                        <span className="text-[10px] font-semibold px-2 py-1 rounded-full" style={{ background: applyOpacity(theme.secondary, 0.14), color: 'var(--heading-color)' }}>
-                          M No: {item['Membership number']}
+                    <p className="text-[11px] leading-[1.2]" style={{ color: 'var(--body-text-color)' }}>
+                      {item?.member_role || item?.title || item?.type || 'N/A'}
+                    </p>
+
+                    {(item?.['Membership number'] || item?.subtitle) && (
+                      <div className="flex flex-wrap gap-1 justify-start">
+                        {item?.['Membership number'] ? (
+                          <span className="text-[10px] font-semibold px-2 py-1 rounded-full" style={{ background: applyOpacity(theme.secondary, 0.14), color: 'var(--heading-color)' }}>
+                            M No: {item['Membership number']}
+                          </span>
+                        ) : null}
+                        {item?.subtitle ? (
+                          <span className="self-start text-[10px] font-semibold px-2 py-1 rounded-full" style={{ background: applyOpacity(theme.primary, 0.14), color: 'var(--heading-color)' }}>
+                            {item.subtitle}
+                          </span>
+                        ) : null}
+                      </div>
+                    )}
+
+                    <div className="flex items-center gap-2 text-[11px]">
+                      {item?.Mobile ? (
+                        <span className="inline-flex items-center gap-1" style={{ color: 'var(--body-text-color)' }}>
+                          <Phone className="h-3 w-3" />
+                          {item.Mobile}
                         </span>
                       ) : null}
-                      {item?.subtitle ? (
-                        <span className="self-start text-[10px] font-semibold px-2 py-1 rounded-full" style={{ background: applyOpacity(theme.primary, 0.14), color: 'var(--heading-color)' }}>
-                          {item.subtitle}
+                      {item?.Email ? (
+                        <span className="inline-flex items-center gap-1 truncate" style={{ color: 'var(--body-text-color)' }}>
+                          <Mail className="h-3 w-3" />
+                          {item.Email}
                         </span>
                       ) : null}
                     </div>
-                  )}
-
-                  <div className="flex items-center gap-2 text-[11px]">
-                    {item?.Mobile ? (
-                      <span className="inline-flex items-center gap-1" style={{ color: 'var(--body-text-color)' }}>
-                        <Phone className="h-3 w-3" />
-                        {item.Mobile}
-                      </span>
-                    ) : null}
-                    {item?.Email ? (
-                      <span className="inline-flex items-center gap-1 truncate" style={{ color: 'var(--body-text-color)' }}>
-                        <Mail className="h-3 w-3" />
-                        {item.Email}
-                      </span>
-                    ) : null}
                   </div>
                 </div>
               </button>

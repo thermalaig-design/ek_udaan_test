@@ -611,10 +611,37 @@ router.post('/photos', async (req, res) => {
       return res.status(400).json({ success: false, message: 'memberIds array is required' });
     }
 
-    const uniqIds = Array.from(new Set(memberIds.filter(Boolean)));
+    const uniqIds = Array.from(
+      new Set(
+        (memberIds || [])
+          .map((value) => String(value || '').trim())
+          .filter(Boolean)
+      )
+    );
     if (uniqIds.length === 0) {
       return res.json({ success: true, photos: {} });
     }
+
+    const mobileDigits = Array.from(
+      new Set(
+        uniqIds
+          .map((value) => normalizeDigits(value))
+          .filter((value) => value.length >= 10)
+          .map((value) => value.slice(-10))
+      )
+    );
+    const mobileVariants = Array.from(
+      new Set(
+        mobileDigits.flatMap((digits) => [digits, `91${digits}`, `+91${digits}`])
+      )
+    );
+
+    const uuidIds = uniqIds.filter((value) => isUuid(value));
+
+    const { data: membersById } = await supabase
+      .from('Members')
+      .select('members_id, "Membership number", Mobile')
+      .in('members_id', uuidIds);
 
     const { data: membersByNumber } = await supabase
       .from('Members')
@@ -624,10 +651,37 @@ router.post('/photos', async (req, res) => {
     const { data: membersByMobile } = await supabase
       .from('Members')
       .select('members_id, "Membership number", Mobile')
-      .in('Mobile', uniqIds);
+      .in('Mobile', Array.from(new Set([...uniqIds, ...mobileVariants])));
+
+    const { data: regByMembership } = await supabase
+      .from('reg_members')
+      .select('members_id, "Membership number", "Mobile"')
+      .in('Membership number', uniqIds);
+
+    const { data: regByMobile } = await supabase
+      .from('reg_members')
+      .select('members_id, "Membership number", "Mobile"')
+      .in('Mobile', Array.from(new Set([...uniqIds, ...mobileVariants])));
+
+    const regMemberIds = Array.from(
+      new Set(
+        [...(regByMembership || []), ...(regByMobile || [])]
+          .map((row) => row?.members_id)
+          .filter(Boolean)
+      )
+    );
+
+    let membersFromReg = [];
+    if (regMemberIds.length > 0) {
+      const { data: regMembersResolved } = await supabase
+        .from('Members')
+        .select('members_id, "Membership number", Mobile')
+        .in('members_id', regMemberIds);
+      membersFromReg = regMembersResolved || [];
+    }
 
     const memberMap = new Map();
-    [...(membersByNumber || []), ...(membersByMobile || [])].forEach(m => {
+    [...(membersById || []), ...(membersByNumber || []), ...(membersByMobile || []), ...membersFromReg].forEach(m => {
       if (m?.members_id) memberMap.set(String(m.members_id), m);
     });
 
@@ -651,8 +705,21 @@ router.post('/photos', async (req, res) => {
     (profiles || []).forEach(p => {
       const member = memberMap.get(String(p.members_id));
       if (!member) return;
-      if (member['Membership number']) photoMap[member['Membership number']] = p.profile_photo_url;
-      if (member.Mobile) photoMap[member.Mobile] = p.profile_photo_url;
+      if (member['Membership number']) {
+        const membership = String(member['Membership number']).trim();
+        if (membership) photoMap[membership] = p.profile_photo_url;
+      }
+      if (member.Mobile) {
+        const mobileRaw = String(member.Mobile).trim();
+        const mobileOnlyDigits = normalizeDigits(mobileRaw);
+        const mobile10 = mobileOnlyDigits.length >= 10 ? mobileOnlyDigits.slice(-10) : '';
+        if (mobileRaw) photoMap[mobileRaw] = p.profile_photo_url;
+        if (mobile10) {
+          photoMap[mobile10] = p.profile_photo_url;
+          photoMap[`91${mobile10}`] = p.profile_photo_url;
+          photoMap[`+91${mobile10}`] = p.profile_photo_url;
+        }
+      }
       photoMap[p.members_id] = p.profile_photo_url;
     });
     
