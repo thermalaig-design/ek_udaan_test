@@ -39,6 +39,7 @@ const SPONSOR_CHUNK_SIZE = sponsorConfig.CAROUSEL_BATCH_SIZE;
 const LAST_SELECTED_TRUST_ID_KEY = 'last_selected_trust_id';
 const getInitialSponsorTrustId = () =>
   localStorage.getItem('selected_trust_id') || import.meta.env.VITE_DEFAULT_TRUST_ID || '';
+const BASE_TRUST_ID = String(import.meta.env.VITE_DEFAULT_TRUST_ID || '').trim();
 
 const buildNotificationContentKey = (notification) => {
   const title = String(notification?.title || '').trim().toLowerCase();
@@ -120,13 +121,22 @@ const mergeTrustsWithExistingVisuals = (incomingTrusts = [], existingTrusts = []
     if (!existing) return trust;
     return {
       ...trust,
-      // Keep latest known visual data from cache to avoid old membership payload
-      // overriding trust visuals on every refresh.
+      // Prefer fresh incoming visuals; keep cache only as fallback.
       name: existing?.name || trust?.name || null,
-      icon_url: existing?.icon_url || trust?.icon_url || null,
-      remark: existing?.remark || trust?.remark || null,
+      icon_url: trust?.icon_url || existing?.icon_url || null,
+      remark: trust?.remark || existing?.remark || null,
     };
   });
+};
+
+const pinBaseTrustFirst = (trusts = []) => {
+  const baseId = String(BASE_TRUST_ID || '').trim();
+  if (!baseId || !Array.isArray(trusts) || trusts.length === 0) return trusts;
+  const baseIndex = trusts.findIndex((trust) => String(trust?.id || '').trim() === baseId);
+  if (baseIndex <= 0) return trusts;
+  const baseTrust = trusts[baseIndex];
+  const remaining = trusts.filter((_, index) => index !== baseIndex);
+  return [baseTrust, ...remaining];
 };
 
 const TRUST_ICON_CACHE_KEY = 'trust_icon_url_cache_v1';
@@ -151,6 +161,7 @@ const buildCacheBustedIconUrl = (iconUrl, versionToken) => {
 
 const resolveTrustIconToken = (trust, fallback = '1') =>
   String(
+    trust?.version ||
     trust?.updated_at ||
     trust?.created_at ||
     trust?.icon_url ||
@@ -173,7 +184,7 @@ const TrustChipIcon = ({ iconUrl, altText, versionToken }) => {
   return (
     <img
       src={src}
-      alt={altText || 'Hospital'}
+      alt={altText || 'Trust'}
       className="w-7 h-7 object-contain"
       loading="eager"
       decoding="async"
@@ -753,7 +764,7 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
       const memberships = Array.isArray(parsedUser.hospital_memberships) ? parsedUser.hospital_memberships : [];
       const derivedTrusts = memberships.map((m) => ({
         id: m.trust_id || m.id || null,
-        name: m.trust_name || (m.trust_id ? 'Hospital' : null),
+        name: m.trust_name || null,
         icon_url: m.trust_icon_url || null,
         remark: m.trust_remark || null,
         is_active: m.is_active !== false,
@@ -768,11 +779,10 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
       let mergedTrusts = normalizedTrusts.length > 0
         ? mergeUniqueTrusts(normalizedTrusts)
         : mergeUniqueTrusts(defaultTrust ? [defaultTrust] : []);
-      
-      // Ensure default trust is always included
-      mergedTrusts = ensureDefaultTrustIncluded(mergedTrusts, defaultTrust);
+
       // Preserve known icon_url/name from cache so trust chips don't flash placeholders.
       mergedTrusts = mergeTrustsWithExistingVisuals(mergedTrusts, readCachedTrustList());
+      mergedTrusts = pinBaseTrustFirst(mergedTrusts);
       
       setTrustList(mergedTrusts);
       try { localStorage.setItem('trust_list_cache', JSON.stringify(mergedTrusts)); } catch { /* ignore */ }
@@ -815,19 +825,18 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
     }
   }, [defaultTrust?.id]);
 
-  // Hydrate missing trust icon_url from Trust table without changing trust membership logic.
+  // Hydrate trust visuals from Trust table so stale membership/cache values are corrected.
   useEffect(() => {
-    const trustsMissingIcon = (trustList || []).filter((trust) => {
+    const trustsToHydrate = (trustList || []).filter((trust) => {
       const id = normalizeTrustId(trust?.id);
-      const icon = String(trust?.icon_url || '').trim();
-      return Boolean(id) && !icon;
+      return Boolean(id);
     });
-    if (trustsMissingIcon.length === 0) return;
+    if (trustsToHydrate.length === 0) return;
 
     let active = true;
     const hydrateTrustIcons = async () => {
       const resolved = await Promise.all(
-        trustsMissingIcon.map(async (trust) => {
+        trustsToHydrate.map(async (trust) => {
           const trustId = normalizeTrustId(trust?.id);
           if (!trustId) return null;
           try {
@@ -837,7 +846,8 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
                 id: trustId,
                 icon_url: row.icon_url || null,
                 name: row.name || null,
-                remark: row.remark || null
+                remark: row.remark || null,
+                version: row.version || null
               }
               : null;
           } catch {
@@ -856,18 +866,42 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
       if (Object.keys(byId).length === 0) return;
 
       setTrustList((prev) => {
+        let changed = false;
         const next = (prev || []).map((trust) => {
           const id = normalizeTrustId(trust?.id);
           const hydrated = byId[id];
           if (!hydrated) return trust;
-          return {
+          const nextTrust = {
             ...trust,
-            icon_url: trust.icon_url || hydrated.icon_url || null,
-            name: trust.name || hydrated.name || null,
-            remark: trust.remark || hydrated.remark || null
+            // Prefer latest DB visuals over cached values to avoid stale logos.
+            icon_url: hydrated.icon_url || trust.icon_url || null,
+            name: hydrated.name || trust.name || null,
+            remark: hydrated.remark || trust.remark || null,
+            version: hydrated.version || trust.version || null
           };
+          if (
+            nextTrust.icon_url !== trust.icon_url ||
+            nextTrust.name !== trust.name ||
+            nextTrust.remark !== trust.remark ||
+            nextTrust.version !== trust.version
+          ) {
+            changed = true;
+          }
+          return nextTrust;
         });
+        if (!changed) return prev;
         try { localStorage.setItem('trust_list_cache', JSON.stringify(next)); } catch { /* ignore */ }
+        return next;
+      });
+
+      setTrustIconVersionById((prev) => {
+        const now = Date.now();
+        const next = { ...prev };
+        Object.values(byId).forEach((trust) => {
+          const id = normalizeTrustId(trust?.id);
+          if (!id) return;
+          next[id] = `${resolveTrustIconToken(trust, '1')}-${now}`;
+        });
         return next;
       });
     };
@@ -921,7 +955,7 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
         });
         setTrustIconVersionById((prev) => ({
           ...prev,
-          [normalizedFreshId]: prev[normalizedFreshId] || resolveTrustIconToken(freshTrust),
+          [normalizedFreshId]: `${resolveTrustIconToken(freshTrust, '1')}-${Date.now()}`,
         }));
         if (freshTrust?.icon_url) {
           setTrustIconUrlById((prev) => {
@@ -1002,10 +1036,11 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
       // If member id is not present, still honor trusts carried in user payload
       // (selected account's hospital_memberships from login flow).
       if (userDerivedTrusts.length > 0) {
-        let withDefault = ensureDefaultTrustIncluded(mergeUniqueTrusts(userDerivedTrusts), defaultTrust);
-        withDefault = mergeTrustsWithExistingVisuals(withDefault, readCachedTrustList());
-        setTrustList(withDefault);
-        try { localStorage.setItem('trust_list_cache', JSON.stringify(withDefault)); } catch { /* ignore */ }
+        let memberOnlyTrusts = mergeUniqueTrusts(userDerivedTrusts);
+        memberOnlyTrusts = mergeTrustsWithExistingVisuals(memberOnlyTrusts, readCachedTrustList());
+        memberOnlyTrusts = pinBaseTrustFirst(memberOnlyTrusts);
+        setTrustList(memberOnlyTrusts);
+        try { localStorage.setItem('trust_list_cache', JSON.stringify(memberOnlyTrusts)); } catch { /* ignore */ }
       }
       return;
     }
@@ -1039,9 +1074,8 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
 
         const primaryTrust = parsedUser?.primary_trust || uniqueTrusts.find((t) => t.is_active) || uniqueTrusts[0];
         const merged = mergeUniqueTrusts(uniqueTrusts);
-        // Ensure default/base trust is always included
-        let withDefault = ensureDefaultTrustIncluded(merged, defaultTrust);
-        withDefault = mergeTrustsWithExistingVisuals(withDefault, readCachedTrustList());
+        let withDefault = mergeTrustsWithExistingVisuals(merged, readCachedTrustList());
+        withDefault = pinBaseTrustFirst(withDefault);
         setTrustList(() => {
           // Cache full trust list so it appears instantly on next refresh
           try { localStorage.setItem('trust_list_cache', JSON.stringify(withDefault)); } catch { /* ignore */ }
@@ -1054,7 +1088,6 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
           (selectedExistsInFinalList ? normalizedSelected : '') ||
           normalizeTrustId(localStorage.getItem(LAST_SELECTED_TRUST_ID_KEY) || '') ||
           normalizeTrustId(primaryTrust?.id) ||
-          normalizeTrustId(defaultTrust?.id) ||
           normalizeTrustId(withDefault[0]?.id) ||
           '';
         const effectiveTrustForEvent =
@@ -1171,7 +1204,7 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
         }));
         setTrustIconVersionById((prev) => ({
           ...prev,
-          [normalizedId]: prev[normalizedId] || resolveTrustIconToken(freshTrust),
+          [normalizedId]: `${resolveTrustIconToken(freshTrust, '1')}-${Date.now()}`,
         }));
         if (freshTrust?.icon_url) {
           setTrustIconUrlById((prev) => {
@@ -1830,8 +1863,8 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
     null;
   const activeTrustId = normalizeTrustId(activeTrust?.id);
   const activeTrustIconToken = trustIconVersionById[activeTrustId] || resolveTrustIconToken(activeTrust, '');
-  const activeTrustIconUrl = trustIconUrlById[activeTrustId]
-    || activeTrust?.icon_url
+  const activeTrustIconUrl = activeTrust?.icon_url
+    || trustIconUrlById[activeTrustId]
     || defaultTrust?.icon_url
     || trustInfo?.icon_url
     || DEFAULT_TRUST_LOGO;
@@ -2075,7 +2108,7 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
               {activeTrustIconSrc ? (
                 <img
                   src={activeTrustIconSrc}
-                  alt={activeTrust?.name || defaultTrust?.name || trustInfo?.name || DEFAULT_TRUST_NAME}
+                  alt={activeTrust?.name || defaultTrust?.name || trustInfo?.name || 'Trust'}
                   className="w-full h-full object-contain rounded-full"
                 />
               ) : (
@@ -2086,7 +2119,7 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
               className="font-extrabold text-[15px] truncate max-w-[130px]"
               style={{ color: navbarTextColor }}
             >
-              {activeTrust?.name || defaultTrust?.name || trustInfo?.name || localStorage.getItem('selected_trust_name') || DEFAULT_TRUST_NAME}
+              {activeTrust?.name || trustInfo?.name || defaultTrust?.name || ''}
             </h1>
           </div>
 
@@ -2337,11 +2370,11 @@ const Home = ({ onNavigate, onLogout, isMember }) => {
                         ? '0 4px 12px color-mix(in srgb, var(--brand-navy) 22%, transparent)'
                         : 'none',
                     }}
-                    title={trust.name || 'Hospital'}
+                    title={trust?.name || ''}
                   >
                     <TrustChipIcon
-                      iconUrl={trustIconUrlById[normalizeTrustId(trust?.id)] || trust?.icon_url}
-                      altText={trust?.name || 'Hospital'}
+                      iconUrl={trust?.icon_url || trustIconUrlById[normalizeTrustId(trust?.id)]}
+                      altText={trust?.name || 'Trust'}
                       versionToken={trustIconVersionById[normalizeTrustId(trust?.id)] || resolveTrustIconToken(trust, '')}
                     />
                   </button>

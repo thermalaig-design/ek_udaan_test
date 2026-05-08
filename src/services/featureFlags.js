@@ -20,6 +20,10 @@ const FEATURE_KEY_ALIASES = {
   my_family: 'feature_my_family',
   'my-family': 'feature_my_family',
   feature_my_family: 'feature_my_family',
+  nominationdetails: 'feature_nomination_details',
+  nomination_details: 'feature_nomination_details',
+  'nomination-details': 'feature_nomination_details',
+  feature_nomination_details: 'feature_nomination_details',
 };
 
 export const normalizeFeatureKey = (...values) => {

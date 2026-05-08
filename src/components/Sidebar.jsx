@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { flushSync } from 'react-dom';
-import { Users, ChevronRight, LogOut, Share2, PhoneCall } from 'lucide-react';
+import { Users, ChevronRight, LogOut, Share2, PhoneCall, FileText } from 'lucide-react';
 import { Capacitor } from '@capacitor/core';
 import { getProfile } from '../services/api';
 import { fetchFeatureFlags, isFeatureEnabled } from '../services/featureFlags';
@@ -26,6 +26,8 @@ const normalizeSidebarRoute = (route = '', featureKey = '') => {
   if (featureValue === 'contactus' || featureValue === 'contact-us' || featureValue === 'feature-contact-us' || featureValue === 'feature_contact_us') return 'contact-us';
   if (routeValue === 'my-family' || routeValue === 'myfamily') return 'my-family';
   if (featureValue === 'myfamily' || featureValue === 'my-family' || featureValue === 'feature-my-family' || featureValue === 'feature_my_family') return 'my-family';
+  if (routeValue === 'nomination-details' || routeValue === 'nominationdetails') return 'nomination-details';
+  if (featureValue === 'nominationdetails' || featureValue === 'nomination-details' || featureValue === 'feature-nomination-details' || featureValue === 'feature_nomination_details') return 'nomination-details';
   return routeValue;
 };
 
@@ -33,6 +35,7 @@ const resolveSidebarIcon = (featureKey, route) => {
   const normalizedRoute = normalizeSidebarRoute(route, featureKey);
   if (normalizedRoute === 'contact-us') return PhoneCall;
   if (normalizedRoute === 'my-family') return Users;
+  if (normalizedRoute === 'nomination-details') return FileText;
   return PhoneCall;
 };
 
@@ -397,7 +400,11 @@ const Sidebar = ({ isOpen, onClose, onNavigate, currentPage, onLogout }) => {
         || normalizedKey === 'myfamily'
         || normalizedKey === 'my-family'
         || normalizedKey === 'feature-my-family';
-      return Boolean(key) && meta?.is_enabled && (isContactUs || isMyFamily);
+      const isNominationDetails = resolvedRoute === 'nomination-details'
+        || normalizedKey === 'nominationdetails'
+        || normalizedKey === 'nomination-details'
+        || normalizedKey === 'feature-nomination-details';
+      return Boolean(key) && meta?.is_enabled && (isContactUs || isMyFamily || isNominationDetails);
     })
     .map(([key, meta]) => ({
       id: normalizeSidebarRoute(meta?.route, key),

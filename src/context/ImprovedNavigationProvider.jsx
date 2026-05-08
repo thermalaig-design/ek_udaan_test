@@ -49,6 +49,7 @@ const ROUTE_HIERARCHY = {
   '/sponsor-details': { parent: '/', label: 'Sponsor Details' },
   '/developers': { parent: '/', label: 'Developers' },
   '/gallery': { parent: '/', label: 'Gallery' },
+  '/nomination-details': { parent: '/', label: 'Nomination Details' },
   '/terms-and-conditions': { parent: '/', label: 'Terms & Conditions' },
   '/privacy-policy': { parent: '/', label: 'Privacy Policy' },
 };

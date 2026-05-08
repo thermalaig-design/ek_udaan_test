@@ -29,6 +29,7 @@ import {
 import { useBackNavigation } from './hooks';
 import { checkPhoneNumber, verifyOTP } from './services/authService';
 import { fetchDirectoryData } from './services/directoryService';
+import { fetchTrustById } from './services/trustService';
 import { logUserSessionEvent } from './services/sessionAuditService';
 import logo from '../new_logo.png';
 
@@ -243,8 +244,24 @@ function VIPLogin({ onNavigate, onLogout }) {
       try { sessionStorage.removeItem('trust_selected_in_session'); } catch (_) {}
       const memberships = Array.isArray(pendingUser?.hospital_memberships) ? pendingUser.hospital_memberships : [];
       const baseMembership = memberships.find((m) => String(m?.trust_id || '') === String(BASE_TRUST_ID)) || null;
-      const tid = BASE_TRUST_ID;
-      const tname = baseMembership?.trust_name || import.meta.env.VITE_DEFAULT_TRUST_NAME || localStorage.getItem('selected_trust_name');
+      const selectedMembership =
+        memberships.find((m) => m?.is_active && m?.trust_id) ||
+        memberships.find((m) => m?.trust_id) ||
+        baseMembership ||
+        null;
+      const tid = String(selectedMembership?.trust_id || BASE_TRUST_ID || '').trim();
+      let tname = selectedMembership?.trust_name || '';
+      if (tid && !tname) {
+        try {
+          const trustRow = await fetchTrustById(tid);
+          tname = String(trustRow?.name || '').trim();
+        } catch (_) {
+          // ignore trust lookup failure and continue with available values
+        }
+      }
+      if (!tname) {
+        tname = String(localStorage.getItem('selected_trust_name') || '').trim();
+      }
       localStorage.setItem('selected_trust_id', String(tid));
       localStorage.setItem(LAST_SELECTED_TRUST_ID_KEY, String(tid));
       if (tname) localStorage.setItem('selected_trust_name', String(tname));
