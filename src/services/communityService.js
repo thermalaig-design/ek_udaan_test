@@ -85,6 +85,19 @@ const isDateValidForToday = (row, todayYmd) => {
   return startOk && endOk;
 };
 
+const normalizeNoticeType = (value) => {
+  const raw = String(value || '').trim().toLowerCase();
+  if (!raw) return '';
+  if (raw === 'vip') return 'vip';
+  if (raw === 'gen' || raw === 'general') return 'gen';
+  return raw;
+};
+
+const isActiveLikeStatus = (value) => {
+  const raw = String(value ?? '').trim().toLowerCase();
+  return raw === 'active' || raw === '1' || raw === 'true' || raw === 'enabled' || raw === 'published';
+};
+
 const byStartDateDescCreatedAtDescIdAsc = (a, b) => {
   const startA = toYmdOnly(a?.start_date);
   const startB = toYmdOnly(b?.start_date);
@@ -187,6 +200,7 @@ export const fetchNoticeboardPage = async ({
       resolvedRegMemberMatch = eligibility?.regMemberMatch || null;
     }
     const allowedTypes = resolvedVipEligible ? ['gen', 'vip'] : ['gen'];
+    const allowedTypeSet = new Set(allowedTypes);
 
     const today = todayIsoDate();
     const pageNo = Number(page) > 0 ? Number(page) : 1;
@@ -220,8 +234,6 @@ export const fetchNoticeboardPage = async ({
       .from('noticeboard')
       .select('id, trust_id, type, name, description, attachments, start_date, end_date, status, created_at, updated_at')
       .eq('trust_id', resolvedTrustId)
-      .eq('status', 'active')
-      .in('type', allowedTypes)
       .order('start_date', { ascending: false, nullsFirst: false })
       .order('created_at', { ascending: false })
       .order('id', { ascending: true });
@@ -229,14 +241,23 @@ export const fetchNoticeboardPage = async ({
     if (error) throw error;
 
     const rowsBeforeDate = Array.isArray(data) ? data : [];
-    debug.counts.beforeDateFilterRows = rowsBeforeDate.length;
+    const rowsAfterStatusAndType = rowsBeforeDate.filter((row) => {
+      const statusOk = isActiveLikeStatus(row?.status);
+      const typeOk = allowedTypeSet.has(normalizeNoticeType(row?.type));
+      return statusOk && typeOk;
+    });
+    debug.counts.beforeDateFilterRows = rowsAfterStatusAndType.length;
 
     // Client-side date filter removed — we trust DB's status='active' as source of truth.
     // Notices with expired end_date should be deactivated at DB level by admin.
-    const rowsAfterDate = rowsBeforeDate.filter((row) => isDateValidForToday(row, today));
+    const rowsAfterDate = rowsAfterStatusAndType.filter((row) => isDateValidForToday(row, today));
     debug.counts.afterDateFilterRows = rowsAfterDate.length;
+    const effectiveRows = rowsAfterDate.length > 0 ? rowsAfterDate : rowsAfterStatusAndType;
+    if (rowsAfterDate.length === 0 && rowsAfterStatusAndType.length > 0) {
+      debug.dateFilterFallbackApplied = true;
+    }
 
-    const pagedRows = rowsAfterDate.slice(rangeFrom, rangeTo + 1);
+    const pagedRows = effectiveRows.slice(rangeFrom, rangeTo + 1);
     const finalRows = pagedRows
       .map((item) => ({
         id: item.id,
@@ -300,6 +321,9 @@ export const fetchNoticeboardPage = async ({
       }
       console.log('[Noticeboard][Debug] rows_before_date_filter=', debug.counts.beforeDateFilterRows);
       console.log('[Noticeboard][Debug] rows_after_date_filter=', debug.counts.afterDateFilterRows);
+      if (debug.dateFilterFallbackApplied) {
+        console.log('[Noticeboard][Debug] date_filter_fallback_applied=true');
+      }
       console.log('[Noticeboard][Debug] final_notice_ids=', debug.finalNoticeIds);
       console.log('[Noticeboard][Debug] final_notice_types=', finalRows.map((item) => item.type));
     }
@@ -307,7 +331,7 @@ export const fetchNoticeboardPage = async ({
     return {
       success: true,
       data: finalRows,
-      hasMore: rowsAfterDate.length > rangeTo + 1,
+      hasMore: effectiveRows.length > rangeTo + 1,
       debug
     };
   } catch (error) {
@@ -355,19 +379,20 @@ export const fetchNoticeboardById = async ({
       resolvedRegMemberMatch = eligibility?.regMemberMatch || null;
     }
     const allowedTypes = resolvedVipEligible ? ['gen', 'vip'] : ['gen'];
+    const allowedTypeSet = new Set(allowedTypes);
 
     const { data, error } = await supabase
       .from('noticeboard')
       .select('id, trust_id, type, name, description, attachments, start_date, end_date, status, created_at, updated_at')
       .eq('id', normalizedNoticeId)
       .eq('trust_id', resolvedTrustId)
-      .eq('status', 'active')
-      .in('type', allowedTypes)
       .limit(1)
       .maybeSingle();
 
     if (error) throw error;
-    if (!data || !isDateValidForToday(data, todayIsoDate())) {
+    const typeOk = allowedTypeSet.has(normalizeNoticeType(data?.type));
+    const statusOk = isActiveLikeStatus(data?.status);
+    if (!data || !statusOk || !typeOk || !isDateValidForToday(data, todayIsoDate())) {
       return {
         success: true,
         data: null,
@@ -580,8 +605,6 @@ export const fetchFacilityById = async ({
       .select('id, trust_id, type, name, description, attachments, status, created_by, created_at, updated_at')
       .eq('id', normalizedFacilityId)
       .eq('trust_id', resolvedTrustId)
-      .eq('status', 'active')
-      .in('type', allowedTypes)
       .limit(1)
       .maybeSingle();
 
@@ -644,3 +667,5 @@ export const fetchEvents = async ({ trustId = null, trustName = null, includePas
     return { success: false, data: [], message: error.message || 'Failed to fetch events' };
   }
 };
+
+

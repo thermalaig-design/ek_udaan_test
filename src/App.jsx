@@ -1039,7 +1039,7 @@ const HospitalTrusteeApp = () => {
           element={
             <ProtectedRoute>
               <FeatureGuard featureKey="feature_directory">
-                <HealthcareTrusteeDirectory
+                <Directory
                   onNavigate={handleNavigate}
                   onNavigateBack={() => navigate('/')}
                   onLogout={clearAuthAndRedirectToLogin}
